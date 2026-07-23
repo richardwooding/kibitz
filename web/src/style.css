@@ -282,6 +282,41 @@ button.back { margin-bottom: 0.7rem; }
 .ck-piece.p1 { background: #a03030; color: #f8d8d8; }
 .ck-piece.p2 { background: #f2ead8; color: #6b5b2a; border-color: rgba(0,0,0,0.25); }
 
+/* reversi */
+.rv-board {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 2px;
+  width: min(100%, 30rem);
+  aspect-ratio: 1;
+  background: #1d6b3c;
+  padding: 4px;
+  border-radius: 0.5rem;
+}
+.rv-cell {
+  all: unset;
+  position: relative;
+  display: grid;
+  place-items: center;
+  background: #2a8a4f;
+  aspect-ratio: 1;
+}
+.rv-cell.legal { cursor: pointer; }
+.rv-cell.legal::after {
+  content: "";
+  width: 24%; height: 24%;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.35);
+}
+.rv-cell.last { outline: 2px solid #f6f078; outline-offset: -2px; }
+.rv-disc {
+  width: 78%; height: 78%;
+  border-radius: 50%;
+  border: 1px solid rgba(0,0,0,0.35);
+}
+.rv-disc.black { background: #17171f; }
+.rv-disc.white { background: #f4f2ea; }
+
 /* side pane */
 .side-pane {
   background: var(--panel);

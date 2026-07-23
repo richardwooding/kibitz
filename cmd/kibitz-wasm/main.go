@@ -30,6 +30,7 @@ import (
 	"github.com/richardwooding/kibitz/internal/service/checkers"
 	"github.com/richardwooding/kibitz/internal/service/chess"
 	"github.com/richardwooding/kibitz/internal/service/connect4"
+	"github.com/richardwooding/kibitz/internal/service/reversi"
 	"github.com/richardwooding/kibitz/internal/session"
 )
 
@@ -45,6 +46,7 @@ type command struct {
 	Game   string    `json:"game,omitempty"` // service ID for game.start
 	Col    int8      `json:"col"`            // connect4 column
 	Path   []int8    `json:"path,omitempty"` // checkers move path
+	Sq     int8      `json:"sq"`             // reversi square
 }
 
 type app struct {
@@ -55,6 +57,7 @@ type app struct {
 	bg     *backgammon.Service
 	c4     *connect4.Service
 	ck     *checkers.Service
+	rv     *reversi.Service
 }
 
 var current app
@@ -118,6 +121,9 @@ var commands = map[string]func(command){
 	"checkers.resign":    func(command) { withCK((*checkers.Service).Resign) },
 	"checkers.offerDraw": func(command) { withCK((*checkers.Service).OfferDraw) },
 	"checkers.agreeDraw": func(command) { withCK((*checkers.Service).AgreeDraw) },
+
+	"reversi.place":  func(c command) { withRV(func(s *reversi.Service) error { return s.PlaceDisc(c.Sq) }) },
+	"reversi.resign": func(command) { withRV((*reversi.Service).Resign) },
 }
 
 func dispatch(raw string) {
@@ -206,14 +212,15 @@ func start(client *session.Client) {
 	bg := backgammon.New()
 	c4 := connect4.New()
 	ck := checkers.New()
-	mux := service.NewMux(client, ch, cs, bg, c4, ck)
+	rv := reversi.New()
+	mux := service.NewMux(client, ch, cs, bg, c4, ck, rv)
 
 	current.mu.Lock()
 	if current.client != nil {
 		_ = current.client.Close()
 	}
 	current.client, current.chat, current.chess = client, ch, cs
-	current.bg, current.c4, current.ck = bg, c4, ck
+	current.bg, current.c4, current.ck, current.rv = bg, c4, ck, rv
 	current.mu.Unlock()
 
 	go pump(mux)
@@ -234,6 +241,9 @@ func startGame(id string) {
 	}
 	if current.ck != nil {
 		starters[checkers.ID] = current.ck.Start
+	}
+	if current.rv != nil {
+		starters[reversi.ID] = current.rv.Start
 	}
 	startFn, ok := starters[id]
 	current.mu.Unlock()
@@ -271,6 +281,8 @@ func pump(mux *service.Mux) {
 			emitCKState(e)
 		case checkers.DrawOffered:
 			emit("checkers.drawOffered", map[string]any{"from": uint32(e.From)})
+		case reversi.State:
+			emitRVState(e)
 		case service.ServiceError:
 			emitError(fmt.Sprintf("%s: %v", e.Service, e.Err))
 		case service.SessionEvent:
@@ -327,6 +339,15 @@ func emitCKState(e checkers.State) {
 		"board": e.Board[:], "p1Id": uint32(e.P1ID), "p2Id": uint32(e.P2ID),
 		"turnId": uint32(e.TurnID), "outcome": e.Outcome,
 		"legal": legal, "lastPath": e.LastPath, "playing": e.Playing,
+	})
+}
+
+func emitRVState(e reversi.State) {
+	emit("reversi.state", map[string]any{
+		"board": e.Board[:], "p1Id": uint32(e.P1ID), "p2Id": uint32(e.P2ID),
+		"turnId": uint32(e.TurnID), "outcome": e.Outcome, "legal": e.Legal,
+		"passed": e.Passed, "black": e.Black, "white": e.White,
+		"lastSq": e.LastSq, "playing": e.Playing,
 	})
 }
 
@@ -393,6 +414,13 @@ func withC4(f func(*connect4.Service) error) {
 func withCK(f func(*checkers.Service) error) {
 	current.mu.Lock()
 	s := current.ck
+	current.mu.Unlock()
+	callService(s == nil, func() error { return f(s) })
+}
+
+func withRV(f func(*reversi.Service) error) {
+	current.mu.Lock()
+	s := current.rv
 	current.mu.Unlock()
 	callService(s == nil, func() error { return f(s) })
 }
