@@ -178,7 +178,7 @@ func FuzzDecode(f *testing.F) {
 			if err == nil {
 				if kind, praw, perr := DecodePayload(d.Payload); perr == nil {
 					switch kind {
-					case KindPake1, KindPake2, KindPake3:
+					case KindPake1, KindPake2:
 						_, _ = Body[Pake](praw)
 					case KindGroupKey:
 						_, _ = Body[GroupKey](praw)

@@ -18,12 +18,13 @@ type PayloadKind uint8
 const (
 	KindPake1    PayloadKind = 1 // joiner→host: first PAKE flight
 	KindPake2    PayloadKind = 2 // host→joiner: second PAKE flight
-	KindPake3    PayloadKind = 3 // joiner→host: third PAKE flight
-	KindGroupKey PayloadKind = 4 // host→joiner: wrapped group key + role
-	KindSealed   PayloadKind = 5 // any→any: encrypted Envelope
+	KindGroupKey PayloadKind = 3 // host→joiner: wrapped group key + role
+	KindSealed   PayloadKind = 4 // any→any: encrypted Envelope
 )
 
-// Pake carries one PAKE flight (schollz/pake/v3 serialized state).
+// Pake carries one PAKE flight (schollz/pake/v3 serialized state; the
+// exchange is two flights — joiner init, host reply — and both sides are
+// keyed after it).
 type Pake struct {
 	Data []byte `cbor:"1,keyasint"`
 }
