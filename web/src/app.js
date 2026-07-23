@@ -164,13 +164,18 @@
       $("btn-join").disabled = false;
       $("join-phrase").disabled = false;
       $("home-status").textContent = "";
-      // Arriving via a share link: pre-fill the phrase and let the visitor
-      // pick a screen name before joining — don't auto-join (that robbed
-      // link-openers of the chance to name themselves).
+      // Arriving via a share link: switch the home screen into "invited"
+      // mode — a prominent invite banner, name field, and a big Join — rather
+      // than auto-joining (which robbed link-openers of a name) or leaving the
+      // join buried under "Start a table".
       const phrase = decodeURIComponent(location.hash.slice(1));
       if (phrase) {
         $("join-phrase").value = phrase;
-        $("home-status").textContent = `You've been invited to “${phrase}”. Add a name if you like, then Join.`;
+        $("invite-phrase").textContent = phrase;
+        $("invite-banner").classList.remove("hidden");
+        $("view-home").classList.add("invited");
+        $("btn-join").textContent = "Join game";
+        $("btn-create").textContent = "or start your own table";
         $("display-name").focus();
       }
     },

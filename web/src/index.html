@@ -11,7 +11,11 @@
   <!-- home: start or join -->
   <main id="view-home" class="view">
     <h1>kibitz</h1>
-    <p class="tagline">Pull up a chair. Six games — chess, backgammon, checkers, reversi, Connect Four, and provably-fair Battleship — with chat, over an end-to-end encrypted session.</p>
+    <p class="tagline" id="home-tagline">Pull up a chair. Six games — chess, backgammon, checkers, reversi, Connect Four, and provably-fair Battleship — with chat, over an end-to-end encrypted session.</p>
+    <div id="invite-banner" class="invite-banner hidden">
+      <div class="invite-kicker">You've been invited to a game</div>
+      <div class="invite-phrase" id="invite-phrase"></div>
+    </div>
     <div class="actions">
       <input id="display-name" type="text" placeholder="Your name (optional)"
              maxlength="24" autocomplete="nickname" spellcheck="false">

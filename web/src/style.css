@@ -65,8 +65,51 @@ input[type="text"] {
 }
 
 /* home */
-.actions { display: flex; flex-direction: column; gap: 1rem; align-items: center; margin: 2rem 0 1rem; }
+.actions { display: flex; flex-direction: column; gap: 1rem; align-items: center; margin: 1.5rem 0 1rem; }
 .join-row { display: flex; gap: 0.5rem; }
+#display-name { order: 0; }
+#btn-create { order: 1; }
+.actions .join-row { order: 2; }
+
+/* invite banner (shown when arriving via a share link) */
+.invite-banner {
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: 0.9rem;
+  padding: 1rem 1.4rem;
+  margin: 1.25rem auto 0;
+  max-width: 26rem;
+}
+.invite-kicker {
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.invite-phrase {
+  font-family: ui-monospace, monospace;
+  font-size: 1.7rem;
+  font-weight: 700;
+  color: var(--accent);
+  margin-top: 0.25rem;
+  word-break: break-word;
+}
+
+/* invited mode: lead with Join, hide the manual phrase box + long tagline,
+   demote "Start a table" to a quiet escape hatch. */
+#view-home.invited #home-tagline { display: none; }
+#view-home.invited .join-row { order: 1; width: min(100%, 22rem); }
+#view-home.invited #join-phrase { display: none; }
+#view-home.invited #btn-join { flex: 1; padding: 0.8rem 1.6rem; font-size: 1.05rem; }
+#view-home.invited #btn-create {
+  order: 2;
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+  font-size: 0.85rem;
+  padding: 0.3rem;
+}
+#view-home.invited #btn-create:hover { color: var(--accent); }
 
 /* lobby */
 .phrase {
