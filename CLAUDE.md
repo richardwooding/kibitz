@@ -67,8 +67,16 @@ Platform splits use build-tagged files (`dial_js.go` / `dial_native.go`).
   (UI→core) and `kibitzOnEvent(json)` (core→UI). JSON at the bridge only;
   CBOR on the wire. The JS layer renders — it never implements protocol.
 
-## Releasing
+## Releasing and deploy
 
-Tag push (`vX.Y.Z`) triggers goreleaser: linux/darwin/windows, amd64+arm64,
-web client embedded. CI-only dependency bumps don't warrant a release; real
-dependency changes do.
+Tag push (`vX.Y.Z`) triggers goreleaser: linux/darwin/windows binaries
+(amd64+arm64) AND a container image at ghcr.io/richardwooding/kibitz
+(ko, chainguard-static base), all with the web client embedded. CI-only
+dependency bumps don't warrant a release; real dependency changes do.
+
+The hosted instance is a Fly.io app (`kibitz`, region jnb) defined by
+fly.toml, running the `:latest` ghcr image. Roll it after a release with
+`fly deploy` from the repo root. The relay is stateful in-memory: it must
+stay exactly ONE always-on machine — never enable auto-stop or scale count
+past 1 (both kill/split live sessions). Deploys drop in-flight sessions;
+that's by design (reconnect = rejoin).

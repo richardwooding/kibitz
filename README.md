@@ -31,12 +31,24 @@ both-sides-validate: every client runs the same rules engine and checks a
 position hash on every move — there's no server to cheat past, because the
 server is blind. Details: [docs/THREAT-MODEL.md](docs/THREAT-MODEL.md).
 
+## Hosted instance
+
+A public relay runs at **https://kibitz.fly.dev** — open it, start a table,
+share the phrase. (Remember: the relay is blind either way; you never have to
+trust it.)
+
 ## Self-hosting
 
 Grab a release binary (or `go install github.com/richardwooding/kibitz/cmd/kibitz@latest`) and:
 
 ```sh
 kibitz --listen :8080
+```
+
+Or run the container image:
+
+```sh
+docker run -p 8080:8080 ghcr.io/richardwooding/kibitz
 ```
 
 Put TLS in front with your reverse proxy of choice. That's it — the web UI,

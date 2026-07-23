@@ -65,6 +65,32 @@ changelog:
     - title: Others
       order: 999
 
+# Container images built with ko (cross-compiled, no Docker/buildx needed).
+# kibitz is pure static (CGO_ENABLED=0, shells out to nothing), so the
+# chainguard static base is enough. The `before` hooks above run `make wasm`,
+# so the image embeds the same web client as the release binaries.
+kos:
+  - id: kibitz
+    build: kibitz
+    repositories:
+      - ghcr.io/richardwooding/kibitz
+    base_image: cgr.dev/chainguard/static
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    tags:
+      - "{{.Version}}"
+      - "{{ if not .Prerelease }}latest{{ end }}"
+    sbom: spdx
+    bare: true
+    preserve_import_paths: false
+    labels:
+      org.opencontainers.image.source: "https://github.com/richardwooding/kibitz"
+      org.opencontainers.image.licenses: "MIT"
+      org.opencontainers.image.description: "croc-style pairing for E2E-encrypted game & chat sessions — blind relay + embedded web client"
+      org.opencontainers.image.version: "{{.Version}}"
+      org.opencontainers.image.revision: "{{.Commit}}"
+
 release:
   github:
     owner: richardwooding

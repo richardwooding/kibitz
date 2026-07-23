@@ -1,0 +1,29 @@
+# Fly.io config for the hosted kibitz relay.
+#
+# The relay is stateful (in-memory session registry) — it must run as exactly
+# ONE always-on machine. Never enable auto-stop or scale past count 1;
+# both would kill or split live sessions.
+
+app = "kibitz"
+primary_region = "jnb"
+
+[build]
+  image = "ghcr.io/richardwooding/kibitz:latest"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off" # stopping the machine kills every live session
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/healthz"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
