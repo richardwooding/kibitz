@@ -7,16 +7,61 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <main class="home">
+
+  <!-- home: start or join -->
+  <main id="view-home" class="view">
     <h1>kibitz</h1>
     <p class="tagline">Pull up a chair. Chat and play chess over an end-to-end encrypted session.</p>
     <div class="actions">
-      <button id="create" disabled>Start a table</button>
-      <button id="join" disabled>Join a table</button>
+      <button id="btn-create" disabled>Start a table</button>
+      <div class="join-row">
+        <input id="join-phrase" type="text" placeholder="lion-42-maple"
+               autocomplete="off" autocapitalize="none" spellcheck="false" disabled>
+        <button id="btn-join" disabled>Join</button>
+      </div>
     </div>
-    <p class="note">The client core is still under construction — buttons come alive in M1.</p>
+    <p class="note" id="home-status">loading core…</p>
   </main>
+
+  <!-- lobby: host waits, shows phrase / link / QR -->
+  <main id="view-lobby" class="view hidden">
+    <h2>Your table is open</h2>
+    <p class="tagline">Share any of these — the first friend to join sits down as your opponent, everyone after that kibitzes.</p>
+    <div class="phrase" id="lobby-phrase"></div>
+    <div class="share-row">
+      <input id="lobby-url" type="text" readonly>
+      <button id="btn-copy">Copy link</button>
+    </div>
+    <img id="lobby-qr" alt="QR code for the table link">
+    <p class="note">The phrase never reaches the server — it's the encryption secret. Waiting for your opponent…</p>
+  </main>
+
+  <!-- table: board + chat -->
+  <main id="view-table" class="view hidden">
+    <div class="table-grid">
+      <section class="board-pane">
+        <div id="status-line" class="status"></div>
+        <div id="board" class="board"></div>
+        <div class="game-actions">
+          <button id="btn-resign" class="ghost">Resign</button>
+          <button id="btn-draw" class="ghost">Offer draw</button>
+          <button id="btn-agree-draw" class="ghost hidden">Accept draw</button>
+        </div>
+      </section>
+      <aside class="side-pane">
+        <div id="members" class="members"></div>
+        <div id="chat-log" class="chat-log"></div>
+        <form id="chat-form">
+          <input id="chat-input" type="text" placeholder="say something…" autocomplete="off" maxlength="4000">
+        </form>
+      </aside>
+    </div>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+
   <script src="wasm_exec.js"></script>
+  <script src="board.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
