@@ -5,6 +5,7 @@ go 1.26.2
 require (
 	github.com/coder/websocket v1.8.15
 	github.com/fxamacker/cbor/v2 v2.9.2
+	github.com/notnil/chess v1.10.0
 	github.com/schollz/pake/v3 v3.1.1
 	golang.org/x/crypto v0.54.0
 )
