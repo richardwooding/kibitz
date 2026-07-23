@@ -36,16 +36,34 @@
     <p class="note">The phrase never reaches the server — it's the encryption secret. Waiting for your opponent…</p>
   </main>
 
-  <!-- table: board + chat -->
+  <!-- table: games + chat -->
   <main id="view-table" class="view hidden">
     <div class="table-grid">
       <section class="board-pane">
-        <div id="status-line" class="status"></div>
-        <div id="board" class="board"></div>
-        <div class="game-actions">
-          <button id="btn-resign" class="ghost">Resign</button>
-          <button id="btn-draw" class="ghost">Offer draw</button>
-          <button id="btn-agree-draw" class="ghost hidden">Accept draw</button>
+        <div class="game-tabs">
+          <button id="tab-chess" class="tab active">♞ Chess</button>
+          <button id="tab-bg" class="tab">⚅ Backgammon</button>
+        </div>
+
+        <div id="game-chess">
+          <div id="status-line" class="status"></div>
+          <div id="board" class="board"></div>
+          <div class="game-actions">
+            <button id="btn-resign" class="ghost">Resign</button>
+            <button id="btn-draw" class="ghost">Offer draw</button>
+            <button id="btn-agree-draw" class="ghost hidden">Accept draw</button>
+          </div>
+        </div>
+
+        <div id="game-bg" class="hidden">
+          <div id="bg-status" class="status"></div>
+          <div id="bg-board" class="bg-board"></div>
+          <div class="game-actions">
+            <button id="bg-roll">Roll</button>
+            <div id="bg-dice" class="dice"></div>
+            <button id="bg-undo" class="ghost hidden">Undo move</button>
+            <button id="bg-resign" class="ghost">Resign</button>
+          </div>
         </div>
       </section>
       <aside class="side-pane">
@@ -62,6 +80,7 @@
 
   <script src="wasm_exec.js"></script>
   <script src="board.js"></script>
+  <script src="bgboard.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -25,6 +25,7 @@ import (
 	qrcode "github.com/skip2/go-qrcode"
 
 	"github.com/richardwooding/kibitz/internal/service"
+	"github.com/richardwooding/kibitz/internal/service/backgammon"
 	"github.com/richardwooding/kibitz/internal/service/chat"
 	"github.com/richardwooding/kibitz/internal/service/chess"
 	"github.com/richardwooding/kibitz/internal/session"
@@ -32,12 +33,13 @@ import (
 
 // command is every UI→core message; unused fields stay empty.
 type command struct {
-	Type   string `json:"type"`
-	Phrase string `json:"phrase,omitempty"`
-	Text   string `json:"text,omitempty"`
-	UCI    string `json:"uci,omitempty"`
-	From   string `json:"from,omitempty"` // square, for chess.targets
-	ID     int    `json:"id,omitempty"`   // request correlation for queries
+	Type   string    `json:"type"`
+	Phrase string    `json:"phrase,omitempty"`
+	Text   string    `json:"text,omitempty"`
+	UCI    string    `json:"uci,omitempty"`
+	From   string    `json:"from,omitempty"` // square, for chess.targets
+	ID     int       `json:"id,omitempty"`   // request correlation for queries
+	Hops   [][2]int8 `json:"hops,omitempty"` // backgammon turn, player-relative
 }
 
 type app struct {
@@ -45,6 +47,7 @@ type app struct {
 	client *session.Client
 	chat   *chat.Service
 	chess  *chess.Service
+	bg     *backgammon.Service
 }
 
 var current app
@@ -97,6 +100,16 @@ func dispatch(raw string) {
 		withChess((*chess.Service).AgreeDraw)
 	case "chess.targets":
 		targets(cmd.From, cmd.ID)
+	case "bg.roll":
+		withBG((*backgammon.Service).Roll)
+	case "bg.move":
+		hops := make([]backgammon.Hop, len(cmd.Hops))
+		for i, h := range cmd.Hops {
+			hops[i] = backgammon.Hop{From: h[0], To: h[1]}
+		}
+		withBG(func(b *backgammon.Service) error { return b.Move(hops) })
+	case "bg.resign":
+		withBG((*backgammon.Service).Resign)
 	case "leave":
 		leave()
 	default:
@@ -173,13 +186,14 @@ func join(phrase string) {
 func start(client *session.Client) {
 	ch := chat.New()
 	cs := chess.New()
-	mux := service.NewMux(client, ch, cs)
+	bg := backgammon.New()
+	mux := service.NewMux(client, ch, cs, bg)
 
 	current.mu.Lock()
 	if current.client != nil {
 		_ = current.client.Close()
 	}
-	current.client, current.chat, current.chess = client, ch, cs
+	current.client, current.chat, current.chess, current.bg = client, ch, cs, bg
 	current.mu.Unlock()
 
 	go pump(mux)
@@ -204,6 +218,28 @@ func pump(mux *service.Mux) {
 			})
 		case chess.DrawOffered:
 			emit("chess.drawOffered", map[string]any{"from": uint32(e.From)})
+		case backgammon.State:
+			legal := make([][][2]int8, len(e.Legal))
+			for i, turn := range e.Legal {
+				legal[i] = make([][2]int8, len(turn))
+				for j, h := range turn {
+					legal[i][j] = [2]int8{h.From, h.To}
+				}
+			}
+			emit("bg.state", map[string]any{
+				"points": e.Board.Points[:], "barW": e.Board.Bar[backgammon.White],
+				"barB": e.Board.Bar[backgammon.Black], "offW": e.Board.Off[backgammon.White],
+				"offB":    e.Board.Off[backgammon.Black],
+				"whiteId": uint32(e.WhiteID), "blackId": uint32(e.BlackID),
+				"turnId": uint32(e.TurnID), "phase": e.Phase,
+				"dice": []int8{e.Dice[0], e.Dice[1]}, "legal": legal,
+				"outcome": e.Outcome, "pipsW": e.PipsW, "pipsB": e.PipsB,
+				"playing": e.Playing,
+			})
+		case backgammon.Danced:
+			emit("bg.danced", map[string]any{"by": uint32(e.By)})
+		case backgammon.CheatDetected:
+			emitError(fmt.Sprintf("dice cheat detected from participant %d — game voided", e.By))
 		case chess.Desync:
 			emitError("game desynchronized: " + e.Reason)
 		case service.ServiceError:
@@ -263,6 +299,19 @@ func withChess(f func(*chess.Service) error) {
 		return
 	}
 	if err := f(c); err != nil {
+		emitError(err.Error())
+	}
+}
+
+func withBG(f func(*backgammon.Service) error) {
+	current.mu.Lock()
+	b := current.bg
+	current.mu.Unlock()
+	if b == nil {
+		emitError("not in a session")
+		return
+	}
+	if err := f(b); err != nil {
 		emitError(err.Error())
 	}
 }

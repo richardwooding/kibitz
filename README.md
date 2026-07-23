@@ -18,9 +18,10 @@ first, backgammon next) instead of file transfer.
 
 ## Status
 
-**v0.1 — playable.** Sessions, encrypted chat, and full chess (moves, legal-
-move hints, resign, draws, spectators, late-join catch-up) work end to end.
-Backgammon is next.
+**v0.2 — two games playable.** Sessions, encrypted chat, full chess, and
+backgammon (with provably fair commit-reveal dice — neither player nor the
+relay can steer a roll, and spectators verify every one) all work end to end.
+Both games run side by side in one session; switch with the tabs.
 
 ## How it works
 
