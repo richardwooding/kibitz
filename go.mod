@@ -4,8 +4,8 @@ go 1.26.2
 
 require (
 	github.com/coder/websocket v1.8.15
+	github.com/corentings/chess/v2 v2.5.1
 	github.com/fxamacker/cbor/v2 v2.9.2
-	github.com/notnil/chess v1.10.0
 	github.com/schollz/pake/v3 v3.1.1
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	golang.org/x/crypto v0.54.0

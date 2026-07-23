@@ -1,4 +1,4 @@
-// Package chess is the first game service, wrapping notnil/chess for rules.
+// Package chess is the first game service, wrapping corentings/chess for rules.
 // Sync is both-sides-validate: every client applies every move through the
 // same engine and checks a position hash — there is no authoritative server,
 // because the relay can't be one (it only ever sees ciphertext).
@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"sync"
 
-	notnil "github.com/notnil/chess"
+	chesslib "github.com/corentings/chess/v2"
 
 	"github.com/richardwooding/kibitz/internal/service"
 	"github.com/richardwooding/kibitz/internal/service/game"
@@ -83,7 +83,7 @@ type Service struct {
 
 	mu        sync.Mutex
 	table     game.Table
-	game      *notnil.Game
+	game      *chesslib.Game
 	whiteID   wire.ParticipantID
 	blackID   wire.ParticipantID
 	lastUCI   string
@@ -130,7 +130,7 @@ func (s *Service) hostStart(from wire.ParticipantID) error {
 		return err
 	}
 	seats := s.table.NextSeats(s.ctx.Self)
-	s.game = notnil.NewGame()
+	s.game = chesslib.NewGame()
 	s.whiteID = seats.P1 // P1 = white (moves first)
 	s.blackID = seats.P2
 	s.lastUCI = ""
@@ -153,7 +153,7 @@ func (s *Service) phaseLocked() game.Phase {
 	switch {
 	case s.game == nil:
 		return game.Idle
-	case s.game.Outcome() == notnil.NoOutcome:
+	case s.game.Outcome() == chesslib.NoOutcome:
 		return game.Playing
 	default:
 		return game.Over
@@ -166,9 +166,9 @@ func (s *Service) MemberLeft(id wire.ParticipantID) {
 	if forfeit {
 		// Opponent walked away mid-game: they forfeit.
 		if winner == game.P2 { // white (P1) left
-			s.game.Resign(notnil.White)
+			s.game.Resign(chesslib.White)
 		} else {
-			s.game.Resign(notnil.Black)
+			s.game.Resign(chesslib.Black)
 		}
 	}
 	s.mu.Unlock()
@@ -188,12 +188,12 @@ func (s *Service) TryMove(uci string) error {
 		s.mu.Unlock()
 		return err
 	}
-	move, err := notnil.UCINotation{}.Decode(s.game.Position(), uci)
+	move, err := chesslib.UCINotation{}.Decode(s.game.Position(), uci)
 	if err != nil {
 		s.mu.Unlock()
 		return fmt.Errorf("chess: bad move %q: %w", uci, err)
 	}
-	if err := s.game.Move(move); err != nil {
+	if err := s.game.Move(move, nil); err != nil {
 		s.mu.Unlock()
 		return fmt.Errorf("chess: illegal move %q: %w", uci, err)
 	}
@@ -272,7 +272,7 @@ func (s *Service) AgreeDraw() error {
 		s.mu.Unlock()
 		return err
 	}
-	_ = s.game.Draw(notnil.DrawOffer)
+	_ = s.game.Draw(chesslib.DrawOffer)
 	s.drawnFrom = 0
 	s.mu.Unlock()
 
@@ -334,7 +334,7 @@ func (s *Service) handleNewGame(from wire.ParticipantID, m msg) error {
 		return fmt.Errorf("chess: new game from non-host %d", from)
 	}
 	s.mu.Lock()
-	s.game = notnil.NewGame()
+	s.game = chesslib.NewGame()
 	s.whiteID = wire.ParticipantID(m.WhiteID)
 	s.blackID = wire.ParticipantID(m.BlackID)
 	// Seats mirror on every client so forfeit detection works off-host too.
@@ -357,9 +357,9 @@ func (s *Service) handleMove(from wire.ParticipantID, m msg) error {
 		s.ctx.Emit(Desync{From: from, Reason: "move out of turn"})
 		return err
 	}
-	move, err := notnil.UCINotation{}.Decode(s.game.Position(), m.UCI)
+	move, err := chesslib.UCINotation{}.Decode(s.game.Position(), m.UCI)
 	if err == nil {
-		err = s.game.Move(move)
+		err = s.game.Move(move, nil)
 	}
 	if err != nil {
 		s.mu.Unlock()
@@ -422,7 +422,7 @@ func (s *Service) handleAgreeDraw(from wire.ParticipantID) error {
 		s.mu.Unlock()
 		return err
 	}
-	_ = s.game.Draw(notnil.DrawOffer)
+	_ = s.game.Draw(chesslib.DrawOffer)
 	s.drawnFrom = 0
 	s.mu.Unlock()
 	s.emitState()
@@ -447,7 +447,7 @@ func (s *Service) Restore(blob []byte) error {
 	if err != nil {
 		return fmt.Errorf("chess: restore: %w", err)
 	}
-	game := notnil.NewGame()
+	game := chesslib.NewGame()
 	if err := game.UnmarshalText([]byte(snap.PGN)); err != nil {
 		return fmt.Errorf("chess: restore PGN: %w", err)
 	}
@@ -493,8 +493,8 @@ func (s *Service) stateLocked() State {
 		LastUCI: s.lastUCI,
 		Playing: true,
 	}
-	if s.game.Outcome() == notnil.NoOutcome {
-		if s.game.Position().Turn() == notnil.White {
+	if s.game.Outcome() == chesslib.NoOutcome {
+		if s.game.Position().Turn() == chesslib.White {
 			st.TurnID = s.whiteID
 		} else {
 			st.TurnID = s.blackID
@@ -504,7 +504,7 @@ func (s *Service) stateLocked() State {
 }
 
 func (s *Service) checkTurnLocked(who wire.ParticipantID) error {
-	if s.game.Outcome() != notnil.NoOutcome {
+	if s.game.Outcome() != chesslib.NoOutcome {
 		return errors.New("chess: game is over")
 	}
 	color, err := s.colorOfLocked(who)
@@ -517,18 +517,18 @@ func (s *Service) checkTurnLocked(who wire.ParticipantID) error {
 	return nil
 }
 
-func (s *Service) colorOfLocked(who wire.ParticipantID) (notnil.Color, error) {
+func (s *Service) colorOfLocked(who wire.ParticipantID) (chesslib.Color, error) {
 	switch who {
 	case s.whiteID:
-		return notnil.White, nil
+		return chesslib.White, nil
 	case s.blackID:
-		return notnil.Black, nil
+		return chesslib.Black, nil
 	default:
-		return notnil.NoColor, ErrNotPlayer
+		return chesslib.NoColor, ErrNotPlayer
 	}
 }
 
-func positionHash(g *notnil.Game) []byte {
+func positionHash(g *chesslib.Game) []byte {
 	sum := sha256.Sum256([]byte(g.FEN()))
 	return sum[:8]
 }
