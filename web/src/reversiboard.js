@@ -28,9 +28,7 @@
       if (over()) {
         statusEl.textContent = g.outcome + score;
       } else {
-        const blackTurn = g.turnId === g.p1Id;
-        statusEl.textContent = (myTurn() ? "Your move" :
-          (isPlayer() ? "Opponent's move" : (blackTurn ? "Black to move" : "White to move"))) +
+        statusEl.textContent = (myTurn() ? "Your move" : ctx.name(g.turnId) + " to move") +
           score + (isPlayer() ? ` · you are ${g.p1Id === ctx.self() ? "⚫" : "⚪"}` : "");
       }
       $("reversi-resign").classList.toggle("hidden", !isPlayer() || over());

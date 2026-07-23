@@ -14,8 +14,16 @@
     self: 0,
     role: "", // host | player | spectator
     members: {},
+    names: {}, // id -> screen name (from the ctl roster)
     activeGame: null, // module id when a pane is open; null = picker
   };
+
+  // displayName returns a participant's screen name, "you" for self, or a
+  // "#id" fallback before a name is known.
+  function displayName(id) {
+    if (id === state.self) return "you";
+    return state.names[id] || ("#" + id);
+  }
 
   function show(name) {
     for (const [k, v] of Object.entries(views)) v.classList.toggle("hidden", k !== name);
@@ -40,6 +48,7 @@
     $, send, toast,
     self: () => state.self,
     role: () => state.role,
+    name: displayName, // game modules label opponents by screen name
   };
   const games = {}; // id -> instantiated module
   for (const [id, def] of Object.entries(window.GameModules || {})) {
@@ -144,7 +153,13 @@
     },
     roster(e) {
       state.members = e.members;
+      state.names = {};
+      for (const [id, n] of Object.entries(e.names || {})) state.names[Number(id)] = n;
       renderMembers();
+      // Names may have just arrived — refresh the open game's labels.
+      if (state.activeGame && games[state.activeGame]) {
+        games[state.activeGame].setVisible(true);
+      }
       // The host's lobby → table transition: someone arrived.
       if (state.role === "host" && Object.keys(e.members).length > 1) {
         show("table");
@@ -208,11 +223,13 @@
   function renderMembers() {
     const el = $("members");
     el.innerHTML = "";
-    const names = { host: "♔ host", player: "♟ player", spectator: "👁 kibitzer" };
-    for (const [id, role] of Object.entries(state.members)) {
+    const roleLabel = { host: "♔", player: "♟", spectator: "👁" };
+    for (const [idStr, role] of Object.entries(state.members)) {
+      const id = Number(idStr);
+      const label = state.names[id] || ("#" + id);
       const div = document.createElement("div");
       div.className = "member";
-      div.textContent = `${names[role] || role} #${id}` + (Number(id) === state.self ? " (you)" : "");
+      div.textContent = `${roleLabel[role] || ""} ${label}` + (id === state.self ? " (you)" : "");
       el.appendChild(div);
     }
   }
@@ -223,7 +240,7 @@
     div.className = "chat-msg" + (from === state.self ? " own" : "");
     const who = document.createElement("span");
     who.className = "who";
-    who.textContent = from === state.self ? "you" : `#${from}`;
+    who.textContent = displayName(from);
     div.appendChild(who);
     div.appendChild(document.createTextNode(" " + text));
     log.appendChild(div);
@@ -232,10 +249,19 @@
 
   // ---- user input -----------------------------------------------------------
 
+  // Screen name: remembered across visits, sent with create/join.
+  const nameInput = $("display-name");
+  nameInput.value = localStorage.getItem("kibitz.name") || "";
+  const myName = () => {
+    const n = nameInput.value.trim().slice(0, 24);
+    localStorage.setItem("kibitz.name", n);
+    return n;
+  };
+
   $("btn-create").addEventListener("click", () => {
     $("btn-create").disabled = true;
     $("home-status").textContent = "opening a table…";
-    send({ type: "create" });
+    send({ type: "create", name: myName() });
   });
 
   $("btn-join").addEventListener("click", joinFromInput);
@@ -244,7 +270,7 @@
   });
   function joinFromInput() {
     const phrase = $("join-phrase").value.trim();
-    if (phrase) send({ type: "join", phrase });
+    if (phrase) send({ type: "join", phrase, name: myName() });
   }
 
   $("btn-copy").addEventListener("click", async () => {

@@ -65,9 +65,7 @@
       if (over()) {
         statusEl.textContent = g.outcome;
       } else {
-        const dark = g.turnId === g.p1Id;
-        statusEl.textContent = (myTurn() ? "Your move" :
-          (isPlayer() ? "Opponent's move" : (dark ? "Dark to move" : "Light to move"))) +
+        statusEl.textContent = (myTurn() ? "Your move" : ctx.name(g.turnId) + " to move") +
           (isPlayer() ? ` · you are ${g.p1Id === ctx.self() ? "dark" : "light"}` : "");
       }
       $("checkers-resign").classList.toggle("hidden", !isPlayer() || over());

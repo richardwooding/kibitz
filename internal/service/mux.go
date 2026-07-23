@@ -12,7 +12,9 @@ import (
 type Mux struct {
 	client   *session.Client
 	services map[string]Service
+	ctl      *ctlService
 	events   chan any
+	cmds     chan func() // local actions run on the mux goroutine
 	lastSeq  map[seqKey]uint64
 }
 
@@ -50,9 +52,11 @@ func NewMux(c *session.Client, svcs ...Service) *Mux {
 		client:   c,
 		services: map[string]Service{},
 		events:   make(chan any, 256),
+		cmds:     make(chan func(), 8),
 		lastSeq:  map[seqKey]uint64{},
 	}
 	ctl := newCtl(m)
+	m.ctl = ctl
 	all := append([]Service{ctl}, svcs...)
 	ctx := Context{Send: c, Emit: m.emit, Self: c.Self(), HostID: c.HostID(), Host: c.Role() == session.RoleHost}
 	for _, s := range all {
@@ -61,6 +65,17 @@ func NewMux(c *session.Client, svcs ...Service) *Mux {
 	}
 	go m.run(ctl)
 	return m
+}
+
+// SetName sets the local participant's screen name and distributes it over
+// the encrypted ctl channel. Safe to call from any goroutine once the
+// session is keyed (right after NewMux): the work runs on the mux goroutine,
+// serialized with frame handling. A blank name is ignored (peers see "#id").
+func (m *Mux) SetName(name string) {
+	select {
+	case m.cmds <- func() { m.ctl.setName(name) }:
+	default: // mux gone or backed up; dropping a name update is harmless
+	}
 }
 
 // Events is the merged stream: SessionEvent, Desync, and every service's
@@ -77,7 +92,19 @@ func (m *Mux) run(ctl *ctlService) {
 		ctl.requestSnapshot()
 	}
 
-	for ev := range m.client.Events() {
+	events := m.client.Events()
+	for {
+		var ev session.Event
+		var ok bool
+		select {
+		case fn := <-m.cmds: // local action (e.g. SetName), on this goroutine
+			fn()
+			continue
+		case ev, ok = <-events:
+			if !ok {
+				return
+			}
+		}
 		switch e := ev.(type) {
 		case session.Frame:
 			m.handleFrame(e)

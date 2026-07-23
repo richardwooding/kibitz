@@ -30,8 +30,7 @@
       } else {
         const mine = g.turnId === ctx.self();
         const color = g.turnId === g.p1Id ? "🔴" : "🟡";
-        statusEl.textContent = mine ? `Your move ${color}` :
-          (isPlayer() ? `Opponent's move ${color}` : `${color} to move`);
+        statusEl.textContent = mine ? `Your move ${color}` : `${ctx.name(g.turnId)}'s move ${color}`;
         if (isPlayer()) {
           statusEl.textContent += ` · you are ${g.p1Id === ctx.self() ? "🔴" : "🟡"}`;
         }

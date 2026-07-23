@@ -50,6 +50,7 @@ type command struct {
 	Sq     int8      `json:"sq"`              // reversi square
 	Cell   uint8     `json:"cell"`            // battleship cell
 	Fleet  []uint8   `json:"fleet,omitempty"` // battleship placement
+	Name   string    `json:"name,omitempty"`  // screen name for create/join
 }
 
 type app struct {
@@ -93,8 +94,8 @@ func emitError(msg string) {
 
 // commands maps UI intents to actions. Handlers run on their own goroutine.
 var commands = map[string]func(command){
-	"create":     func(command) { create() },
-	"join":       func(c command) { join(c.Phrase) },
+	"create":     func(c command) { create(c.Name) },
+	"join":       func(c command) { join(c.Phrase, c.Name) },
 	"leave":      func(command) { leave() },
 	"game.start": func(c command) { startGame(c.Game) },
 
@@ -173,7 +174,7 @@ func shareURL(phrase string) string {
 	return fmt.Sprintf("%s//%s/#%s", loc.Get("protocol").String(), loc.Get("host").String(), phrase)
 }
 
-func create() {
+func create(name string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	client, phrase, err := session.Host(ctx, relayURL())
@@ -181,7 +182,7 @@ func create() {
 		emitError("couldn't start a table: " + err.Error())
 		return
 	}
-	start(client)
+	start(client, name)
 
 	url := shareURL(phrase)
 	qrB64 := ""
@@ -196,7 +197,7 @@ func create() {
 	})
 }
 
-func join(phrase string) {
+func join(phrase, name string) {
 	phrase = strings.TrimSpace(phrase)
 	if phrase == "" {
 		emitError("enter a code phrase")
@@ -215,7 +216,7 @@ func join(phrase string) {
 		emitError(msg)
 		return
 	}
-	start(client)
+	start(client, name)
 	emit("session.joined", map[string]any{
 		"self": uint32(client.Self()),
 		"role": roleName(client.Role()),
@@ -223,7 +224,7 @@ func join(phrase string) {
 }
 
 // start attaches services and begins pumping mux events to the UI.
-func start(client *session.Client) {
+func start(client *session.Client, name string) {
 	ch := chat.New()
 	cs := chess.New()
 	bg := backgammon.New()
@@ -232,6 +233,7 @@ func start(client *session.Client) {
 	rv := reversi.New()
 	bs := battleship.New()
 	mux := service.NewMux(client, ch, cs, bg, c4, ck, rv, bs)
+	mux.SetName(name) // no-op for a blank name; peers then see "#id"
 
 	current.mu.Lock()
 	if current.client != nil {
@@ -327,7 +329,11 @@ func emitRoster(e service.Roster) {
 	for id, role := range e.Members {
 		members[fmt.Sprint(uint32(id))] = roleName(role)
 	}
-	emit("roster", map[string]any{"members": members})
+	names := map[string]string{}
+	for id, n := range e.Names {
+		names[fmt.Sprint(uint32(id))] = n
+	}
+	emit("roster", map[string]any{"members": members, "names": names})
 }
 
 func emitChessState(e chess.State) {

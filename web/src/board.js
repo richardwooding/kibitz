@@ -152,9 +152,8 @@
           (g.outcome === "1-0" ? "White wins" : "Black wins");
         el.textContent = `${result} — ${g.method}`;
       } else {
-        const turnWhite = g.turnId === g.whiteId;
         el.textContent = (g.turnId === ctx.self() ? "Your move" :
-          (turnWhite ? "White to move" : "Black to move")) +
+          ctx.name(g.turnId) + " to move") +
           (isPlayer() ? "" : " (you're kibitzing)");
       }
       $("btn-resign").classList.toggle("hidden", !isPlayer() || over());

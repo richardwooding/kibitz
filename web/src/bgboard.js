@@ -191,7 +191,9 @@
       if (g.phase === "over") status = g.outcome;
       else if (g.phase === "rolling") status = myTurn() ? "Your roll" : "Waiting for opponent to roll";
       else if (g.phase === "handshake") status = "Rolling…";
-      else status = isPlayer() ? (myTurn() ? "Your move" : "Opponent to move") : "Kibitzing";
+      else if (myTurn()) status = "Your move";
+      else if (isPlayer()) status = ctx.name(g.turnId) + " to move";
+      else status = "Kibitzing";
       statusEl.textContent = `${status} · pips ⚪${g.pipsW} ⚫${g.pipsB}` +
         (isPlayer() ? ` · you are ${isWhite() ? "⚪" : "⚫"}` : "");
 

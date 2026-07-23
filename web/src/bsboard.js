@@ -165,7 +165,8 @@
 
       const oppSide = side >= 0 ? 1 - side : 1;
       const ownSide = side >= 0 ? side : 0;
-      $("bs-their-label").textContent = side >= 0 ? "Their waters" : "Player 2's board";
+      const oppId = side >= 0 ? (side === 0 ? g.p2Id : g.p1Id) : g.p2Id;
+      $("bs-their-label").textContent = side >= 0 ? `${ctx.name(oppId)}'s waters` : "Player 2's board";
       $("bs-own-label").textContent = side >= 0 ? "Your fleet" : "Player 1's board";
       const sunkTheirs = (g.sunk && g.sunk[oppSide]) || [];
       const sunkMine = (g.sunk && g.sunk[ownSide]) || [];
