@@ -216,19 +216,24 @@
         b.addEventListener("click", () => { placing = ship.id; hover = -1; render(); });
         shipsEl.appendChild(b);
       }
-      const preview = (placing && hover >= 0) ? footprint(placing, hover, orient) : null;
-      const previewSet = new Set(preview || []);
-      const previewBad = placing && hover >= 0 && !preview;
-      grid($("bs-place-grid"), (cell) => {
-        if (previewSet.has(cell)) return "preview";
-        if (previewBad && cell === hover) return "preview-bad";
-        return fleet[cell] ? "ship" : "unknown placeable";
-      }, onPlaceCell, (cell) => {
-        if (!placing) return;
-        hover = cell;
-        renderPlacement();
-      });
+      // Build the grid ONCE. The hover preview updates classes in place
+      // (never rebuilds) — a rebuild on mouseenter would destroy the cell a
+      // touch tap is landing on, so taps could never place a ship.
+      grid($("bs-place-grid"), (cell) => (fleet[cell] ? "ship" : "unknown placeable"),
+        onPlaceCell, (cell) => { hover = cell; applyPreview(); });
+      applyPreview();
       $("bs-confirm").disabled = placed.size !== 5;
+    }
+
+    // applyPreview toggles the footprint highlight on the existing placement
+    // cells without rebuilding the grid.
+    function applyPreview() {
+      const cells = $("bs-place-grid").children;
+      for (const c of cells) c.classList.remove("preview", "preview-bad");
+      if (!placing || hover < 0) return;
+      const fp = footprint(placing, hover, orient);
+      if (fp) fp.forEach((c) => cells[c] && cells[c].classList.add("preview"));
+      else if (cells[hover]) cells[hover].classList.add("preview-bad");
     }
 
     // ---- controls -----------------------------------------------------------

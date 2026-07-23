@@ -247,24 +247,27 @@ func start(client *session.Client) {
 // startGame launches (or rematches) a game by service ID.
 func startGame(id string) {
 	current.mu.Lock()
+	// Keys are the UI-facing game ids (the same prefixes used in the
+	// "<id>.state" events), NOT the Go service IDs — they differ for
+	// backgammon ("bg" vs "backgammon").
 	starters := map[string]func() error{}
 	if current.chess != nil {
-		starters[chess.ID] = current.chess.Start
+		starters["chess"] = current.chess.Start
 	}
 	if current.bg != nil {
-		starters[backgammon.ID] = current.bg.Start
+		starters["bg"] = current.bg.Start
 	}
 	if current.c4 != nil {
-		starters[connect4.ID] = current.c4.Start
+		starters["connect4"] = current.c4.Start
 	}
 	if current.ck != nil {
-		starters[checkers.ID] = current.ck.Start
+		starters["checkers"] = current.ck.Start
 	}
 	if current.rv != nil {
-		starters[reversi.ID] = current.rv.Start
+		starters["reversi"] = current.rv.Start
 	}
 	if current.bs != nil {
-		starters[battleship.ID] = current.bs.Start
+		starters["battleship"] = current.bs.Start
 	}
 	startFn, ok := starters[id]
 	current.mu.Unlock()
