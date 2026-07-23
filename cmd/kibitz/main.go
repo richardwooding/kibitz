@@ -1,0 +1,50 @@
+// Command kibitz is the relay server. It serves the embedded web client at /
+// and (from M1) the WebSocket relay at /ws. The relay only ever forwards
+// opaque encrypted frames between session participants — it can never read
+// service traffic (see docs/THREAT-MODEL.md).
+package main
+
+import (
+	"flag"
+	"fmt"
+	"io/fs"
+	"log"
+	"net/http"
+	"os"
+
+	"github.com/richardwooding/kibitz/web"
+)
+
+// version is stamped by goreleaser via -ldflags "-X main.version=...".
+var version = "dev"
+
+func main() {
+	listen := flag.String("listen", ":8080", "address to listen on")
+	maxSessions := flag.Int("max-sessions", 1000, "maximum concurrent sessions")
+	showVersion := flag.Bool("version", false, "print version and exit")
+	flag.Parse()
+
+	if *showVersion {
+		fmt.Println("kibitz", version)
+		os.Exit(0)
+	}
+	_ = *maxSessions // wired to the relay registry in M1-4
+
+	dist, err := fs.Sub(web.Dist, "dist")
+	if err != nil {
+		log.Fatalf("embedded web client: %v", err)
+	}
+
+	mux := http.NewServeMux()
+	mux.Handle("/", http.FileServerFS(dist))
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		fmt.Fprintln(w, "ok")
+	})
+	mux.HandleFunc("/ws", func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "relay not implemented yet", http.StatusNotImplemented)
+	})
+
+	log.Printf("kibitz %s listening on %s", version, *listen)
+	log.Fatal(http.ListenAndServe(*listen, mux)) //nolint:gosec // timeouts configured in M1-11 hardening
+}

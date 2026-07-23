@@ -1,0 +1,44 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - run: go build ./...
+      - run: go test -race -timeout 300s ./...
+      - run: go vet ./...
+      - name: WASM compile check
+        run: GOOS=js GOARCH=wasm go build -o /dev/null ./cmd/kibitz-wasm
+      - name: Full web build
+        run: make wasm && go build ./cmd/kibitz
+
+  # Complexity ratchet: fails a PR when a function it CHANGES exceeds the
+  # cognitive threshold. Existing hotspots only fail once touched.
+  complexity:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # the diff gate needs the merge-base
+      - uses: richardwooding/codemetrics@v0.12.2
+        with:
+          max-cognitive: "15"
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
