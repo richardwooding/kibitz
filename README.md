@@ -33,7 +33,7 @@ server is blind. Details: [docs/THREAT-MODEL.md](docs/THREAT-MODEL.md).
 
 ## Hosted instance
 
-A public relay runs at **https://kibitz.fly.dev** — open it, start a table,
+A public relay runs at **https://kibitz-play.fly.dev** — open it, start a table,
 share the phrase. (Remember: the relay is blind either way; you never have to
 trust it.)
 

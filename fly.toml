@@ -4,7 +4,7 @@
 # ONE always-on machine. Never enable auto-stop or scale past count 1;
 # both would kill or split live sessions.
 
-app = "kibitz"
+app = "kibitz-play" # "kibitz" was taken on Fly
 primary_region = "jnb"
 
 [build]
