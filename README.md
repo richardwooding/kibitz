@@ -18,17 +18,30 @@ first, backgammon next) instead of file transfer.
 
 ## Status
 
-Early days — the scaffold is up, the protocol is being built. See milestones
-in the repo issues.
+**v0.1 — playable.** Sessions, encrypted chat, and full chess (moves, legal-
+move hints, resign, draws, spectators, late-join catch-up) work end to end.
+Backgammon is next.
+
+## How it works
+
+The relay forwards frames it can never read. The code phrase seeds a PAKE
+handshake (as in croc); the host wraps a session group key to each joiner;
+all chat and moves are XChaCha20-Poly1305 envelopes. Games are
+both-sides-validate: every client runs the same rules engine and checks a
+position hash on every move — there's no server to cheat past, because the
+server is blind. Details: [docs/THREAT-MODEL.md](docs/THREAT-MODEL.md).
 
 ## Self-hosting
+
+Grab a release binary (or `go install github.com/richardwooding/kibitz/cmd/kibitz@latest`) and:
 
 ```sh
 kibitz --listen :8080
 ```
 
 Put TLS in front with your reverse proxy of choice. That's it — the web UI,
-relay, and everything else is in the one binary.
+relay, and everything else is in the one binary. Useful flags:
+`--max-sessions` (default 1000), `--version`.
 
 ## Development
 

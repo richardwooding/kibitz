@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"golang.org/x/time/rate"
 
 	"github.com/richardwooding/kibitz/internal/wire"
 )
@@ -252,6 +253,23 @@ func TestMaxAgeSweep(t *testing.T) {
 	sc := expect[wire.SessionClosed](host, wire.MsgSessionClosed)
 	if sc.Reason != "session expired" {
 		t.Fatalf("reason %q", sc.Reason)
+	}
+}
+
+func TestConnRateLimit(t *testing.T) {
+	srv := newServer(t, Options{ConnRate: rate.Every(time.Hour), ConnBurst: 2})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	url := "ws" + strings.TrimPrefix(srv.URL, "http")
+	for i := 0; i < 2; i++ {
+		conn, _, err := websocket.Dial(ctx, url, nil)
+		if err != nil {
+			t.Fatalf("dial %d within burst: %v", i, err)
+		}
+		_ = conn.CloseNow()
+	}
+	if _, _, err := websocket.Dial(ctx, url, nil); err == nil {
+		t.Fatal("third dial exceeded burst but was accepted")
 	}
 }
 

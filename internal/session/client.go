@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/coder/websocket"
 
@@ -92,6 +93,7 @@ func Host(ctx context.Context, relayURL string) (*Client, string, error) {
 		return nil, "", err
 	}
 	go c.readLoop()
+	go c.pingLoop()
 	return c, p, nil
 }
 
@@ -108,7 +110,23 @@ func Join(ctx context.Context, relayURL, phraseText string) (*Client, error) {
 		return nil, err
 	}
 	go c.readLoop()
+	go c.pingLoop()
 	return c, nil
+}
+
+// pingLoop heartbeats so the relay's idle timeout (90s) never fires on a
+// healthy connection and NAT mappings stay warm. It exits when writing fails,
+// which happens exactly when the connection dies.
+func (c *Client) pingLoop() {
+	t := time.NewTicker(30 * time.Second)
+	defer t.Stop()
+	var nonce uint32
+	for range t.C {
+		nonce++
+		if c.writeFrame(wire.MsgPing, wire.Ping{Nonce: nonce}) != nil {
+			return
+		}
+	}
 }
 
 func dial(ctx context.Context, relayURL, phraseText string) (*Client, error) {

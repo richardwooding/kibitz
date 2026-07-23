@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/richardwooding/kibitz/internal/relay"
 	"github.com/richardwooding/kibitz/web"
@@ -44,6 +45,13 @@ func main() {
 	defer relaySrv.Close()
 	mux.Handle("/ws", relaySrv)
 
+	srv := &http.Server{
+		Addr:              *listen,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		// No WriteTimeout/ReadTimeout: /ws connections are long-lived; the
+		// relay enforces its own per-frame idle deadline.
+	}
 	log.Printf("kibitz %s listening on %s", version, *listen)
-	log.Fatal(http.ListenAndServe(*listen, mux)) //nolint:gosec // timeouts configured in M1-11 hardening
+	log.Fatal(srv.ListenAndServe())
 }

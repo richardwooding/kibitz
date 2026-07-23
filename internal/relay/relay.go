@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"golang.org/x/time/rate"
 
 	"github.com/richardwooding/kibitz/internal/wire"
 )
@@ -22,6 +23,9 @@ type Options struct {
 	MaxParticipants int           // hard per-session cap; client requests are clamped to it (default 16)
 	MaxAge          time.Duration // absolute session lifetime (default 24h)
 	SweepEvery      time.Duration // sweeper interval (default 1m)
+	IdleTimeout     time.Duration // per-connection read deadline; clients ping to stay alive (default 90s)
+	ConnRate        rate.Limit    // per-IP connection attempts (default 5/min)
+	ConnBurst       int           // per-IP burst (default 5)
 	Logger          *slog.Logger
 }
 
@@ -38,6 +42,15 @@ func (o *Options) defaults() {
 	if o.SweepEvery <= 0 {
 		o.SweepEvery = time.Minute
 	}
+	if o.IdleTimeout <= 0 {
+		o.IdleTimeout = 90 * time.Second
+	}
+	if o.ConnRate <= 0 {
+		o.ConnRate = rate.Every(12 * time.Second) // 5/min
+	}
+	if o.ConnBurst <= 0 {
+		o.ConnBurst = 5
+	}
 	if o.Logger == nil {
 		o.Logger = slog.Default()
 	}
@@ -46,17 +59,19 @@ func (o *Options) defaults() {
 // Server is an http.Handler that upgrades to WebSocket and speaks the wire
 // protocol. Mount it at /ws.
 type Server struct {
-	opts Options
-	reg  *registry
-	stop chan struct{}
+	opts    Options
+	reg     *registry
+	limiter *ipLimiter
+	stop    chan struct{}
 }
 
 func New(opts Options) *Server {
 	opts.defaults()
 	s := &Server{
-		opts: opts,
-		reg:  newRegistry(opts.MaxSessions, opts.MaxAge),
-		stop: make(chan struct{}),
+		opts:    opts,
+		reg:     newRegistry(opts.MaxSessions, opts.MaxAge),
+		limiter: newIPLimiter(opts.ConnRate, opts.ConnBurst),
+		stop:    make(chan struct{}),
 	}
 	go s.reg.sweepLoop(opts.SweepEvery, s.stop)
 	return s
@@ -67,6 +82,10 @@ func New(opts Options) *Server {
 func (s *Server) Close() { close(s.stop) }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if !s.limiter.allow(r.RemoteAddr) {
+		http.Error(w, "rate limited", http.StatusTooManyRequests)
+		return
+	}
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		// The web client may be served from a different origin than a
 		// self-hosted relay; session security comes from PAKE, not Origin.
@@ -120,7 +139,11 @@ func (s *Server) handle(ctx context.Context, conn *websocket.Conn) {
 
 func (s *Server) readLoop(ctx context.Context, conn *websocket.Conn, h *hub, id wire.ParticipantID, out chan []byte) {
 	for {
-		typ, raw, err := readFrame(ctx, conn)
+		// Idle disconnect: clients heartbeat with MsgPing well inside this
+		// window; a silent connection is a dead one.
+		rctx, rcancel := context.WithTimeout(ctx, s.opts.IdleTimeout)
+		typ, raw, err := readFrame(rctx, conn)
+		rcancel()
 		if err != nil {
 			return
 		}
