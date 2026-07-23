@@ -9,11 +9,18 @@ sessions. A host gets a code phrase (`lion-42-maple`) plus a share link and QR;
 others join with it. A relay server (hosted or self-hosted, one binary)
 forwards frames it can never read — the phrase seeds a PAKE handshake and all
 service traffic is encrypted client-side. Layered services run over one
-session: chat plus six games — chess (notnil/chess), backgammon (fairdice
-commit-reveal), connect4, checkers, reversi, battleship (shipcommit per-cell
-commitments). Games start on demand from a picker (service Start() /
-startReq; internal/service/game holds shared seat/lifecycle logic); rematch
-swaps seats. A kibitzer is someone who watches a chess game and chats over
+session: chat plus six games — chess (corentings/chess), backgammon,
+connect4, checkers, reversi, battleship (shipcommit per-cell commitments).
+Games start on demand from a picker (service Start() / startReq;
+internal/service/game holds shared seat/lifecycle logic); rematch swaps seats.
+
+**Game rules engines and fair dice are extracted into standalone modules**
+(richardwooding/{backgammon,checkers,reversi,fairdice}); the kibitz service
+packages consume them and re-export the engine API via type/const/var
+aliases so `internal/service/<game>/service.go`, the WASM bridge, and the
+integration tests reference the local package name. Engine changes happen
+upstream in those repos, not here. connect4's engine stays in-tree (too
+small to extract); chess uses the external corentings/chess/v2. A kibitzer is someone who watches a chess game and chats over
 it — hence the name.
 
 ## Commands

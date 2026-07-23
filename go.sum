@@ -6,6 +6,14 @@ github.com/corentings/chess/v2 v2.5.1 h1:Ps7jIixhfJrhlQnRX5+qjnY/bKxZZjR7DXxiXfd
 github.com/corentings/chess/v2 v2.5.1/go.mod h1:UPFmUPTLiJN9qOux6aNt+NwEPuyId0+REsKMmmtYXpU=
 github.com/fxamacker/cbor/v2 v2.9.2 h1:X4Ksno9+x3cz0TZv69ec1hxP/+tymuR8PXQJyDwfh78=
 github.com/fxamacker/cbor/v2 v2.9.2/go.mod h1:vM4b+DJCtHn+zz7h3FFp/hDAI9WNWCsZj23V5ytsSxQ=
+github.com/richardwooding/backgammon v0.1.0 h1:vVcRVs0LZt+fD/VlQVg2X3rkl/DPFQkEO5dUHBhP0N4=
+github.com/richardwooding/backgammon v0.1.0/go.mod h1:HS+TvFk4UNLvQojGCW9XPPg6BWrZLjxfNkaFK6QubWQ=
+github.com/richardwooding/checkers v0.1.0 h1:w14zy6jTzPn5/kXetcMt2tqTzIiQhHLBQWF7Q0XR4II=
+github.com/richardwooding/checkers v0.1.0/go.mod h1:8wzEVRBEk95E3fLZxkGTQBv+vYHE9/V6aHcYU0aywY4=
+github.com/richardwooding/fairdice v0.1.0 h1:kADyyN2WH7kTCo54xp2l9Mu3tiC66qYH+HwZrs4A1uU=
+github.com/richardwooding/fairdice v0.1.0/go.mod h1:GFDoQS8/90n2BZVoJ6UnJG/D2V3ScCrHLCU2BmZUkm0=
+github.com/richardwooding/reversi v0.1.0 h1:DkjlCMNo98Jd98Eytn3wPex0aF+3ns3P8wiY7zag1Oo=
+github.com/richardwooding/reversi v0.1.0/go.mod h1:QneiokZxcVUlcsGsrkEubKhHSZMuI8fLbyK3mLzwVPY=
 github.com/schollz/pake/v3 v3.1.1 h1:lyoU5uNQ3thfjEzrahgxWWBm6+pbI1F2KAZ3gs6LIV8=
 github.com/schollz/pake/v3 v3.1.1/go.mod h1:420+m3AakXcS0n7Uwc7eRs2CosQ2YfE/vKcIkilvqZc=
 github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e h1:MRM5ITcdelLK2j1vwZ3Je0FKVCfqOLp5zO6trqMLYs0=

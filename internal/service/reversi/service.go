@@ -9,10 +9,25 @@ import (
 	"fmt"
 	"sync"
 
+	rvengine "github.com/richardwooding/reversi"
+
 	"github.com/richardwooding/kibitz/internal/service"
 	"github.com/richardwooding/kibitz/internal/service/game"
 	"github.com/richardwooding/kibitz/internal/session"
 	"github.com/richardwooding/kibitz/internal/wire"
+)
+
+// The reversi rules engine lives in its own module
+// (github.com/richardwooding/reversi); re-export the API this service uses.
+type Board = rvengine.Board
+
+var (
+	Start           = rvengine.Start
+	LegalSquares    = rvengine.LegalSquares
+	Place           = rvengine.Place
+	Advance         = rvengine.Advance
+	Counts          = rvengine.Counts
+	ErrIllegalPlace = rvengine.ErrIllegalPlace
 )
 
 const ID = "reversi"

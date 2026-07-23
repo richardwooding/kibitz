@@ -20,11 +20,36 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/richardwooding/kibitz/internal/fairdice"
+	bgengine "github.com/richardwooding/backgammon"
+	"github.com/richardwooding/fairdice"
+
 	"github.com/richardwooding/kibitz/internal/service"
 	"github.com/richardwooding/kibitz/internal/service/game"
 	"github.com/richardwooding/kibitz/internal/session"
 	"github.com/richardwooding/kibitz/internal/wire"
+)
+
+// The backgammon rules engine lives in its own module
+// (github.com/richardwooding/backgammon); re-export the API this service and
+// the WASM bridge use so both compile against the local package name.
+type (
+	Board  = bgengine.Board
+	Color  = bgengine.Color
+	Hop    = bgengine.Hop
+	Result = bgengine.Result
+)
+
+const (
+	White = bgengine.White
+	Black = bgengine.Black
+)
+
+var (
+	Start          = bgengine.Start
+	LegalTurns     = bgengine.LegalTurns
+	Validate       = bgengine.Validate
+	ApplyTurn      = bgengine.ApplyTurn
+	ErrIllegalTurn = bgengine.ErrIllegalTurn
 )
 
 const ID = "backgammon"

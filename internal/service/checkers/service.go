@@ -10,10 +10,34 @@ import (
 	"fmt"
 	"sync"
 
+	ckengine "github.com/richardwooding/checkers"
+
 	"github.com/richardwooding/kibitz/internal/service"
 	"github.com/richardwooding/kibitz/internal/service/game"
 	"github.com/richardwooding/kibitz/internal/session"
 	"github.com/richardwooding/kibitz/internal/wire"
+)
+
+// The checkers rules engine lives in its own module
+// (github.com/richardwooding/checkers); re-export the API this service uses.
+type (
+	Board = ckengine.Board
+	Side  = ckengine.Side
+	Move  = ckengine.Move
+)
+
+const (
+	Black = ckengine.Black
+	White = ckengine.White
+)
+
+var (
+	Start          = ckengine.Start
+	LegalMoves     = ckengine.LegalMoves
+	Validate       = ckengine.Validate
+	Apply          = ckengine.Apply
+	Winner         = ckengine.Winner
+	ErrIllegalMove = ckengine.ErrIllegalMove
 )
 
 const ID = "checkers"
