@@ -534,6 +534,21 @@ button.back { margin-bottom: 0.7rem; }
   .win-banner { transition: opacity 0.2s; }
 }
 
+/* version badge — faint, fixed, on every screen; brightens on hover */
+.version-badge {
+  position: fixed;
+  bottom: 0.35rem;
+  right: 0.55rem;
+  z-index: 40;
+  font-size: 0.68rem;
+  font-family: ui-monospace, monospace;
+  color: var(--muted);
+  opacity: 0.45;
+  text-decoration: none;
+  pointer-events: auto;
+}
+.version-badge:hover { opacity: 0.9; }
+
 /* toast */
 .toast {
   position: fixed;

@@ -21,6 +21,17 @@ import (
 // version is stamped by goreleaser via -ldflags "-X main.version=...".
 var version = "dev"
 
+// displayVersion is what the UI shows: "dev" as-is, otherwise "vX.Y.Z".
+func displayVersion() string {
+	if version == "dev" || version == "" {
+		return "dev"
+	}
+	if strings.HasPrefix(version, "v") {
+		return version
+	}
+	return "v" + version
+}
+
 func main() {
 	listen := flag.String("listen", ":8080", "address to listen on")
 	maxSessions := flag.Int("max-sessions", 1000, "maximum concurrent sessions")
@@ -56,6 +67,12 @@ func main() {
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = fmt.Fprintln(w, "ok")
+	})
+	// The web client fetches this to show its version badge. Return the
+	// display form: "dev" for local builds, else "vX.Y.Z".
+	mux.HandleFunc("/version", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = fmt.Fprint(w, displayVersion())
 	})
 	relaySrv := relay.New(relay.Options{MaxSessions: *maxSessions})
 	defer relaySrv.Close()

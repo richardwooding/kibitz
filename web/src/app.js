@@ -332,6 +332,19 @@
     }
   });
 
+  // ---- version badge (all screens) -----------------------------------------
+
+  fetch("version")
+    .then((r) => (r.ok ? r.text() : Promise.reject()))
+    .then((v) => {
+      v = v.trim();
+      if (!v) return;
+      const el = $("version-badge");
+      el.textContent = v;
+      el.classList.remove("hidden");
+    })
+    .catch(() => {}); // no relay (e.g. opened as a file) → leave hidden
+
   // ---- boot the core --------------------------------------------------------
 
   (async () => {
