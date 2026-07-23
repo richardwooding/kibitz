@@ -217,7 +217,7 @@ func (s *Server) hello(ctx context.Context, conn *websocket.Conn, cancel context
 
 	out := make(chan []byte, sendBuffer)
 	reply := make(chan joinReply, 1)
-	if !h.send(joinCmd{out: out, kick: cancel, reply: reply}) {
+	if !h.send(joinCmd{out: out, kick: cancel, isCreate: typ == wire.MsgCreateSession, reply: reply}) {
 		writeFrame(ctx, conn, wire.MsgError, wire.Error{Code: wire.ErrCodeSessionNotFound, Msg: "session closed"})
 		return nil, 0, nil, false
 	}
@@ -226,12 +226,8 @@ func (s *Server) hello(ctx context.Context, conn *websocket.Conn, cancel context
 		writeFrame(ctx, conn, wire.MsgError, wire.Error{Code: jr.errC, Msg: jr.errS})
 		return nil, 0, nil, false
 	}
-
-	if typ == wire.MsgCreateSession {
-		queueFrame(out, wire.MsgSessionCreated, wire.SessionCreated{ParticipantID: jr.id})
-	} else {
-		queueFrame(out, wire.MsgJoinResult, wire.JoinResult{OK: true, ParticipantID: jr.id, Peers: jr.peers, HostID: hostID})
-	}
+	// The hub already queued SessionCreated/JoinResult into out (see
+	// handleJoin — ordering against broadcasts demands it).
 	return h, jr.id, out, true
 }
 

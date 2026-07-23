@@ -34,17 +34,17 @@ type client struct {
 const sendBuffer = 64
 
 type joinCmd struct {
-	out   chan []byte
-	kick  func()
-	reply chan joinReply
+	out      chan []byte
+	kick     func()
+	isCreate bool // reply with SessionCreated instead of JoinResult
+	reply    chan joinReply
 }
 
 type joinReply struct {
-	ok    bool
-	errC  uint16
-	errS  string
-	id    wire.ParticipantID
-	peers []wire.ParticipantID
+	ok   bool
+	errC uint16
+	errS string
+	id   wire.ParticipantID
 }
 
 type leaveCmd struct{ id wire.ParticipantID }
@@ -109,8 +109,26 @@ func (h *hub) handleJoin(cmd joinCmd) {
 	for pid := range h.clients {
 		peers = append(peers, pid)
 	}
+
+	// The hello reply MUST be queued here, atomically with registration:
+	// once the client is in h.clients, the very next routed broadcast lands
+	// in its out channel — if the connection handler queued the reply
+	// instead, that broadcast could beat the JoinResult onto the wire.
+	var frame []byte
+	var err error
+	if cmd.isCreate {
+		frame, err = wire.Encode(wire.MsgSessionCreated, wire.SessionCreated{ParticipantID: id})
+	} else {
+		frame, err = wire.Encode(wire.MsgJoinResult, wire.JoinResult{OK: true, ParticipantID: id, Peers: peers, HostID: hostID})
+	}
+	if err != nil {
+		cmd.reply <- joinReply{errC: wire.ErrCodeBadFrame, errS: "encode reply"}
+		return
+	}
+	cmd.out <- frame // fresh buffered channel: never blocks
+
 	h.clients[id] = &client{id: id, out: cmd.out, kick: cmd.kick}
-	cmd.reply <- joinReply{ok: true, id: id, peers: peers}
+	cmd.reply <- joinReply{ok: true, id: id}
 	h.broadcastFrame(wire.MsgParticipantJoined, wire.ParticipantJoined{ParticipantID: id}, id)
 }
 

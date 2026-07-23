@@ -14,23 +14,16 @@ func (c *Client) hostHello(ctx context.Context) error {
 	if err := c.writeFrame(wire.MsgCreateSession, wire.CreateSession{SessionID: c.sid}); err != nil {
 		return err
 	}
-	typ, raw, err := c.readFrame(ctx)
+	raw, err := c.awaitReply(ctx, wire.MsgSessionCreated)
 	if err != nil {
 		return err
 	}
-	switch typ {
-	case wire.MsgSessionCreated:
-		sc, err := wire.Body[wire.SessionCreated](raw)
-		if err != nil {
-			return err
-		}
-		c.self = sc.ParticipantID
-		c.hostID = sc.ParticipantID
-	case wire.MsgError:
-		return relayError(raw)
-	default:
-		return fmt.Errorf("session: unexpected reply %v to create", typ)
+	sc, err := wire.Body[wire.SessionCreated](raw)
+	if err != nil {
+		return err
 	}
+	c.self = sc.ParticipantID
+	c.hostID = sc.ParticipantID
 
 	key, err := crypto.NewGroupKey()
 	if err != nil {
@@ -48,26 +41,19 @@ func (c *Client) joinHello(ctx context.Context) error {
 	if err := c.writeFrame(wire.MsgJoinSession, wire.JoinSession{SessionID: c.sid}); err != nil {
 		return err
 	}
-	typ, raw, err := c.readFrame(ctx)
+	raw, err := c.awaitReply(ctx, wire.MsgJoinResult)
 	if err != nil {
 		return err
 	}
-	switch typ {
-	case wire.MsgJoinResult:
-		jr, err := wire.Body[wire.JoinResult](raw)
-		if err != nil {
-			return err
-		}
-		if !jr.OK {
-			return fmt.Errorf("session: join refused: %s", jr.Err)
-		}
-		c.self = jr.ParticipantID
-		c.hostID = jr.HostID
-	case wire.MsgError:
-		return relayError(raw)
-	default:
-		return fmt.Errorf("session: unexpected reply %v to join", typ)
+	jr, err := wire.Body[wire.JoinResult](raw)
+	if err != nil {
+		return err
 	}
+	if !jr.OK {
+		return fmt.Errorf("session: join refused: %s", jr.Err)
+	}
+	c.self = jr.ParticipantID
+	c.hostID = jr.HostID
 
 	j, err := crypto.NewJoiner(c.phraseC)
 	if err != nil {
@@ -135,6 +121,28 @@ func (c *Client) joinHello(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// awaitReply reads until the wanted hello reply arrives, returning its raw
+// body. Session traffic that races ahead of the reply (undecryptable this
+// early; the ctl snapshot catches us up) is skipped; relay errors surface.
+func (c *Client) awaitReply(ctx context.Context, want wire.MsgType) ([]byte, error) {
+	for {
+		typ, raw, err := c.readFrame(ctx)
+		if err != nil {
+			return nil, err
+		}
+		switch typ {
+		case want:
+			return raw, nil
+		case wire.MsgError:
+			return nil, relayError(raw)
+		case wire.MsgBroadcast, wire.MsgDirect, wire.MsgParticipantJoined, wire.MsgParticipantLeft:
+			continue
+		default:
+			return nil, fmt.Errorf("session: unexpected reply %v awaiting %v", typ, want)
+		}
+	}
 }
 
 // handleHandshakeDirect is the host side: a Pake1 from a joiner triggers the
