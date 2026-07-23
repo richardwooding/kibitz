@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/richardwooding/kibitz/internal/relay"
 	"github.com/richardwooding/kibitz/web"
 )
 
@@ -28,8 +29,6 @@ func main() {
 		fmt.Println("kibitz", version)
 		os.Exit(0)
 	}
-	_ = *maxSessions // wired to the relay registry in M1-4
-
 	dist, err := fs.Sub(web.Dist, "dist")
 	if err != nil {
 		log.Fatalf("embedded web client: %v", err)
@@ -41,9 +40,9 @@ func main() {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		fmt.Fprintln(w, "ok")
 	})
-	mux.HandleFunc("/ws", func(w http.ResponseWriter, _ *http.Request) {
-		http.Error(w, "relay not implemented yet", http.StatusNotImplemented)
-	})
+	relaySrv := relay.New(relay.Options{MaxSessions: *maxSessions})
+	defer relaySrv.Close()
+	mux.Handle("/ws", relaySrv)
 
 	log.Printf("kibitz %s listening on %s", version, *listen)
 	log.Fatal(http.ListenAndServe(*listen, mux)) //nolint:gosec // timeouts configured in M1-11 hardening
