@@ -25,6 +25,33 @@
     return state.names[id] || ("#" + id);
   }
 
+  // seatedPlayers returns the two players (host + player roles), ascending;
+  // spectators excluded. The pair is the same across all games at the table.
+  function seatedPlayers() {
+    const ids = [];
+    for (const [idStr, role] of Object.entries(state.members)) {
+      if (role === "host" || role === "player") ids.push(Number(idStr));
+    }
+    return ids.sort((a, b) => a - b);
+  }
+
+  // matchupText is "you vs Ada" (when you're a player) or "Ada vs Bo".
+  function matchupText() {
+    const ps = seatedPlayers();
+    if (ps.length < 2) return "";
+    if (ps.includes(state.self)) {
+      return "you vs " + displayName(ps.find((id) => id !== state.self));
+    }
+    return displayName(ps[0]) + " vs " + displayName(ps[1]);
+  }
+
+  function renderLobbyName() {
+    const n = state.names[state.self] || document.getElementById("display-name").value.trim();
+    $("lobby-you").textContent = n
+      ? `You're hosting as ${n}.`
+      : "You're hosting anonymously — set a name on the home screen next time.";
+  }
+
   function show(name) {
     for (const [k, v] of Object.entries(views)) v.classList.toggle("hidden", k !== name);
   }
@@ -104,6 +131,16 @@
         if (canStart) card.appendChild(actionButton("+ Start", id));
       }
       card.appendChild(badge);
+      // Who's playing (live/finished games) — same pair across the table.
+      if (info.status === "live" || info.status === "over") {
+        const vs = matchupText();
+        if (vs) {
+          const m = document.createElement("div");
+          m.className = "game-matchup";
+          m.textContent = vs;
+          card.appendChild(m);
+        }
+      }
       el.appendChild(card);
     }
   }
@@ -130,7 +167,7 @@
       const phrase = decodeURIComponent(location.hash.slice(1));
       if (phrase) {
         $("home-status").textContent = `joining ${phrase}…`;
-        send({ type: "join", phrase });
+        send({ type: "join", phrase, name: myName() });
       }
     },
     "session.created"(e) {
@@ -139,6 +176,7 @@
       $("lobby-phrase").textContent = e.phrase;
       $("lobby-url").value = e.url;
       if (e.qr) $("lobby-qr").src = "data:image/png;base64," + e.qr;
+      renderLobbyName();
       show("lobby");
     },
     "session.joined"(e) {
@@ -156,6 +194,7 @@
       state.names = {};
       for (const [id, n] of Object.entries(e.names || {})) state.names[Number(id)] = n;
       renderMembers();
+      renderLobbyName(); // no-op visually unless the lobby is showing
       // Names may have just arrived — refresh the open game's labels.
       if (state.activeGame && games[state.activeGame]) {
         games[state.activeGame].setVisible(true);

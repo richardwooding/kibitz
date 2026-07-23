@@ -150,6 +150,7 @@ input[type="text"] {
 .game-title { font-weight: 700; font-size: 1.1rem; }
 .game-badge { font-size: 0.8rem; color: var(--muted); }
 .game-badge.live { color: var(--accent); font-weight: 600; }
+.game-matchup { font-size: 0.78rem; color: var(--muted); }
 .start-btn {
   font-size: 0.85rem;
   padding: 0.35rem 0.8rem;
