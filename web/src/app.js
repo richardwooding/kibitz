@@ -111,7 +111,14 @@
       card.className = "game-card";
       const title = document.createElement("div");
       title.className = "game-title";
-      title.textContent = mod.label;
+      // Split "🔴 Connect Four" into a big icon + the name so the glyph is legible.
+      const sp = mod.label.indexOf(" ");
+      const iconEl = document.createElement("span");
+      iconEl.className = "game-icon";
+      iconEl.textContent = sp > 0 ? mod.label.slice(0, sp) : mod.label;
+      const nameEl = document.createElement("span");
+      nameEl.textContent = sp > 0 ? mod.label.slice(sp + 1) : "";
+      title.append(iconEl, nameEl);
       card.appendChild(title);
 
       const info = mod.card();
@@ -272,12 +279,17 @@
     const el = $("members");
     el.innerHTML = "";
     const roleLabel = { host: "♔", player: "♟", spectator: "👁" };
+    const roleName = { host: "host", player: "player", spectator: "spectator" };
     for (const [idStr, role] of Object.entries(state.members)) {
       const id = Number(idStr);
       const label = state.names[id] || ("#" + id);
       const div = document.createElement("div");
       div.className = "member";
-      div.textContent = `${roleLabel[role] || ""} ${label}` + (id === state.self ? " (you)" : "");
+      const icon = document.createElement("span");
+      icon.className = "role-icon";
+      icon.textContent = roleLabel[role] || "";
+      icon.title = roleName[role] || role;
+      div.append(icon, document.createTextNode(label + (id === state.self ? " (you)" : "")));
       el.appendChild(div);
     }
   }

@@ -190,7 +190,8 @@ input[type="text"] {
 }
 .game-card.clickable { cursor: pointer; }
 .game-card.clickable:hover { border-color: var(--accent); }
-.game-title { font-weight: 700; font-size: 1.1rem; }
+.game-title { font-weight: 700; font-size: 1.1rem; display: flex; align-items: center; gap: 0.5rem; }
+.game-icon { font-size: 1.9rem; line-height: 1; }
 .game-badge { font-size: 0.8rem; color: var(--muted); }
 .game-badge.live { color: var(--accent); font-weight: 600; }
 .game-matchup { font-size: 0.78rem; color: var(--muted); }
@@ -423,7 +424,9 @@ button.back { margin-bottom: 0.7rem; }
   min-height: 24rem;
   max-height: 38rem;
 }
-.members { font-size: 0.85rem; color: var(--muted); display: flex; flex-direction: column; gap: 0.15rem; }
+.members { font-size: 0.95rem; color: var(--muted); display: flex; flex-direction: column; gap: 0.3rem; }
+.member { display: flex; align-items: center; gap: 0.4rem; }
+.role-icon { font-size: 1.25rem; line-height: 1; color: var(--fg); opacity: 0.8; width: 1.4rem; text-align: center; }
 .chat-log {
   flex: 1;
   overflow-y: auto;
