@@ -10,37 +10,73 @@
 
   <!-- home: start or join -->
   <main id="view-home" class="view">
-    <h1>kibitz</h1>
-    <p class="tagline" id="home-tagline">Pull up a chair. Six games — chess, backgammon, checkers, reversi, Connect Four, and provably-fair Battleship — with chat, over an end-to-end encrypted session.</p>
-    <div id="invite-banner" class="invite-banner hidden">
-      <div class="invite-kicker">You've been invited to a game</div>
-      <div class="invite-phrase" id="invite-phrase"></div>
-    </div>
-    <div class="actions">
-      <input id="display-name" type="text" placeholder="Your name (optional)"
-             maxlength="24" autocomplete="nickname" spellcheck="false">
-      <button id="btn-create" disabled>Start a table</button>
-      <div class="join-row">
-        <input id="join-phrase" type="text" placeholder="lion-42-maple"
-               autocomplete="off" autocapitalize="none" spellcheck="false" disabled>
-        <button id="btn-join" disabled>Join</button>
+    <div class="home-hero">
+      <div class="home-lead">
+        <span class="brand-lockup">
+          <svg class="brand-mark" width="40" height="40" viewBox="0 0 24 24" aria-hidden="true">
+            <rect width="24" height="24" rx="6" fill="var(--panel-2)"/>
+            <rect x="4" y="5" width="16" height="11" rx="2" fill="var(--accent)"/>
+            <path d="M8 20l3-4h2l-3 4z" fill="var(--accent)"/>
+            <circle cx="9" cy="10.5" r="1.4" fill="var(--bg)"/>
+            <circle cx="12" cy="10.5" r="1.4" fill="var(--bg)"/>
+            <circle cx="15" cy="10.5" r="1.4" fill="var(--bg)"/>
+          </svg>
+          <span class="brand-name">kibitz</span>
+        </span>
+        <p class="eyebrow">end-to-end encrypted · six games · chat</p>
+        <h1>Pull up a chair,<br><span class="grad">play a friend.</span></h1>
+        <p class="tagline" id="home-tagline">Chess, backgammon, checkers, reversi, Connect Four, and provably-fair Battleship — with a chat alongside — over one encrypted session. Nobody, not even the server, can read a move or a message.</p>
+        <ul class="trust" aria-label="What you get">
+          <li><span class="trust-ico">🔒</span> End-to-end encrypted</li>
+          <li><span class="trust-ico">♟</span> Six games</li>
+          <li><span class="trust-ico">👀</span> Spectators welcome</li>
+        </ul>
+      </div>
+
+      <div class="home-card">
+        <div id="invite-banner" class="invite-banner hidden">
+          <div class="invite-kicker">You've been invited to a game</div>
+          <div class="invite-phrase" id="invite-phrase"></div>
+        </div>
+        <label class="field" for="display-name">
+          <span class="field-label">Your name <span class="opt">(optional)</span></span>
+          <input id="display-name" type="text" placeholder="Guest"
+                 maxlength="24" autocomplete="nickname" spellcheck="false">
+        </label>
+        <button id="btn-create" disabled>▶ Start a table</button>
+        <div class="or-divider"><span>or join a friend</span></div>
+        <div class="join-row">
+          <input id="join-phrase" type="text" placeholder="lion-42-maple"
+                 autocomplete="off" autocapitalize="none" spellcheck="false" disabled>
+          <button id="btn-join" disabled>Join</button>
+        </div>
+        <p class="note" id="home-status">loading core…</p>
       </div>
     </div>
-    <p class="note" id="home-status">loading core…</p>
   </main>
 
   <!-- lobby: host waits, shows phrase / link / QR -->
   <main id="view-lobby" class="view hidden">
-    <h2>Your table is open</h2>
-    <p class="note" id="lobby-you"></p>
-    <p class="tagline">Share any of these — the first friend to join sits down as your opponent, everyone after that kibitzes.</p>
-    <div class="phrase" id="lobby-phrase"></div>
-    <div class="share-row">
-      <input id="lobby-url" type="text" readonly>
-      <button id="btn-copy">Copy link</button>
+    <div class="lobby-card">
+      <div class="lobby-head">
+        <h2>Your table is open</h2>
+        <p class="note" id="lobby-you"></p>
+        <p class="tagline">Share any of these — the first friend to join sits down as your opponent, everyone after that kibitzes.</p>
+      </div>
+      <div class="lobby-body">
+        <div class="lobby-share">
+          <div class="phrase" id="lobby-phrase"></div>
+          <div class="share-row">
+            <input id="lobby-url" type="text" readonly>
+            <button id="btn-copy">Copy link</button>
+          </div>
+          <p class="note">The phrase never reaches the server — it's the encryption secret. Waiting for your opponent…</p>
+        </div>
+        <div class="lobby-qr-wrap">
+          <img id="lobby-qr" alt="QR code for the table link">
+        </div>
+      </div>
     </div>
-    <img id="lobby-qr" alt="QR code for the table link">
-    <p class="note">The phrase never reaches the server — it's the encryption secret. Waiting for your opponent…</p>
   </main>
 
   <!-- table: games + chat -->
