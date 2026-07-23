@@ -249,6 +249,39 @@ button.back { margin-bottom: 0.7rem; }
 .c4-cell.yellow { background: #f0c93c; }
 .c4-cell.win { outline: 3px solid #fff; outline-offset: -3px; }
 
+/* checkers */
+.ck-board {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  width: min(100%, 30rem);
+  aspect-ratio: 1;
+  border: 2px solid var(--sq-dark);
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+.ck-cell { all: unset; display: grid; place-items: center; aspect-ratio: 1; }
+.ck-cell.light { background: var(--sq-light); }
+.ck-cell.dark { background: var(--sq-dark); cursor: pointer; }
+.ck-cell.selected { outline: 3px solid var(--sq-select); outline-offset: -3px; }
+.ck-cell.source { outline: 3px solid rgba(255,255,255,0.55); outline-offset: -3px; }
+.ck-cell.target::after {
+  content: "";
+  width: 26%; height: 26%;
+  border-radius: 50%;
+  background: var(--sq-target);
+  position: absolute;
+}
+.ck-cell { position: relative; }
+.ck-piece {
+  width: 70%; height: 70%;
+  border-radius: 50%;
+  display: grid; place-items: center;
+  font-size: 1.1rem;
+  border: 2px solid rgba(0,0,0,0.4);
+}
+.ck-piece.p1 { background: #a03030; color: #f8d8d8; }
+.ck-piece.p2 { background: #f2ead8; color: #6b5b2a; border-color: rgba(0,0,0,0.25); }
+
 /* side pane */
 .side-pane {
   background: var(--panel);

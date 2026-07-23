@@ -27,6 +27,7 @@ import (
 	"github.com/richardwooding/kibitz/internal/service"
 	"github.com/richardwooding/kibitz/internal/service/backgammon"
 	"github.com/richardwooding/kibitz/internal/service/chat"
+	"github.com/richardwooding/kibitz/internal/service/checkers"
 	"github.com/richardwooding/kibitz/internal/service/chess"
 	"github.com/richardwooding/kibitz/internal/service/connect4"
 	"github.com/richardwooding/kibitz/internal/session"
@@ -43,6 +44,7 @@ type command struct {
 	Hops   [][2]int8 `json:"hops,omitempty"` // backgammon turn, player-relative
 	Game   string    `json:"game,omitempty"` // service ID for game.start
 	Col    int8      `json:"col"`            // connect4 column
+	Path   []int8    `json:"path,omitempty"` // checkers move path
 }
 
 type app struct {
@@ -52,6 +54,7 @@ type app struct {
 	chess  *chess.Service
 	bg     *backgammon.Service
 	c4     *connect4.Service
+	ck     *checkers.Service
 }
 
 var current app
@@ -110,6 +113,11 @@ var commands = map[string]func(command){
 
 	"c4.drop":   func(c command) { withC4(func(s *connect4.Service) error { return s.Drop(c.Col) }) },
 	"c4.resign": func(command) { withC4((*connect4.Service).Resign) },
+
+	"checkers.move":      func(c command) { withCK(func(s *checkers.Service) error { return s.TryMove(c.Path) }) },
+	"checkers.resign":    func(command) { withCK((*checkers.Service).Resign) },
+	"checkers.offerDraw": func(command) { withCK((*checkers.Service).OfferDraw) },
+	"checkers.agreeDraw": func(command) { withCK((*checkers.Service).AgreeDraw) },
 }
 
 func dispatch(raw string) {
@@ -197,13 +205,15 @@ func start(client *session.Client) {
 	cs := chess.New()
 	bg := backgammon.New()
 	c4 := connect4.New()
-	mux := service.NewMux(client, ch, cs, bg, c4)
+	ck := checkers.New()
+	mux := service.NewMux(client, ch, cs, bg, c4, ck)
 
 	current.mu.Lock()
 	if current.client != nil {
 		_ = current.client.Close()
 	}
-	current.client, current.chat, current.chess, current.bg, current.c4 = client, ch, cs, bg, c4
+	current.client, current.chat, current.chess = client, ch, cs
+	current.bg, current.c4, current.ck = bg, c4, ck
 	current.mu.Unlock()
 
 	go pump(mux)
@@ -221,6 +231,9 @@ func startGame(id string) {
 	}
 	if current.c4 != nil {
 		starters[connect4.ID] = current.c4.Start
+	}
+	if current.ck != nil {
+		starters[checkers.ID] = current.ck.Start
 	}
 	startFn, ok := starters[id]
 	current.mu.Unlock()
@@ -254,6 +267,10 @@ func pump(mux *service.Mux) {
 			emitError(fmt.Sprintf("dice cheat detected from participant %d — game voided", e.By))
 		case connect4.State:
 			emitC4State(e)
+		case checkers.State:
+			emitCKState(e)
+		case checkers.DrawOffered:
+			emit("checkers.drawOffered", map[string]any{"from": uint32(e.From)})
 		case service.ServiceError:
 			emitError(fmt.Sprintf("%s: %v", e.Service, e.Err))
 		case service.SessionEvent:
@@ -298,6 +315,18 @@ func emitBGState(e backgammon.State) {
 		"dice": []int8{e.Dice[0], e.Dice[1]}, "legal": legal,
 		"outcome": e.Outcome, "pipsW": e.PipsW, "pipsB": e.PipsB,
 		"playing": e.Playing,
+	})
+}
+
+func emitCKState(e checkers.State) {
+	legal := make([][]int8, len(e.Legal))
+	for i, m := range e.Legal {
+		legal[i] = []int8(m)
+	}
+	emit("checkers.state", map[string]any{
+		"board": e.Board[:], "p1Id": uint32(e.P1ID), "p2Id": uint32(e.P2ID),
+		"turnId": uint32(e.TurnID), "outcome": e.Outcome,
+		"legal": legal, "lastPath": e.LastPath, "playing": e.Playing,
 	})
 }
 
@@ -357,6 +386,13 @@ func withBG(f func(*backgammon.Service) error) {
 func withC4(f func(*connect4.Service) error) {
 	current.mu.Lock()
 	s := current.c4
+	current.mu.Unlock()
+	callService(s == nil, func() error { return f(s) })
+}
+
+func withCK(f func(*checkers.Service) error) {
+	current.mu.Lock()
+	s := current.ck
 	current.mu.Unlock()
 	callService(s == nil, func() error { return f(s) })
 }
