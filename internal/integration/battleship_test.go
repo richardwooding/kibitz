@@ -29,7 +29,11 @@ func newBSTable(t *testing.T, c *session.Client) *bsTable {
 
 func bsWait(t *testing.T, tb *bsTable, match func(battleship.State) bool) battleship.State {
 	t.Helper()
-	deadline := time.Now().Add(15 * time.Second)
+	// Battleship is the heaviest game: every shot is a broadcast + an
+	// auto-reveal round-trip through the encrypted relay, and the endgame
+	// exchanges two 100-cell full reveals. On a loaded CI runner under
+	// -race this needs generous headroom (the suite cap is 300s).
+	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
 		if st := tb.bs.State(); match(st) {
 			return st
