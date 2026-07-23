@@ -61,7 +61,7 @@ func TestEncryptedEcho(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer host.Close()
+	defer func() { _ = host.Close() }()
 	if host.Self() != 1 || host.Role() != session.RoleHost {
 		t.Fatalf("host self=%d role=%d", host.Self(), host.Role())
 	}
@@ -70,7 +70,7 @@ func TestEncryptedEcho(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer joiner.Close()
+	defer func() { _ = joiner.Close() }()
 	if joiner.Role() != session.RolePlayer {
 		t.Fatalf("first joiner role = %d, want player", joiner.Role())
 	}
@@ -110,7 +110,7 @@ func TestWrongPhraseRejected(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer host.Close()
+	defer func() { _ = host.Close() }()
 
 	// Same session ID requires the same phrase — so derive a wrong phrase
 	// that still lands on the host's session by perturbing... impossible by
@@ -141,18 +141,18 @@ func TestSecondJoinerIsSpectator(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer host.Close()
+	defer func() { _ = host.Close() }()
 
 	j1, err := session.Join(ctx, url, phrase)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer j1.Close()
+	defer func() { _ = j1.Close() }()
 	j2, err := session.Join(ctx, url, phrase)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer j2.Close()
+	defer func() { _ = j2.Close() }()
 
 	if j1.Role() != session.RolePlayer {
 		t.Fatalf("j1 role %d", j1.Role())
@@ -185,7 +185,7 @@ func TestHostCloseEndsSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer joiner.Close()
+	defer func() { _ = joiner.Close() }()
 
 	_ = host.Close()
 	closed := waitFor[session.Closed](t, joiner)
@@ -206,7 +206,7 @@ func TestEavesdropperCannotReadTraffic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer host.Close()
+	defer func() { _ = host.Close() }()
 
 	// The eavesdropper speaks raw wire protocol, joining with the session ID
 	// (which the relay knows) but no phrase.

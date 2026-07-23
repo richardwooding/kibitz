@@ -74,7 +74,6 @@ type Client struct {
 	mu      sync.Mutex
 	seqs    map[string]uint64 // per-service send sequence
 	joiners map[wire.ParticipantID]Role
-	pending *crypto.Joiner // joiner-side handshake state until Pake2 lands
 }
 
 const eventBuffer = 256

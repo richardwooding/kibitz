@@ -103,7 +103,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // the socket closes.
 func (s *Server) handle(ctx context.Context, conn *websocket.Conn) {
 	ctx, cancel := context.WithCancel(ctx)
-	defer conn.CloseNow()
+	defer func() { _ = conn.CloseNow() }()
 
 	// kicked is the hub's way to shed this client. It must NOT cancel ctx
 	// directly: coder/websocket tears down the whole connection the moment a
@@ -151,7 +151,7 @@ func (s *Server) readLoop(ctx context.Context, conn *websocket.Conn, h *hub, id 
 		case wire.MsgPing:
 			p, err := wire.Body[wire.Ping](raw)
 			if err == nil {
-				queueFrame(out, wire.MsgPong, wire.Pong{Nonce: p.Nonce})
+				queueFrame(out, wire.MsgPong, wire.Pong(p))
 			}
 		case wire.MsgDirect, wire.MsgBroadcast:
 			h.send(frameCmd{from: id, typ: typ, raw: raw})

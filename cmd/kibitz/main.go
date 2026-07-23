@@ -39,7 +39,7 @@ func main() {
 	mux.Handle("/", http.FileServerFS(dist))
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		fmt.Fprintln(w, "ok")
+		_, _ = fmt.Fprintln(w, "ok")
 	})
 	relaySrv := relay.New(relay.Options{MaxSessions: *maxSessions})
 	defer relaySrv.Close()
