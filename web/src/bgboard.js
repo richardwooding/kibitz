@@ -18,10 +18,18 @@
     let pending = [];    // hops (player-relative) being built
     let from = null;     // selected source (global)
     let visible = false;
+    let popPoints = new Set(); // global points whose checkers just changed
+    let diceRolled = false;    // fresh dice this render → tumble animation
 
     const isWhite = () => g && g.whiteId === ctx.self();
     const isPlayer = () => g && (g.whiteId === ctx.self() || g.blackId === ctx.self());
     const myTurn = () => g && g.turnId === ctx.self();
+    const bgWon = () => {
+      if (!isPlayer()) return null;
+      if (g.outcome.startsWith("white")) return isWhite();
+      if (g.outcome.startsWith("black")) return !isWhite();
+      return null;
+    };
 
     const relToGlobal = (rel) => (rel === 25 || rel === 0) ? rel : (isWhite() ? rel : 25 - rel);
     const globalToRel = (p) => (p === 25 || p === 0) ? p : (isWhite() ? p : 25 - p);
@@ -108,12 +116,14 @@
       cell.dataset.point = String(p);
       if (hi.sources.has(p)) cell.classList.add("source");
       if (hi.targets.has(p)) cell.classList.add("target");
+      const popThis = popPoints.has(p);
       const n = st.points[p];
       const count = Math.abs(n);
       const color = n > 0 ? "w" : "b";
       for (let i = 0; i < Math.min(count, 5); i++) {
         const c = document.createElement("span");
         c.className = "checker " + color;
+        if (popThis && i === Math.min(count, 5) - 1) c.classList.add("pop");
         cell.appendChild(c);
       }
       if (count > 5) {
@@ -186,10 +196,17 @@
         (isPlayer() ? ` · you are ${isWhite() ? "⚪" : "⚫"}` : "");
 
       const faces = ["", "⚀", "⚁", "⚂", "⚃", "⚄", "⚅"];
-      $("bg-dice").textContent = g.phase === "moving"
+      const diceEl = $("bg-dice");
+      diceEl.textContent = g.phase === "moving"
         ? faces[g.dice[0]] + faces[g.dice[1]] + (g.dice[0] === g.dice[1] ? " ×4" : "")
         : "";
+      if (diceRolled && g.phase === "moving") {
+        diceEl.classList.remove("rolled");
+        void diceEl.offsetWidth; // reflow so the animation re-triggers
+        diceEl.classList.add("rolled");
+      }
 
+      $("bg-board").classList.toggle("my-turn", isPlayer() && myTurn() && g.phase !== "over" && g.phase !== "handshake");
       $("bg-roll").classList.toggle("hidden", !(g.phase === "rolling" && myTurn() && isPlayer()));
       $("bg-undo").classList.toggle("hidden", pending.length === 0);
       $("bg-resign").classList.toggle("hidden", !isPlayer() || g.phase === "over");
@@ -207,6 +224,8 @@
         }
       }
       render($("bg-board"), previewBoard(), hi);
+      popPoints = new Set();
+      diceRolled = false;
     }
 
     // one-time control wiring
@@ -223,12 +242,32 @@
     return {
       onEvent(type, e) {
         switch (type) {
-          case "bg.state":
+          case "bg.state": {
+            const prev = g;
             g = e;
             pending = [];
             from = null;
+            popPoints = new Set();
+            diceRolled = false;
+            if (prev && prev.points) {
+              for (let p = 1; p <= 24; p++) {
+                if (prev.points[p] !== g.points[p]) popPoints.add(p);
+              }
+              const diceNow = g.phase === "moving" && g.dice[0] >= 1;
+              const diceChanged = !prev.dice || prev.dice[0] !== g.dice[0] ||
+                prev.dice[1] !== g.dice[1] || prev.phase !== "moving";
+              diceRolled = diceNow && diceChanged;
+              if (window.fx) {
+                if (diceRolled) window.fx.sound.turn();
+                else if (popPoints.size) window.fx.sound.move();
+              }
+            }
             renderPane();
+            if (prev && prev.playing && prev.phase !== "over" && g.phase === "over" && window.fx) {
+              window.fx.celebrate($("game-bg"), bgWon(), g.outcome);
+            }
             break;
+          }
           case "bg.danced":
             toast(e.by === ctx.self() ? "No legal moves — turn passed." : "Opponent danced (no legal moves).");
             break;

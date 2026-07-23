@@ -21,7 +21,26 @@ import (
 //go:embed words.txt
 var wordsFile string
 
-var words = strings.Fields(wordsFile)
+// words keeps only pure-[a-z] entries so a phrase is always cleanly
+// word-NN-word. The EFF short list has one hyphenated entry ("yo-yo") that
+// would otherwise produce phrases like "yo-yo-19-rival"; dropping it costs
+// one word out of 1296 (negligible entropy).
+var words = func() []string {
+	out := make([]string, 0, 1296)
+	for _, w := range strings.Fields(wordsFile) {
+		alpha := w != ""
+		for _, r := range w {
+			if r < 'a' || r > 'z' {
+				alpha = false
+				break
+			}
+		}
+		if alpha {
+			out = append(out, w)
+		}
+	}
+	return out
+}()
 
 // sessionIDContext domain-separates the session-ID hash from any other use
 // of the phrase.

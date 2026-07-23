@@ -40,12 +40,17 @@
   <main id="view-table" class="view hidden">
     <div class="table-grid">
       <section class="board-pane">
+        <div class="board-pane-head">
+          <button id="btn-mute" class="icon-btn" title="Mute sound" aria-label="Mute sound">🔊</button>
+        </div>
+
         <!-- picker: one card per available game -->
         <div id="game-picker" class="game-picker"></div>
 
         <!-- open game pane -->
         <div id="game-pane" class="hidden">
           <button id="btn-back" class="ghost back">← All games</button>
+          <div id="win-banner" class="win-banner"></div>
 
           <div id="game-chess" class="hidden">
             <div id="status-line" class="status"></div>
@@ -101,6 +106,7 @@
               <div id="bs-ships" class="bs-ships"></div>
               <div id="bs-place-grid" class="bs-grid"></div>
               <div class="game-actions">
+                <button id="bs-rotate" class="ghost">Rotate ⟳</button>
                 <button id="bs-randomize" class="ghost">Randomize</button>
                 <button id="bs-confirm" disabled>Confirm fleet</button>
               </div>
@@ -138,6 +144,7 @@
   <div id="toast" class="toast hidden"></div>
 
   <script src="wasm_exec.js"></script>
+  <script src="fx.js"></script>
   <script src="board.js"></script>
   <script src="bgboard.js"></script>
   <script src="c4board.js"></script>

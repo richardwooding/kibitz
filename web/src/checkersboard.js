@@ -14,8 +14,10 @@
   function create(ctx) {
     const { $, send, toast } = ctx;
     let g = null;
-    let path = []; // square indices being built
+    let path = [];      // square indices being built
     let visible = false;
+    // one-shot animation data (computed on state change, consumed by render)
+    let anim = { slide: null, captured: new Set(), crowned: -1 };
 
     const isPlayer = () => g && (g.p1Id === ctx.self() || g.p2Id === ctx.self());
     const myTurn = () => g && g.turnId === ctx.self();
@@ -28,9 +30,7 @@
     function nextSquares() {
       const at = path.length;
       const out = new Set();
-      for (const m of candidates()) {
-        if (m.length > at) out.add(m[at]);
-      }
+      for (const m of candidates()) if (m.length > at) out.add(m[at]);
       return out;
     }
     function sources() {
@@ -45,7 +45,6 @@
         path.push(s);
         const cands = candidates();
         if (cands.some((m) => m.length === path.length)) {
-          // Complete legal move (paths are maximal, so equality = done).
           send({ type: "checkers.move", path });
           path = [];
         }
@@ -75,11 +74,10 @@
       $("checkers-draw").classList.toggle("hidden", !isPlayer() || over());
 
       const el = $("checkers-board");
+      el.classList.toggle("my-turn", myTurn() && !over());
       el.innerHTML = "";
       const hiNext = path.length ? nextSquares() : new Set();
       const hiSrc = path.length === 0 && myTurn() ? sources() : new Set();
-      // The moving player sees their own side at the bottom: P1 (dark)
-      // starts on rows 0-2, so flip for P1.
       const flip = g.p1Id === ctx.self();
       for (let vr = 0; vr < 8; vr++) {
         for (let vc = 0; vc < 8; vc++) {
@@ -91,13 +89,16 @@
           cell.className = "ck-cell " + (dark ? "dark" : "light");
           if (dark) {
             const s = r % 2 === 0 ? r * 4 + (c - 1) / 2 : r * 4 + c / 2;
+            cell.dataset.sq = s;
             const v = g.board[s];
             if (v !== 0) {
               const piece = document.createElement("span");
               piece.className = "ck-piece " + (v > 0 ? "p1" : "p2");
               piece.textContent = Math.abs(v) === 2 ? "♛" : "";
+              if (s === anim.crowned) piece.classList.add("crowned");
               cell.appendChild(piece);
             }
+            if (anim.captured.has(s)) cell.classList.add("captured");
             if (path.includes(s)) cell.classList.add("selected");
             if (hiNext.has(s)) cell.classList.add("target");
             if (hiSrc.has(s)) cell.classList.add("source");
@@ -106,6 +107,17 @@
           el.appendChild(cell);
         }
       }
+      // Slide the moved piece from its origin to its destination.
+      if (anim.slide && window.fx) {
+        const fromCell = el.querySelector(`.ck-cell[data-sq="${anim.slide.from}"]`);
+        const toPiece = el.querySelector(`.ck-cell[data-sq="${anim.slide.to}"] .ck-piece`);
+        if (fromCell && toPiece) {
+          const a = fromCell.getBoundingClientRect();
+          const b = toPiece.closest(".ck-cell").getBoundingClientRect();
+          window.fx.slideFrom(toPiece, a.left - b.left, a.top - b.top);
+        }
+      }
+      anim = { slide: null, captured: new Set(), crowned: -1 };
     }
 
     $("checkers-resign").addEventListener("click", () => {
@@ -114,15 +126,45 @@
     $("checkers-draw").addEventListener("click", () => send({ type: "checkers.offerDraw" }));
     $("checkers-agree-draw").addEventListener("click", () => send({ type: "checkers.agreeDraw" }));
 
+    function outcomeWon() {
+      if (!isPlayer() || g.outcome === "draw") return null;
+      const iAmDark = g.p1Id === ctx.self();
+      return g.outcome.startsWith(iAmDark ? "black wins" : "white wins");
+    }
+
+    // computeAnim diffs prev→new board to drive slide / capture / crown fx.
+    function computeAnim(prev) {
+      anim = { slide: null, captured: new Set(), crowned: -1 };
+      if (!prev || !prev.board || !g.lastPath || g.lastPath.length < 2) return;
+      const p = g.lastPath;
+      const from = p[0], to = p[p.length - 1];
+      anim.slide = { from, to };
+      let capture = false;
+      for (let s = 0; s < 32; s++) {
+        if (prev.board[s] !== 0 && g.board[s] === 0 && s !== from) {
+          anim.captured.add(s);
+          capture = true;
+        }
+      }
+      if (Math.abs(prev.board[from]) === 1 && Math.abs(g.board[to]) === 2) anim.crowned = to;
+      if (window.fx) capture ? window.fx.sound.capture() : window.fx.sound.move();
+    }
+
     return {
       onEvent(type, e) {
         switch (type) {
-          case "checkers.state":
+          case "checkers.state": {
+            const prev = g;
             g = e;
             path = [];
             $("checkers-agree-draw").classList.add("hidden");
+            computeAnim(prev);
             render();
+            if (prev && prev.playing && prev.outcome === "" && over() && window.fx) {
+              window.fx.celebrate($("game-checkers"), outcomeWon(), g.outcome);
+            }
             break;
+          }
           case "checkers.drawOffered":
             if (isPlayer()) {
               $("checkers-agree-draw").classList.remove("hidden");

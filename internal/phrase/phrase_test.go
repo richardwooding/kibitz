@@ -7,12 +7,19 @@ import (
 )
 
 func TestWordlistLoaded(t *testing.T) {
-	if len(words) != 1296 {
-		t.Fatalf("wordlist has %d words, want 1296 (EFF short list)", len(words))
+	// EFF short list is 1296 words; we drop the one hyphenated entry
+	// ("yo-yo") so phrases stay cleanly word-NN-word.
+	if len(words) != 1295 {
+		t.Fatalf("wordlist has %d words, want 1295 (EFF short list minus yo-yo)", len(words))
 	}
 	for _, w := range words {
 		if len(w) == 0 || len(w) > 5 {
 			t.Fatalf("word %q outside EFF short list length bounds", w)
+		}
+		for _, r := range w {
+			if r < 'a' || r > 'z' {
+				t.Fatalf("word %q has a non-alpha rune", w)
+			}
 		}
 	}
 }

@@ -378,6 +378,145 @@ button.back { margin-bottom: 0.7rem; }
 #chat-form { display: flex; }
 #chat-input { flex: 1; }
 
+/* ============================ polish layer ============================ */
+
+/* board-pane header + mute toggle */
+.board-pane-head { display: flex; justify-content: flex-end; margin-bottom: 0.4rem; }
+.icon-btn {
+  all: unset;
+  cursor: pointer;
+  font-size: 1.25rem;
+  line-height: 1;
+  padding: 0.2rem 0.4rem;
+  border-radius: 0.4rem;
+  opacity: 0.85;
+}
+.icon-btn:hover { opacity: 1; background: rgba(127, 127, 127, 0.15); }
+
+/* turn glow — the board the local player must act on breathes softly */
+.my-turn { animation: turn-glow 2.4s ease-in-out infinite; }
+@keyframes turn-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(124, 92, 255, 0.0); }
+  50%      { box-shadow: 0 0 0 4px rgba(124, 92, 255, 0.45); }
+}
+
+/* enhanced chess pieces: a subtle disc + crisper glyph */
+.sq { position: relative; }
+.sq.white-piece, .sq.black-piece { font-weight: 400; }
+.sq.white-piece { color: #f7f7fa; text-shadow: 0 1px 1px rgba(0,0,0,0.7), 0 0 2px rgba(0,0,0,0.5); }
+.sq.black-piece { color: #14141a; text-shadow: 0 1px 1px rgba(255,255,255,0.35); }
+
+/* chess coordinate labels (orientation-aware, set by the module) */
+.coord {
+  position: absolute;
+  font-size: 0.5rem;
+  font-weight: 700;
+  line-height: 1;
+  opacity: 0.7;
+  pointer-events: none;
+}
+.coord.file { right: 2px; bottom: 1px; }
+.coord.rank { left: 2px; top: 1px; }
+.sq.light .coord { color: rgba(0, 0, 0, 0.55); }
+.sq.dark .coord { color: rgba(255, 255, 255, 0.75); }
+
+/* piece slide (FLIP) — the module sets the transform; this is the fallback */
+.sq .slide-piece { display: inline-block; }
+
+/* connect four: clip drops, column hover ghost, drop animation */
+.c4-board { overflow: hidden; position: relative; }
+.c4-cell.dropping { animation: c4-drop 0.34s cubic-bezier(0.5, 0, 0.6, 1); }
+@keyframes c4-drop { from { transform: translateY(-340px); } to { transform: translateY(0); } }
+.c4-cell.ghost-red { background: #e04343; opacity: 0.35; }
+.c4-cell.ghost-yellow { background: #f0c93c; opacity: 0.35; }
+
+/* reversi: flip animation + place pop */
+.rv-disc.flip { animation: rv-flip 0.4s ease-in-out; }
+@keyframes rv-flip { 0% { transform: scaleX(1); } 50% { transform: scaleX(0.05); } 100% { transform: scaleX(1); } }
+.rv-cell.place-pop .rv-disc { animation: pop 0.3s ease-out; }
+
+/* backgammon checker pop + dice tumble */
+.checker.pop { animation: pop 0.28s ease-out; }
+@keyframes pop { 0% { transform: scale(0.3); opacity: 0.2; } 70% { transform: scale(1.12); } 100% { transform: scale(1); opacity: 1; } }
+.dice.rolled { animation: dice-tumble 0.5s ease-out; }
+@keyframes dice-tumble { 0% { transform: rotate(-18deg) scale(0.6); opacity: 0.3; } 60% { transform: rotate(8deg) scale(1.15); } 100% { transform: rotate(0) scale(1); opacity: 1; } }
+
+/* checkers: crown pop */
+.ck-piece.crowned { animation: pop 0.3s ease-out; }
+.ck-cell.captured::after {
+  content: "";
+  position: absolute; inset: 15%;
+  border-radius: 50%;
+  background: rgba(200, 60, 60, 0.5);
+  animation: fade-out 0.4s ease-out forwards;
+}
+@keyframes fade-out { to { opacity: 0; transform: scale(0.4); } }
+
+/* battleship: coordinate gutters, placement preview, shot fx */
+.bs-gridwrap {
+  display: grid;
+  grid-template-columns: 1.15rem 1fr;
+  grid-template-rows: 1.15rem 1fr;
+  gap: 2px;
+  width: min(100%, 20rem);
+}
+.bs-coltop { grid-column: 2; grid-row: 1; display: grid; grid-template-columns: repeat(10, 1fr); }
+.bs-rowside { grid-column: 1; grid-row: 2; display: grid; grid-template-rows: repeat(10, 1fr); }
+.bs-coltop span, .bs-rowside span { display: grid; place-items: center; font-size: 0.6rem; color: var(--muted); }
+.bs-gridwrap .bs-grid { grid-column: 2; grid-row: 2; width: 100%; }
+.bs-cell.preview { background: #4f7fae; outline: 2px solid rgba(255,255,255,0.6); outline-offset: -2px; }
+.bs-cell.preview-bad { background: #9a4040; outline: 2px solid rgba(255,120,120,0.8); outline-offset: -2px; }
+.bs-cell.miss.just::after { animation: bs-splash 0.45s ease-out; }
+@keyframes bs-splash { 0% { transform: scale(2.4); opacity: 0; } 60% { opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
+.bs-cell.hit.just { animation: bs-boom 0.4s ease-out; }
+@keyframes bs-boom { 0% { transform: scale(1); filter: brightness(2.5); } 50% { transform: scale(1.25); } 100% { transform: scale(1); filter: brightness(1); } }
+.bs-cell.sunk.just { animation: pulse-sunk 0.7s ease-out; }
+@keyframes pulse-sunk { 0%, 100% { filter: brightness(1); } 40% { filter: brightness(1.9); } }
+
+/* win banner */
+#game-pane { position: relative; }
+.win-banner {
+  position: absolute;
+  top: 2.5rem; left: 50%;
+  transform: translate(-50%, -8px);
+  z-index: 20;
+  padding: 0.6rem 1.4rem;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: #fff;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.3);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.35s ease, transform 0.35s ease;
+}
+.win-banner.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; cursor: pointer; }
+.win-banner.win { background: linear-gradient(135deg, #7c5cff, #4aa3ff); }
+.win-banner.lose { background: #55556a; }
+.win-banner.neutral { background: #6b6b7b; }
+
+/* confetti (rains over the viewport; skipped under reduced motion) */
+.confetti-layer { position: fixed; inset: 0; pointer-events: none; z-index: 100; overflow: hidden; }
+.confetti-bit {
+  position: absolute; top: -12px;
+  width: 8px; height: 12px;
+  border-radius: 1px;
+  animation-name: confetti-fall;
+  animation-timing-function: cubic-bezier(0.3, 0.6, 0.5, 1);
+  animation-fill-mode: forwards;
+}
+@keyframes confetti-fall {
+  to { transform: translate(var(--drift, 0), 105vh) rotate(var(--rot, 180deg)); opacity: 0.15; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .my-turn { animation: none; box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.5); }
+  .c4-cell.dropping, .rv-disc.flip, .rv-cell.place-pop .rv-disc, .checker.pop,
+  .dice.rolled, .ck-piece.crowned, .ck-cell.captured::after,
+  .bs-cell.miss.just::after, .bs-cell.hit.just, .bs-cell.sunk.just { animation: none; }
+  .win-banner { transition: opacity 0.2s; }
+}
+
 /* toast */
 .toast {
   position: fixed;

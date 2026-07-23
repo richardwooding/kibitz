@@ -171,9 +171,37 @@
       if (mod) {
         mod.onEvent(e.type, e);
         renderPicker();
+        updateTurnCue();
       }
     }
   };
+
+  // ---- mute toggle + background turn cue -------------------------------------
+
+  function syncMuteIcon() {
+    const b = $("btn-mute");
+    const muted = window.fx && window.fx.sound.isMuted();
+    b.textContent = muted ? "🔇" : "🔊";
+    b.title = muted ? "Unmute sound" : "Mute sound";
+  }
+  $("btn-mute").addEventListener("click", () => {
+    if (window.fx) window.fx.sound.toggleMute();
+    syncMuteIcon();
+  });
+  syncMuteIcon();
+
+  // When a game needs the local player's action and the tab is hidden, flag
+  // it in the title bar (restored on return). A gentle "it's your move" nudge.
+  let baseTitle = document.title;
+  function updateTurnCue() {
+    const myMove = Object.values(games).some((m) => {
+      const c = m.card();
+      return c.status === "live" && c.myTurn;
+    });
+    if (document.hidden && myMove) document.title = "● your turn · kibitz";
+    else document.title = baseTitle;
+  }
+  document.addEventListener("visibilitychange", updateTurnCue);
 
   // ---- roster + chat --------------------------------------------------------
 
