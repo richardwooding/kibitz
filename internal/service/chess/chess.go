@@ -403,6 +403,12 @@ func (s *Service) Restore(blob []byte) error {
 		return fmt.Errorf("chess: restore PGN: %w", err)
 	}
 	s.mu.Lock()
+	// Late-joiner catch-up only: a client with a live game saw everything
+	// in the snapshot already (and may have moved since the host built it).
+	if s.game != nil {
+		s.mu.Unlock()
+		return nil
+	}
 	s.game = game
 	s.whiteID = wire.ParticipantID(snap.WhiteID)
 	s.blackID = wire.ParticipantID(snap.BlackID)
