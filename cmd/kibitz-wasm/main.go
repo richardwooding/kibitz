@@ -26,6 +26,7 @@ import (
 
 	"github.com/richardwooding/kibitz/internal/service"
 	"github.com/richardwooding/kibitz/internal/service/backgammon"
+	"github.com/richardwooding/kibitz/internal/service/battleship"
 	"github.com/richardwooding/kibitz/internal/service/chat"
 	"github.com/richardwooding/kibitz/internal/service/checkers"
 	"github.com/richardwooding/kibitz/internal/service/chess"
@@ -40,13 +41,15 @@ type command struct {
 	Phrase string    `json:"phrase,omitempty"`
 	Text   string    `json:"text,omitempty"`
 	UCI    string    `json:"uci,omitempty"`
-	From   string    `json:"from,omitempty"` // square, for chess.targets
-	ID     int       `json:"id,omitempty"`   // request correlation for queries
-	Hops   [][2]int8 `json:"hops,omitempty"` // backgammon turn, player-relative
-	Game   string    `json:"game,omitempty"` // service ID for game.start
-	Col    int8      `json:"col"`            // connect4 column
-	Path   []int8    `json:"path,omitempty"` // checkers move path
-	Sq     int8      `json:"sq"`             // reversi square
+	From   string    `json:"from,omitempty"`  // square, for chess.targets
+	ID     int       `json:"id,omitempty"`    // request correlation for queries
+	Hops   [][2]int8 `json:"hops,omitempty"`  // backgammon turn, player-relative
+	Game   string    `json:"game,omitempty"`  // service ID for game.start
+	Col    int8      `json:"col"`             // connect4 column
+	Path   []int8    `json:"path,omitempty"`  // checkers move path
+	Sq     int8      `json:"sq"`              // reversi square
+	Cell   uint8     `json:"cell"`            // battleship cell
+	Fleet  []uint8   `json:"fleet,omitempty"` // battleship placement
 }
 
 type app struct {
@@ -58,6 +61,7 @@ type app struct {
 	c4     *connect4.Service
 	ck     *checkers.Service
 	rv     *reversi.Service
+	bs     *battleship.Service
 }
 
 var current app
@@ -124,6 +128,19 @@ var commands = map[string]func(command){
 
 	"reversi.place":  func(c command) { withRV(func(s *reversi.Service) error { return s.PlaceDisc(c.Sq) }) },
 	"reversi.resign": func(command) { withRV((*reversi.Service).Resign) },
+
+	"bs.commit": func(c command) {
+		withBS(func(s *battleship.Service) error {
+			if len(c.Fleet) != 100 {
+				return fmt.Errorf("battleship: fleet must be 100 cells, got %d", len(c.Fleet))
+			}
+			var placement [100]uint8
+			copy(placement[:], c.Fleet)
+			return s.Commit(placement)
+		})
+	},
+	"bs.shot":   func(c command) { withBS(func(s *battleship.Service) error { return s.Shoot(c.Cell) }) },
+	"bs.resign": func(command) { withBS((*battleship.Service).Resign) },
 }
 
 func dispatch(raw string) {
@@ -213,14 +230,15 @@ func start(client *session.Client) {
 	c4 := connect4.New()
 	ck := checkers.New()
 	rv := reversi.New()
-	mux := service.NewMux(client, ch, cs, bg, c4, ck, rv)
+	bs := battleship.New()
+	mux := service.NewMux(client, ch, cs, bg, c4, ck, rv, bs)
 
 	current.mu.Lock()
 	if current.client != nil {
 		_ = current.client.Close()
 	}
 	current.client, current.chat, current.chess = client, ch, cs
-	current.bg, current.c4, current.ck, current.rv = bg, c4, ck, rv
+	current.bg, current.c4, current.ck, current.rv, current.bs = bg, c4, ck, rv, bs
 	current.mu.Unlock()
 
 	go pump(mux)
@@ -244,6 +262,9 @@ func startGame(id string) {
 	}
 	if current.rv != nil {
 		starters[reversi.ID] = current.rv.Start
+	}
+	if current.bs != nil {
+		starters[battleship.ID] = current.bs.Start
 	}
 	startFn, ok := starters[id]
 	current.mu.Unlock()
@@ -283,6 +304,10 @@ func pump(mux *service.Mux) {
 			emit("checkers.drawOffered", map[string]any{"from": uint32(e.From)})
 		case reversi.State:
 			emitRVState(e)
+		case battleship.State:
+			emitBSState(e)
+		case battleship.CheatDetected:
+			emitError(fmt.Sprintf("battleship: cheating detected from participant %d — game voided", e.By))
 		case service.ServiceError:
 			emitError(fmt.Sprintf("%s: %v", e.Service, e.Err))
 		case service.SessionEvent:
@@ -340,6 +365,24 @@ func emitCKState(e checkers.State) {
 		"turnId": uint32(e.TurnID), "outcome": e.Outcome,
 		"legal": legal, "lastPath": e.LastPath, "playing": e.Playing,
 	})
+}
+
+func emitBSState(e battleship.State) {
+	emit("battleship.state", map[string]any{
+		"phase": e.Phase, "p1Id": uint32(e.P1ID), "p2Id": uint32(e.P2ID),
+		"turnId": uint32(e.TurnID), "myFleet": e.MyFleet[:],
+		"committed": e.Committed[:],
+		"reveals":   [][]int8{e.Reveals[0][:], e.Reveals[1][:]},
+		"sunk":      [][]uint8{orEmpty(e.Sunk[0]), orEmpty(e.Sunk[1])},
+		"outcome":   e.Outcome, "cheatBy": uint32(e.CheatBy), "playing": e.Playing,
+	})
+}
+
+func orEmpty(v []uint8) []uint8 {
+	if v == nil {
+		return []uint8{}
+	}
+	return v
 }
 
 func emitRVState(e reversi.State) {
@@ -421,6 +464,13 @@ func withCK(f func(*checkers.Service) error) {
 func withRV(f func(*reversi.Service) error) {
 	current.mu.Lock()
 	s := current.rv
+	current.mu.Unlock()
+	callService(s == nil, func() error { return f(s) })
+}
+
+func withBS(f func(*battleship.Service) error) {
+	current.mu.Lock()
+	s := current.bs
 	current.mu.Unlock()
 	callService(s == nil, func() error { return f(s) })
 }

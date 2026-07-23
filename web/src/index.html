@@ -93,6 +93,36 @@
               <button id="reversi-resign" class="ghost">Resign</button>
             </div>
           </div>
+
+          <div id="game-bs" class="hidden">
+            <div id="bs-status" class="status"></div>
+
+            <div id="bs-placing" class="hidden">
+              <div id="bs-ships" class="bs-ships"></div>
+              <div id="bs-place-grid" class="bs-grid"></div>
+              <div class="game-actions">
+                <button id="bs-randomize" class="ghost">Randomize</button>
+                <button id="bs-confirm" disabled>Confirm fleet</button>
+              </div>
+            </div>
+
+            <div id="bs-playing" class="hidden">
+              <div class="bs-boards">
+                <div>
+                  <div id="bs-their-label" class="bs-label"></div>
+                  <div id="bs-their" class="bs-grid"></div>
+                </div>
+                <div>
+                  <div id="bs-own-label" class="bs-label"></div>
+                  <div id="bs-own" class="bs-grid"></div>
+                </div>
+              </div>
+              <div id="bs-sunk" class="note"></div>
+              <div class="game-actions">
+                <button id="bs-resign" class="ghost">Resign</button>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
       <aside class="side-pane">
@@ -113,6 +143,7 @@
   <script src="c4board.js"></script>
   <script src="checkersboard.js"></script>
   <script src="reversiboard.js"></script>
+  <script src="bsboard.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
