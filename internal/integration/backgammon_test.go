@@ -120,6 +120,7 @@ func TestBackgammonOverRelay(t *testing.T) {
 	drain(host)
 	drain(player)
 	drain(spectator)
+	pollStart(t, host.bg.Start)
 
 	// Opening runs automatically: everyone reaches "moving" with dice set
 	// and agreeing on who moves first.
@@ -165,6 +166,7 @@ func TestBackgammonResign(t *testing.T) {
 	player := joinBG(t, url, phrase)
 	drain(host)
 	drain(player)
+	pollStart(t, host.bg.Start)
 
 	bgWait(t, player, func(s backgammon.State) bool { return s.Playing && s.Phase == "moving" })
 	if err := player.bg.Resign(); err != nil {
@@ -184,6 +186,7 @@ func TestBackgammonLateJoinerSyncs(t *testing.T) {
 	player := joinBG(t, url, phrase)
 	drain(host)
 	drain(player)
+	pollStart(t, host.bg.Start)
 
 	bgWait(t, host, func(s backgammon.State) bool { return s.Playing && s.Phase == "moving" })
 	bgWait(t, player, func(s backgammon.State) bool { return s.Playing && s.Phase == "moving" })

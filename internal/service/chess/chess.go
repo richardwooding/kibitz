@@ -14,6 +14,7 @@ import (
 	notnil "github.com/notnil/chess"
 
 	"github.com/richardwooding/kibitz/internal/service"
+	"github.com/richardwooding/kibitz/internal/service/game"
 	"github.com/richardwooding/kibitz/internal/session"
 	"github.com/richardwooding/kibitz/internal/wire"
 )
@@ -26,6 +27,7 @@ const (
 	kindOfferDraw uint8 = 3
 	kindAgreeDraw uint8 = 4
 	kindNewGame   uint8 = 5
+	kindStartReq  uint8 = 6 // player → host: please start/rematch
 )
 
 type msg struct {
@@ -74,12 +76,13 @@ var (
 )
 
 // Service implements service.Service. HandleFrame/Snapshot/Restore run on
-// the mux goroutine; TryMove/Resign/OfferDraw/LegalTargets come from the UI
-// layer — the mutex covers game state.
+// the mux goroutine; TryMove/Resign/OfferDraw/LegalTargets/Start come from
+// the UI layer — the mutex covers game state.
 type Service struct {
 	ctx service.Context
 
 	mu        sync.Mutex
+	table     game.Table
 	game      *notnil.Game
 	whiteID   wire.ParticipantID
 	blackID   wire.ParticipantID
@@ -94,43 +97,82 @@ func (s *Service) Version() int { return 1 }
 
 func (s *Service) Attach(ctx service.Context) { s.ctx = ctx }
 
-// MemberKeyed (host side): the first player to join starts the game — host
-// takes white for MVP (color choice is a UI nicety for later).
+// MemberKeyed (host side) records the seated player; games start on demand
+// via Start().
 func (s *Service) MemberKeyed(id wire.ParticipantID, role session.Role) {
-	if !s.ctx.Host || role != session.RolePlayer {
+	if !s.ctx.Host {
 		return
 	}
 	s.mu.Lock()
-	if s.game != nil {
-		s.mu.Unlock()
-		return
+	s.table.NoteKeyed(id, role)
+	s.mu.Unlock()
+}
+
+// Start launches a game (or a rematch, once the previous game is over).
+// On the host it seats players — white alternates each game — and
+// broadcasts newGame; on a player it asks the host via startReq.
+func (s *Service) Start() error {
+	if !s.ctx.Host {
+		body, err := wire.Marshal(msg{Kind: kindStartReq})
+		if err != nil {
+			return err
+		}
+		return s.ctx.Send.SendTo(s.ctx.HostID, ID, body)
 	}
+	return s.hostStart(s.ctx.Self)
+}
+
+// hostStart validates and launches; from is who asked (host or seated player).
+func (s *Service) hostStart(from wire.ParticipantID) error {
+	s.mu.Lock()
+	if err := s.table.AuthorizeStart(s.ctx.Host, from, s.ctx.Self, s.phaseLocked()); err != nil {
+		s.mu.Unlock()
+		return err
+	}
+	seats := s.table.NextSeats(s.ctx.Self)
 	s.game = notnil.NewGame()
-	s.whiteID = s.ctx.Self
-	s.blackID = id
+	s.whiteID = seats.P1 // P1 = white (moves first)
+	s.blackID = seats.P2
+	s.lastUCI = ""
+	s.drawnFrom = 0
 	s.mu.Unlock()
 
-	body, err := wire.Marshal(msg{Kind: kindNewGame, WhiteID: uint32(s.ctx.Self), BlackID: uint32(id)})
-	if err == nil {
-		_ = s.ctx.Send.Broadcast(ID, body)
+	body, err := wire.Marshal(msg{Kind: kindNewGame, WhiteID: uint32(seats.P1), BlackID: uint32(seats.P2)})
+	if err != nil {
+		return err
+	}
+	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+		return err
 	}
 	s.emitState()
+	return nil
+}
+
+// phaseLocked maps chess state onto the shared lifecycle.
+func (s *Service) phaseLocked() game.Phase {
+	switch {
+	case s.game == nil:
+		return game.Idle
+	case s.game.Outcome() == notnil.NoOutcome:
+		return game.Playing
+	default:
+		return game.Over
+	}
 }
 
 func (s *Service) MemberLeft(id wire.ParticipantID) {
 	s.mu.Lock()
-	abandoned := s.game != nil && s.game.Outcome() == notnil.NoOutcome &&
-		(id == s.whiteID || id == s.blackID)
-	if abandoned {
+	winner, forfeit := s.table.NoteLeft(id, s.phaseLocked())
+	if forfeit {
 		// Opponent walked away mid-game: they forfeit.
-		if id == s.whiteID {
+		if winner == game.P2 { // white (P1) left
 			s.game.Resign(notnil.White)
 		} else {
 			s.game.Resign(notnil.Black)
 		}
 	}
 	s.mu.Unlock()
-	if abandoned {
+	if forfeit {
 		s.emitState()
 	}
 }
@@ -270,6 +312,11 @@ func (s *Service) HandleFrame(from wire.ParticipantID, body []byte) error {
 	switch m.Kind {
 	case kindNewGame:
 		return s.handleNewGame(from, m)
+	case kindStartReq:
+		if !s.ctx.Host {
+			return nil // only the host seats players
+		}
+		return s.hostStart(from)
 	case kindMove:
 		return s.handleMove(from, m)
 	case kindResign:
@@ -290,6 +337,8 @@ func (s *Service) handleNewGame(from wire.ParticipantID, m msg) error {
 	s.game = notnil.NewGame()
 	s.whiteID = wire.ParticipantID(m.WhiteID)
 	s.blackID = wire.ParticipantID(m.BlackID)
+	// Seats mirror on every client so forfeit detection works off-host too.
+	s.table.Seats = game.Seats{P1: s.whiteID, P2: s.blackID}
 	s.lastUCI = ""
 	s.drawnFrom = 0
 	s.mu.Unlock()

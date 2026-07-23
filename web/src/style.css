@@ -129,14 +129,32 @@ input[type="text"] {
 
 .game-actions { display: flex; gap: 0.6rem; margin-top: 0.8rem; align-items: center; }
 
-/* game tabs */
-.game-tabs { display: flex; gap: 0.4rem; margin-bottom: 0.8rem; }
-.tab {
-  background: transparent;
-  color: var(--muted);
-  border: 1px solid var(--muted);
+/* game picker */
+.game-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 0.8rem;
 }
-.tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.game-card {
+  background: var(--panel);
+  border-radius: 0.75rem;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-start;
+  border: 1px solid transparent;
+}
+.game-card.clickable { cursor: pointer; }
+.game-card.clickable:hover { border-color: var(--accent); }
+.game-title { font-weight: 700; font-size: 1.1rem; }
+.game-badge { font-size: 0.8rem; color: var(--muted); }
+.game-badge.live { color: var(--accent); font-weight: 600; }
+.start-btn {
+  font-size: 0.85rem;
+  padding: 0.35rem 0.8rem;
+}
+button.back { margin-bottom: 0.7rem; }
 
 /* backgammon board */
 .bg-board {

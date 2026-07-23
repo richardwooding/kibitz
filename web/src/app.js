@@ -1,6 +1,7 @@
-// app.js — thin view layer. All protocol, crypto, and rules live in the Go
-// WASM core; this file renders state and forwards user intents through the
-// two-function bridge:
+// app.js — session flow, chat, roster, and the game picker/router. All
+// protocol, crypto, and rules live in the Go WASM core; per-game rendering
+// and input live in each game's module file (board.js, bgboard.js, …),
+// registered via window.GameModules. The bridge:
 //   window.kibitz_send(json)   — UI → core (installed by the core)
 //   window.kibitzOnEvent(json) — core → UI (defined here)
 (() => {
@@ -11,16 +12,9 @@
 
   const state = {
     self: 0,
-    role: "",        // host | player | spectator
-    members: {},     // id -> role
-    game: null,          // last chess.state payload
-    selected: null,      // selected square
-    selectedPiece: null, // FEN char of the piece on it
-    drawPending: false,
-    bg: null,            // last bg.state payload
-    bgPending: [],       // hops (player-relative) being built this turn
-    bgFrom: null,        // selected source (global numbering)
-    activeTab: "chess",
+    role: "", // host | player | spectator
+    members: {},
+    activeGame: null, // module id when a pane is open; null = picker
   };
 
   function show(name) {
@@ -40,7 +34,83 @@
     toastTimer = setTimeout(() => el.classList.add("hidden"), 4000);
   }
 
-  // ---- core → UI ----------------------------------------------------------
+  // ---- game modules ---------------------------------------------------------
+
+  const ctx = {
+    $, send, toast,
+    self: () => state.self,
+    role: () => state.role,
+  };
+  const games = {}; // id -> instantiated module
+  for (const [id, def] of Object.entries(window.GameModules || {})) {
+    games[id] = { ...def, ...def.create(ctx) };
+  }
+
+  function openGame(id) {
+    state.activeGame = id;
+    $("game-picker").classList.add("hidden");
+    $("game-pane").classList.remove("hidden");
+    for (const [gid, mod] of Object.entries(games)) {
+      $(mod.paneId).classList.toggle("hidden", gid !== id);
+      mod.setVisible(gid === id);
+    }
+  }
+
+  function closeGame() {
+    state.activeGame = null;
+    $("game-pane").classList.add("hidden");
+    $("game-picker").classList.remove("hidden");
+    for (const mod of Object.values(games)) mod.setVisible(false);
+    renderPicker();
+  }
+
+  $("btn-back").addEventListener("click", closeGame);
+
+  function renderPicker() {
+    const el = $("game-picker");
+    el.innerHTML = "";
+    const canStart = state.role === "host" || state.role === "player";
+    for (const [id, mod] of Object.entries(games)) {
+      const card = document.createElement("div");
+      card.className = "game-card";
+      const title = document.createElement("div");
+      title.className = "game-title";
+      title.textContent = mod.label;
+      card.appendChild(title);
+
+      const info = mod.card();
+      const badge = document.createElement("div");
+      badge.className = "game-badge " + info.status;
+      if (info.status === "live") {
+        badge.textContent = info.myTurn ? "● your turn" : "○ in play";
+        card.classList.add("clickable");
+        card.addEventListener("click", () => openGame(id));
+      } else if (info.status === "over") {
+        badge.textContent = info.detail || "finished";
+        card.classList.add("clickable");
+        card.addEventListener("click", () => openGame(id));
+        if (canStart) card.appendChild(actionButton("Rematch", id));
+      } else {
+        badge.textContent = "not started";
+        if (canStart) card.appendChild(actionButton("+ Start", id));
+      }
+      card.appendChild(badge);
+      el.appendChild(card);
+    }
+  }
+
+  function actionButton(label, gameID) {
+    const b = document.createElement("button");
+    b.className = "start-btn";
+    b.textContent = label;
+    b.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      send({ type: "game.start", game: gameID });
+    });
+    return b;
+  }
+
+  // ---- core → UI ------------------------------------------------------------
 
   const handlers = {
     "core.ready"() {
@@ -66,7 +136,7 @@
       state.self = e.self;
       state.role = e.role;
       show("table");
-      renderStatus();
+      renderPicker();
     },
     "session.closed"(e) {
       toast(e.reason === "host left" ? "The host closed the table." : `Session ended: ${e.reason || "connection lost"}`);
@@ -75,40 +145,14 @@
     roster(e) {
       state.members = e.members;
       renderMembers();
+      // The host's lobby → table transition: someone arrived.
+      if (state.role === "host" && Object.keys(e.members).length > 1) {
+        show("table");
+        renderPicker();
+      }
     },
     "chat.msg"(e) {
       appendChat(e.from, e.text);
-    },
-    "chess.state"(e) {
-      state.game = e;
-      state.drawPending = false;
-      $("btn-agree-draw").classList.add("hidden");
-      if (state.role === "host") show("table"); // first state = opponent arrived
-      renderBoard();
-      renderStatus();
-    },
-    "chess.drawOffered"(e) {
-      if (isPlayer()) {
-        state.drawPending = true;
-        $("btn-agree-draw").classList.remove("hidden");
-        toast("Draw offered — accept?");
-      } else {
-        toast("A draw was offered.");
-      }
-    },
-    "chess.targets"(e) {
-      if (e.from !== state.selected) return; // stale reply
-      window.Board.setSelection($("board"), state.selected, e.targets, boardOpts());
-    },
-    "bg.state"(e) {
-      state.bg = e;
-      state.bgPending = [];
-      state.bgFrom = null;
-      if (state.role === "host") show("table");
-      renderBG();
-    },
-    "bg.danced"(e) {
-      toast(e.by === state.self ? "No legal moves — turn passed." : "Opponent danced (no legal moves).");
     },
     error(e) {
       toast(e.message);
@@ -119,56 +163,19 @@
     let e;
     try { e = JSON.parse(json); } catch { return; }
     const h = handlers[e.type];
-    if (h) h(e);
+    if (h) { h(e); return; }
+    // "<gameId>.xyz" events route to that game's module.
+    const dot = e.type.indexOf(".");
+    if (dot > 0) {
+      const mod = games[e.type.slice(0, dot)];
+      if (mod) {
+        mod.onEvent(e.type, e);
+        renderPicker();
+      }
+    }
   };
 
-  // ---- rendering ----------------------------------------------------------
-
-  function isPlayer() {
-    const g = state.game;
-    return g && (g.whiteId === state.self || g.blackId === state.self);
-  }
-
-  function myTurn() {
-    return state.game && state.game.turnId === state.self && !gameOver();
-  }
-
-  function gameOver() {
-    return state.game && state.game.outcome !== "*";
-  }
-
-  function boardOpts() {
-    return {
-      flipped: state.game && state.game.blackId === state.self,
-      lastMove: state.game && state.game.lastUci,
-    };
-  }
-
-  function renderBoard() {
-    if (!state.game || !state.game.playing) return;
-    state.selected = null;
-    window.Board.render($("board"), state.game.fen, boardOpts());
-  }
-
-  function renderStatus() {
-    const el = $("status-line");
-    const g = state.game;
-    if (!g || !g.playing) {
-      el.textContent = "Waiting for the game to start…";
-      return;
-    }
-    if (gameOver()) {
-      const result = g.outcome === "1/2-1/2" ? "Draw" :
-        (g.outcome === "1-0" ? "White wins" : "Black wins");
-      el.textContent = `${result} — ${g.method}`;
-      return;
-    }
-    const turnWhite = g.turnId === g.whiteId;
-    const who = g.turnId === state.self ? "Your move" : (turnWhite ? "White to move" : "Black to move");
-    el.textContent = who + (state.role === "spectator" ? " (you're kibitzing)" : "");
-    $("btn-resign").classList.toggle("hidden", !isPlayer() || gameOver());
-    $("btn-draw").classList.toggle("hidden", !isPlayer() || gameOver());
-  }
+  // ---- roster + chat --------------------------------------------------------
 
   function renderMembers() {
     const el = $("members");
@@ -195,7 +202,7 @@
     log.scrollTop = log.scrollHeight;
   }
 
-  // ---- user input ---------------------------------------------------------
+  // ---- user input -----------------------------------------------------------
 
   $("btn-create").addEventListener("click", () => {
     $("btn-create").disabled = true;
@@ -232,221 +239,7 @@
     }
   });
 
-  $("btn-resign").addEventListener("click", () => {
-    if (confirm("Resign the game?")) send({ type: "chess.resign" });
-  });
-  $("btn-draw").addEventListener("click", () => send({ type: "chess.offerDraw" }));
-  $("btn-agree-draw").addEventListener("click", () => send({ type: "chess.agreeDraw" }));
-
-  // Click-click move input: first click selects own piece (core supplies the
-  // legal targets), second click on a target sends the move. Promotion is
-  // auto-queen for now.
-  window.Board.onSquareClick((sq, piece) => {
-    if (!state.game || !state.game.playing || gameOver()) return;
-    if (!isPlayer()) return;
-
-    if (state.selected && state.selected !== sq) {
-      const wasTarget = [...document.querySelectorAll(".sq.target")]
-        .some((c) => c.dataset.sq === sq);
-      if (wasTarget) {
-        if (!myTurn()) { toast("Not your turn."); return; }
-        const uci = state.selected + sq + promotionSuffix(state.selectedPiece, sq);
-        state.selected = null;
-        state.selectedPiece = null;
-        send({ type: "chess.move", uci });
-        window.Board.setSelection($("board"), null, [], boardOpts());
-        return;
-      }
-    }
-
-    // (Re)select: only own pieces.
-    const mineIsWhite = state.game.whiteId === state.self;
-    if (piece && window.Board.pieceIsWhite(piece) === mineIsWhite) {
-      state.selected = sq;
-      state.selectedPiece = piece;
-      send({ type: "chess.targets", from: sq, id: Date.now() });
-    } else {
-      state.selected = null;
-      state.selectedPiece = null;
-      window.Board.setSelection($("board"), null, [], boardOpts());
-    }
-  });
-
-  // Auto-queen: only a pawn reaching the far rank needs a suffix.
-  function promotionSuffix(piece, to) {
-    if (piece === "P" && to[1] === "8") return "q";
-    if (piece === "p" && to[1] === "1") return "q";
-    return "";
-  }
-
-  // ---- backgammon ----------------------------------------------------------
-  // The core supplies complete legal turns (player-relative coords). The UI
-  // builds a turn hop by hop, filtering the legal set by the chosen prefix,
-  // and auto-submits when the turn is complete. The board preview applies
-  // pending hops locally; the core re-validates on submit.
-
-  const bgIsWhite = () => state.bg && state.bg.whiteId === state.self;
-  const bgIsPlayer = () => state.bg && (state.bg.whiteId === state.self || state.bg.blackId === state.self);
-  const bgMyTurn = () => state.bg && state.bg.turnId === state.self;
-
-  // player-relative → global point (25=bar and 0=off are shared).
-  function relToGlobal(rel) {
-    if (rel === 25 || rel === 0) return rel;
-    return bgIsWhite() ? rel : 25 - rel;
-  }
-  function globalToRel(p) {
-    if (p === 25 || p === 0) return p;
-    return bgIsWhite() ? p : 25 - p;
-  }
-
-  // Legal turns whose start matches the pending hops.
-  function bgCandidates() {
-    const pending = state.bgPending;
-    return (state.bg.legal || []).filter((turn) => {
-      if (turn.length < pending.length) return false;
-      return pending.every((h, i) => turn[i][0] === h[0] && turn[i][1] === h[1]);
-    });
-  }
-
-  // Next-hop options across all candidate turns.
-  function bgOptions() {
-    const at = state.bgPending.length;
-    const opts = [];
-    for (const turn of bgCandidates()) {
-      if (turn.length > at) opts.push({ from: turn[at][0], to: turn[at][1] });
-    }
-    return opts;
-  }
-
-  // Display board = confirmed board + pending hops applied locally.
-  function bgPreviewBoard() {
-    const st = {
-      points: [...state.bg.points],
-      barW: state.bg.barW, barB: state.bg.barB,
-      offW: state.bg.offW, offB: state.bg.offB,
-    };
-    const white = bgIsWhite();
-    for (const [from, to] of state.bgPending) {
-      const sign = white ? 1 : -1;
-      if (from === 25) {
-        if (white) st.barW--; else st.barB--;
-      } else {
-        st.points[relToGlobal(from)] -= sign;
-      }
-      if (to === 0) {
-        if (white) st.offW++; else st.offB++;
-        continue;
-      }
-      const g = relToGlobal(to);
-      if (st.points[g] === -sign) { // lone opposing blot: hit
-        st.points[g] = 0;
-        if (white) st.barB++; else st.barW++;
-      }
-      st.points[g] += sign;
-    }
-    return st;
-  }
-
-  function renderBG() {
-    const g = state.bg;
-    const statusEl = $("bg-status");
-    if (!g || !g.playing) {
-      statusEl.textContent = "Waiting for the game to start…";
-      $("bg-roll").classList.add("hidden");
-      return;
-    }
-
-    // Status line.
-    let status;
-    if (g.phase === "over") {
-      status = g.outcome;
-    } else if (g.phase === "rolling") {
-      status = bgMyTurn() ? "Your roll" : "Waiting for opponent to roll";
-    } else if (g.phase === "handshake") {
-      status = "Rolling…";
-    } else {
-      status = bgMyTurn() ? "Your move" : "Opponent to move";
-      if (state.role === "spectator") status = "Kibitzing";
-    }
-    statusEl.textContent = `${status} · pips ⚪${g.pipsW} ⚫${g.pipsB}` +
-      (bgIsPlayer() ? ` · you are ${bgIsWhite() ? "⚪" : "⚫"}` : "");
-
-    // Dice.
-    const faces = ["", "⚀", "⚁", "⚂", "⚃", "⚄", "⚅"];
-    $("bg-dice").textContent = g.phase === "moving"
-      ? faces[g.dice[0]] + faces[g.dice[1]] + (g.dice[0] === g.dice[1] ? " ×4" : "")
-      : "";
-
-    // Buttons.
-    $("bg-roll").classList.toggle("hidden", !(g.phase === "rolling" && bgMyTurn() && bgIsPlayer()));
-    $("bg-undo").classList.toggle("hidden", state.bgPending.length === 0);
-    $("bg-resign").classList.toggle("hidden", !bgIsPlayer() || g.phase === "over");
-
-    // Board + highlights.
-    const hi = { sources: new Set(), targets: new Set(), mover: bgIsWhite() ? "w" : "b" };
-    if (g.phase === "moving" && bgMyTurn()) {
-      for (const o of bgOptions()) {
-        const src = relToGlobal(o.from);
-        if (state.bgFrom === null) {
-          hi.sources.add(src);
-        } else if (src === state.bgFrom) {
-          hi.targets.add(relToGlobal(o.to));
-          hi.sources.add(src);
-        }
-      }
-    }
-    window.BGBoard.render($("bg-board"), bgPreviewBoard(), hi);
-  }
-
-  window.BGBoard && window.BGBoard.onClick((p) => {
-    const g = state.bg;
-    if (!g || g.phase !== "moving" || !bgMyTurn() || !bgIsPlayer()) return;
-
-    if (state.bgFrom !== null && p !== state.bgFrom) {
-      // Try to complete a hop bgFrom → p.
-      const relFrom = globalToRel(state.bgFrom);
-      const relTo = globalToRel(p);
-      const match = bgOptions().find((o) => o.from === relFrom && o.to === relTo);
-      if (match) {
-        state.bgPending.push([match.from, match.to]);
-        state.bgFrom = null;
-        // Complete turn? All legal turns share one length (maximality).
-        const cands = bgCandidates();
-        if (cands.length > 0 && cands[0].length === state.bgPending.length) {
-          send({ type: "bg.move", hops: state.bgPending });
-          // bg.state from the applied turn resets pending.
-        }
-        renderBG();
-        return;
-      }
-    }
-    // (Re)select a source.
-    const sources = new Set(bgOptions().map((o) => relToGlobal(o.from)));
-    state.bgFrom = sources.has(p) ? p : null;
-    renderBG();
-  });
-
-  $("tab-chess").addEventListener("click", () => setTab("chess"));
-  $("tab-bg").addEventListener("click", () => setTab("bg"));
-  function setTab(tab) {
-    state.activeTab = tab;
-    $("tab-chess").classList.toggle("active", tab === "chess");
-    $("tab-bg").classList.toggle("active", tab === "bg");
-    $("game-chess").classList.toggle("hidden", tab !== "chess");
-    $("game-bg").classList.toggle("hidden", tab !== "bg");
-  }
-
-  $("bg-roll").addEventListener("click", () => send({ type: "bg.roll" }));
-  $("bg-undo").addEventListener("click", () => {
-    state.bgPending = [];
-    state.bgFrom = null;
-    renderBG();
-  });
-  $("bg-resign").addEventListener("click", () => {
-    if (confirm("Resign the backgammon game?")) send({ type: "bg.resign" });
-  });
-
-  // ---- boot the core ------------------------------------------------------
+  // ---- boot the core --------------------------------------------------------
 
   (async () => {
     if (typeof Go === "undefined") {

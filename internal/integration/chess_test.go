@@ -2,6 +2,7 @@ package integration
 
 import (
 	"testing"
+	"time"
 
 	"github.com/richardwooding/kibitz/internal/service"
 	"github.com/richardwooding/kibitz/internal/service/chat"
@@ -38,6 +39,23 @@ func joinChess(t *testing.T, url, phrase string) *chessTable {
 	return &chessTable{client: c, mux: service.NewMux(c, chat.New(), cs), chess: cs}
 }
 
+// pollStart retries a game's Start until the opponent is seated (host-side
+// MemberKeyed races the test) or the deadline passes.
+func pollStart(t *testing.T, start func() error) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		err := start()
+		if err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("start never succeeded: %v", err)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
 func chessWait[E any](t *testing.T, tb *chessTable, match func(E) bool) E {
 	t.Helper()
 	for ev := range tb.mux.Events() {
@@ -57,6 +75,7 @@ func TestFullGameOverRelay(t *testing.T) {
 	host, phrase := hostChess(t, url)
 	player := joinChess(t, url, phrase)
 	spectator := joinChess(t, url, phrase)
+	pollStart(t, host.chess.Start)
 
 	// Everyone sees the game start (host = white, player = black).
 	for _, tb := range []*chessTable{host, player, spectator} {
@@ -105,6 +124,7 @@ func TestLateSpectatorSyncsMidGame(t *testing.T) {
 	url := startRelay(t)
 	host, phrase := hostChess(t, url)
 	player := joinChess(t, url, phrase)
+	pollStart(t, host.chess.Start)
 
 	chessWait(t, host, func(s chess.State) bool { return s.Playing })
 	chessWait(t, player, func(s chess.State) bool { return s.Playing })

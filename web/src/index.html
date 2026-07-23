@@ -40,29 +40,32 @@
   <main id="view-table" class="view hidden">
     <div class="table-grid">
       <section class="board-pane">
-        <div class="game-tabs">
-          <button id="tab-chess" class="tab active">♞ Chess</button>
-          <button id="tab-bg" class="tab">⚅ Backgammon</button>
-        </div>
+        <!-- picker: one card per available game -->
+        <div id="game-picker" class="game-picker"></div>
 
-        <div id="game-chess">
-          <div id="status-line" class="status"></div>
-          <div id="board" class="board"></div>
-          <div class="game-actions">
-            <button id="btn-resign" class="ghost">Resign</button>
-            <button id="btn-draw" class="ghost">Offer draw</button>
-            <button id="btn-agree-draw" class="ghost hidden">Accept draw</button>
+        <!-- open game pane -->
+        <div id="game-pane" class="hidden">
+          <button id="btn-back" class="ghost back">← All games</button>
+
+          <div id="game-chess" class="hidden">
+            <div id="status-line" class="status"></div>
+            <div id="board" class="board"></div>
+            <div class="game-actions">
+              <button id="btn-resign" class="ghost">Resign</button>
+              <button id="btn-draw" class="ghost">Offer draw</button>
+              <button id="btn-agree-draw" class="ghost hidden">Accept draw</button>
+            </div>
           </div>
-        </div>
 
-        <div id="game-bg" class="hidden">
-          <div id="bg-status" class="status"></div>
-          <div id="bg-board" class="bg-board"></div>
-          <div class="game-actions">
-            <button id="bg-roll">Roll</button>
-            <div id="bg-dice" class="dice"></div>
-            <button id="bg-undo" class="ghost hidden">Undo move</button>
-            <button id="bg-resign" class="ghost">Resign</button>
+          <div id="game-bg" class="hidden">
+            <div id="bg-status" class="status"></div>
+            <div id="bg-board" class="bg-board"></div>
+            <div class="game-actions">
+              <button id="bg-roll">Roll</button>
+              <div id="bg-dice" class="dice"></div>
+              <button id="bg-undo" class="ghost hidden">Undo move</button>
+              <button id="bg-resign" class="ghost">Resign</button>
+            </div>
           </div>
         </div>
       </section>

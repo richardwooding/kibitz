@@ -40,6 +40,7 @@ type command struct {
 	From   string    `json:"from,omitempty"` // square, for chess.targets
 	ID     int       `json:"id,omitempty"`   // request correlation for queries
 	Hops   [][2]int8 `json:"hops,omitempty"` // backgammon turn, player-relative
+	Game   string    `json:"game,omitempty"` // service ID for game.start
 }
 
 type app struct {
@@ -98,6 +99,8 @@ func dispatch(raw string) {
 		withChess((*chess.Service).OfferDraw)
 	case "chess.agreeDraw":
 		withChess((*chess.Service).AgreeDraw)
+	case "game.start":
+		startGame(cmd.Game)
 	case "chess.targets":
 		targets(cmd.From, cmd.ID)
 	case "bg.roll":
@@ -299,6 +302,27 @@ func withChess(f func(*chess.Service) error) {
 		return
 	}
 	if err := f(c); err != nil {
+		emitError(err.Error())
+	}
+}
+
+// startGame launches (or rematches) a game by service ID.
+func startGame(id string) {
+	current.mu.Lock()
+	starters := map[string]func() error{}
+	if current.chess != nil {
+		starters[chess.ID] = current.chess.Start
+	}
+	if current.bg != nil {
+		starters[backgammon.ID] = current.bg.Start
+	}
+	start, ok := starters[id]
+	current.mu.Unlock()
+	if !ok {
+		emitError("unknown game " + id)
+		return
+	}
+	if err := start(); err != nil {
 		emitError(err.Error())
 	}
 }

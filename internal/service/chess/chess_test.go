@@ -42,8 +42,11 @@ func newPair(t *testing.T) *pair {
 		Send: p.playerOut, Emit: func(e any) { p.playerEv = append(p.playerEv, e) },
 		Self: 2, HostID: 1, Host: false,
 	})
-	// Host starts the game when the player keys in.
+	// Seat the player, then launch on demand (M3: no auto-start).
 	p.host.MemberKeyed(2, session.RolePlayer)
+	if err := p.host.Start(); err != nil {
+		t.Fatalf("start: %v", err)
+	}
 	p.pump(t)
 	return p
 }

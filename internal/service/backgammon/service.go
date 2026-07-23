@@ -22,6 +22,7 @@ import (
 
 	"github.com/richardwooding/kibitz/internal/fairdice"
 	"github.com/richardwooding/kibitz/internal/service"
+	"github.com/richardwooding/kibitz/internal/service/game"
 	"github.com/richardwooding/kibitz/internal/session"
 	"github.com/richardwooding/kibitz/internal/wire"
 )
@@ -35,6 +36,7 @@ const (
 	kindRollReveal   uint8 = 4
 	kindTurn         uint8 = 5
 	kindResign       uint8 = 6
+	kindStartReq     uint8 = 7 // player → host: please start/rematch
 )
 
 type msg struct {
@@ -111,6 +113,7 @@ type Service struct {
 	ctx service.Context
 
 	mu        sync.Mutex
+	table     game.Table
 	board     Board
 	whiteID   wire.ParticipantID
 	blackID   wire.ParticipantID
@@ -135,40 +138,99 @@ func (s *Service) Version() int { return 1 }
 
 func (s *Service) Attach(ctx service.Context) { s.ctx = ctx }
 
-// MemberKeyed (host side): first player joining starts the game. Host plays
-// white; the opening roll decides who MOVES first.
+// MemberKeyed (host side) records the seated player; games start on demand
+// via Start().
 func (s *Service) MemberKeyed(id wire.ParticipantID, role session.Role) {
-	if !s.ctx.Host || role != session.RolePlayer {
+	if !s.ctx.Host {
 		return
 	}
 	s.mu.Lock()
-	if s.ph != phaseNone {
-		s.mu.Unlock()
-		return
+	s.table.NoteKeyed(id, role)
+	s.mu.Unlock()
+}
+
+// Start launches a game or a rematch. Host seats players (white alternates
+// each game); a player asks the host via startReq. The opening dice
+// exchange begins automatically once everyone learns the seats.
+func (s *Service) Start() error {
+	if !s.ctx.Host {
+		body, err := wire.Marshal(msg{Kind: kindStartReq})
+		if err != nil {
+			return err
+		}
+		return s.ctx.Send.SendTo(s.ctx.HostID, ID, body)
 	}
-	s.board = Start()
-	s.whiteID = s.ctx.Self
-	s.blackID = id
-	s.ph = phaseHandshake
-	s.opening = true
+	return s.hostStart(s.ctx.Self)
+}
+
+func (s *Service) hostStart(from wire.ParticipantID) error {
+	s.mu.Lock()
+	if err := s.table.AuthorizeStart(s.ctx.Host, from, s.ctx.Self, s.lifecycleLocked()); err != nil {
+		s.mu.Unlock()
+		return err
+	}
+	seats := s.table.NextSeats(s.ctx.Self)
+	s.resetGameLocked(wire.ParticipantID(seats.P1), wire.ParticipantID(seats.P2))
 	s.mu.Unlock()
 
-	if body, err := wire.Marshal(msg{Kind: kindNewGame, WhiteID: uint32(s.ctx.Self), BlackID: uint32(id)}); err == nil {
-		_ = s.ctx.Send.Broadcast(ID, body)
+	body, err := wire.Marshal(msg{Kind: kindNewGame, WhiteID: uint32(seats.P1), BlackID: uint32(seats.P2)})
+	if err != nil {
+		return err
 	}
-	// The host is the opening roller; the exchange runs automatically.
-	s.sendCommit()
+	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+		return err
+	}
+	// After a rematch seat swap the host may be BLACK — the opening commit
+	// must come from whoever holds the white seat (the roller the protocol
+	// expects). Non-host white triggers in handleNewGame instead.
+	s.maybeOpenCommit()
+	s.emitState()
+	return nil
+}
+
+// resetGameLocked puts the service in the opening-handshake state for the
+// given seats.
+func (s *Service) resetGameLocked(white, black wire.ParticipantID) {
+	s.board = Start()
+	s.whiteID = white
+	s.blackID = black
+	s.table.Seats = game.Seats{P1: white, P2: black}
+	s.ph = phaseHandshake
+	s.opening = true
+	s.result = nil
+	s.dice = [2]int8{}
+	s.haveCommit, s.haveResponse, s.myReveal = false, false, nil
+}
+
+// maybeOpenCommit fires the opening roll commit if this end holds the white
+// seat and the exchange hasn't started.
+func (s *Service) maybeOpenCommit() {
+	s.mu.Lock()
+	fire := s.ph == phaseHandshake && s.opening && !s.haveCommit && s.whiteID == s.ctx.Self
+	s.mu.Unlock()
+	if fire {
+		s.sendCommit()
+	}
+}
+
+// lifecycleLocked maps backgammon's phases onto the shared game lifecycle.
+func (s *Service) lifecycleLocked() game.Phase {
+	switch s.ph {
+	case phaseNone:
+		return game.Idle
+	case phaseOver:
+		return game.Over
+	default:
+		return game.Playing
+	}
 }
 
 func (s *Service) MemberLeft(id wire.ParticipantID) {
 	s.mu.Lock()
-	forfeit := s.ph != phaseNone && s.ph != phaseOver && (id == s.whiteID || id == s.blackID)
+	winner, forfeit := s.table.NoteLeft(id, s.lifecycleLocked())
 	if forfeit {
-		winner := White
-		if id == s.whiteID {
-			winner = Black
-		}
-		s.result = &Result{Winner: winner, Points: 1}
+		// game.P1 == White by seating convention.
+		s.result = &Result{Winner: Color(winner), Points: 1}
 		s.ph = phaseOver
 	}
 	s.mu.Unlock()
@@ -274,6 +336,11 @@ func (s *Service) HandleFrame(from wire.ParticipantID, body []byte) error {
 	switch m.Kind {
 	case kindNewGame:
 		return s.handleNewGame(from, m)
+	case kindStartReq:
+		if !s.ctx.Host {
+			return nil // only the host seats players
+		}
+		return s.hostStart(from)
 	case kindRollCommit:
 		return s.handleRollCommit(from, m)
 	case kindRollResponse:
@@ -293,14 +360,10 @@ func (s *Service) handleNewGame(from wire.ParticipantID, m msg) error {
 		return fmt.Errorf("backgammon: new game from non-host %d", from)
 	}
 	s.mu.Lock()
-	s.board = Start()
-	s.whiteID = wire.ParticipantID(m.WhiteID)
-	s.blackID = wire.ParticipantID(m.BlackID)
-	s.ph = phaseHandshake
-	s.opening = true
-	s.result = nil
-	s.haveCommit, s.haveResponse, s.myReveal = false, false, nil
+	s.resetGameLocked(wire.ParticipantID(m.WhiteID), wire.ParticipantID(m.BlackID))
 	s.mu.Unlock()
+	// If this end holds the white seat, it opens the dice exchange.
+	s.maybeOpenCommit()
 	s.emitState()
 	return nil
 }
