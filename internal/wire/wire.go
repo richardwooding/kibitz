@@ -173,6 +173,12 @@ func Decode(frame []byte) (MsgType, []byte, error) {
 	return MsgType(frame[1]), frame[2:], nil
 }
 
+// Marshal encodes v as bare deterministic CBOR (no frame or payload header).
+// Used for Envelope plaintexts and M2 commit-reveal hashing.
+func Marshal(v any) ([]byte, error) {
+	return encMode.Marshal(v)
+}
+
 // Body unmarshals a frame body produced by Decode into T.
 func Body[T any](raw []byte) (T, error) {
 	var v T
