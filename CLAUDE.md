@@ -9,8 +9,12 @@ sessions. A host gets a code phrase (`lion-42-maple`) plus a share link and QR;
 others join with it. A relay server (hosted or self-hosted, one binary)
 forwards frames it can never read — the phrase seeds a PAKE handshake and all
 service traffic is encrypted client-side. Layered services run over one
-session: chat, chess (via notnil/chess), backgammon (M2). A kibitzer is
-someone who watches a chess game and chats over it — hence the name.
+session: chat plus six games — chess (notnil/chess), backgammon (fairdice
+commit-reveal), connect4, checkers, reversi, battleship (shipcommit per-cell
+commitments). Games start on demand from a picker (service Start() /
+startReq; internal/service/game holds shared seat/lifecycle logic); rematch
+swaps seats. A kibitzer is someone who watches a chess game and chats over
+it — hence the name.
 
 ## Commands
 

@@ -18,10 +18,14 @@ first, backgammon next) instead of file transfer.
 
 ## Status
 
-**v0.2 — two games playable.** Sessions, encrypted chat, full chess, and
-backgammon (with provably fair commit-reveal dice — neither player nor the
-relay can steer a roll, and spectators verify every one) all work end to end.
-Both games run side by side in one session; switch with the tabs.
+**v0.3 — six games.** Chess, backgammon (provably fair commit-reveal dice),
+checkers, reversi, Connect Four, and **Battleship where cheating is
+cryptographically impossible**: each player commits to every cell of their
+board before the first shot, every reveal is verified by every participant
+(spectators included), and both full boards are opened and legality-checked
+at game end — all without any server ever seeing a thing, because the relay
+only ever forwards ciphertext. Games start on demand from the picker and run
+side by side in one session; rematches swap colors.
 
 ## How it works
 

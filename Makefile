@@ -14,6 +14,7 @@ web:
 ## wasm: build the browser core into web/dist (implies web)
 wasm: web
 	GOOS=js GOARCH=wasm go build -trimpath -ldflags="-s -w" -o web/dist/kibitz.wasm ./cmd/kibitz-wasm
+	gzip -9 -kf web/dist/kibitz.wasm
 
 ## serve: dev loop — build everything and run the relay on :8080
 serve: wasm

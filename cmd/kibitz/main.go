@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/richardwooding/kibitz/internal/relay"
@@ -36,7 +37,22 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle("/", http.FileServerFS(dist))
+	files := http.FileServerFS(dist)
+	mux.Handle("/", files)
+	// The WASM core is the one heavy asset (~8.6MB); serve the precompressed
+	// gzip (~2.5MB) when the client accepts it. instantiateStreaming needs
+	// the application/wasm content type either way.
+	mux.HandleFunc("/kibitz.wasm", func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+			if gz, err := web.Dist.ReadFile("dist/kibitz.wasm.gz"); err == nil {
+				w.Header().Set("Content-Encoding", "gzip")
+				w.Header().Set("Content-Type", "application/wasm")
+				_, _ = w.Write(gz)
+				return
+			}
+		}
+		files.ServeHTTP(w, r)
+	})
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = fmt.Fprintln(w, "ok")
