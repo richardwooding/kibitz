@@ -32,6 +32,11 @@ body {
 .view { text-align: center; padding: 2rem; width: 100%; max-width: 60rem; }
 .hidden { display: none !important; }
 
+/* The table view anchors to the top of the page: the two game panes have
+   different heights, and vertical centering would make the layout jump when
+   switching tabs. */
+#view-table { align-self: start; }
+
 h1 { font-size: 3rem; margin: 0 0 0.5rem; letter-spacing: -0.02em; }
 h2 { margin: 0 0 0.5rem; }
 .tagline { color: var(--muted); max-width: 34rem; margin-inline: auto; }
