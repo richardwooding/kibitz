@@ -164,10 +164,14 @@
       $("btn-join").disabled = false;
       $("join-phrase").disabled = false;
       $("home-status").textContent = "";
+      // Arriving via a share link: pre-fill the phrase and let the visitor
+      // pick a screen name before joining — don't auto-join (that robbed
+      // link-openers of the chance to name themselves).
       const phrase = decodeURIComponent(location.hash.slice(1));
       if (phrase) {
-        $("home-status").textContent = `joining ${phrase}…`;
-        send({ type: "join", phrase, name: myName() });
+        $("join-phrase").value = phrase;
+        $("home-status").textContent = `You've been invited to “${phrase}”. Add a name if you like, then Join.`;
+        $("display-name").focus();
       }
     },
     "session.created"(e) {
@@ -307,9 +311,17 @@
   $("join-phrase").addEventListener("keydown", (e) => {
     if (e.key === "Enter") joinFromInput();
   });
+  // Enter in the name field joins too, once a phrase is present (e.g. after
+  // arriving via a share link with the phrase pre-filled).
+  $("display-name").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && $("join-phrase").value.trim()) joinFromInput();
+  });
   function joinFromInput() {
     const phrase = $("join-phrase").value.trim();
-    if (phrase) send({ type: "join", phrase, name: myName() });
+    if (phrase) {
+      $("home-status").textContent = `joining ${phrase}…`;
+      send({ type: "join", phrase, name: myName() });
+    }
   }
 
   $("btn-copy").addEventListener("click", async () => {
