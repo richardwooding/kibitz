@@ -28,6 +28,7 @@ import (
 	"github.com/richardwooding/kibitz/internal/service/backgammon"
 	"github.com/richardwooding/kibitz/internal/service/chat"
 	"github.com/richardwooding/kibitz/internal/service/chess"
+	"github.com/richardwooding/kibitz/internal/service/connect4"
 	"github.com/richardwooding/kibitz/internal/session"
 )
 
@@ -41,6 +42,7 @@ type command struct {
 	ID     int       `json:"id,omitempty"`   // request correlation for queries
 	Hops   [][2]int8 `json:"hops,omitempty"` // backgammon turn, player-relative
 	Game   string    `json:"game,omitempty"` // service ID for game.start
+	Col    int8      `json:"col"`            // connect4 column
 }
 
 type app struct {
@@ -49,6 +51,7 @@ type app struct {
 	chat   *chat.Service
 	chess  *chess.Service
 	bg     *backgammon.Service
+	c4     *connect4.Service
 }
 
 var current app
@@ -78,46 +81,49 @@ func emitError(msg string) {
 	emit("error", map[string]any{"message": msg})
 }
 
+// commands maps UI intents to actions. Handlers run on their own goroutine.
+var commands = map[string]func(command){
+	"create":     func(command) { create() },
+	"join":       func(c command) { join(c.Phrase) },
+	"leave":      func(command) { leave() },
+	"game.start": func(c command) { startGame(c.Game) },
+
+	"chat.say": func(c command) {
+		withChat(func(s *chat.Service) error { return s.Say(c.Text) })
+	},
+
+	"chess.move":      func(c command) { withChess(func(s *chess.Service) error { return s.TryMove(c.UCI) }) },
+	"chess.resign":    func(command) { withChess((*chess.Service).Resign) },
+	"chess.offerDraw": func(command) { withChess((*chess.Service).OfferDraw) },
+	"chess.agreeDraw": func(command) { withChess((*chess.Service).AgreeDraw) },
+	"chess.targets":   func(c command) { targets(c.From, c.ID) },
+
+	"bg.roll": func(command) { withBG((*backgammon.Service).Roll) },
+	"bg.move": func(c command) {
+		hops := make([]backgammon.Hop, len(c.Hops))
+		for i, h := range c.Hops {
+			hops[i] = backgammon.Hop{From: h[0], To: h[1]}
+		}
+		withBG(func(s *backgammon.Service) error { return s.Move(hops) })
+	},
+	"bg.resign": func(command) { withBG((*backgammon.Service).Resign) },
+
+	"c4.drop":   func(c command) { withC4(func(s *connect4.Service) error { return s.Drop(c.Col) }) },
+	"c4.resign": func(command) { withC4((*connect4.Service).Resign) },
+}
+
 func dispatch(raw string) {
 	var cmd command
 	if err := json.Unmarshal([]byte(raw), &cmd); err != nil {
 		emitError("bad command: " + err.Error())
 		return
 	}
-	switch cmd.Type {
-	case "create":
-		create()
-	case "join":
-		join(cmd.Phrase)
-	case "chat.say":
-		withChat(func(c *chat.Service) error { return c.Say(cmd.Text) })
-	case "chess.move":
-		withChess(func(c *chess.Service) error { return c.TryMove(cmd.UCI) })
-	case "chess.resign":
-		withChess((*chess.Service).Resign)
-	case "chess.offerDraw":
-		withChess((*chess.Service).OfferDraw)
-	case "chess.agreeDraw":
-		withChess((*chess.Service).AgreeDraw)
-	case "game.start":
-		startGame(cmd.Game)
-	case "chess.targets":
-		targets(cmd.From, cmd.ID)
-	case "bg.roll":
-		withBG((*backgammon.Service).Roll)
-	case "bg.move":
-		hops := make([]backgammon.Hop, len(cmd.Hops))
-		for i, h := range cmd.Hops {
-			hops[i] = backgammon.Hop{From: h[0], To: h[1]}
-		}
-		withBG(func(b *backgammon.Service) error { return b.Move(hops) })
-	case "bg.resign":
-		withBG((*backgammon.Service).Resign)
-	case "leave":
-		leave()
-	default:
+	h, ok := commands[cmd.Type]
+	if !ok {
 		emitError("unknown command " + cmd.Type)
+		return
 	}
+	h(cmd)
 }
 
 // relayURL derives ws(s)://<host>/ws from the page location, so the client
@@ -190,61 +196,64 @@ func start(client *session.Client) {
 	ch := chat.New()
 	cs := chess.New()
 	bg := backgammon.New()
-	mux := service.NewMux(client, ch, cs, bg)
+	c4 := connect4.New()
+	mux := service.NewMux(client, ch, cs, bg, c4)
 
 	current.mu.Lock()
 	if current.client != nil {
 		_ = current.client.Close()
 	}
-	current.client, current.chat, current.chess, current.bg = client, ch, cs, bg
+	current.client, current.chat, current.chess, current.bg, current.c4 = client, ch, cs, bg, c4
 	current.mu.Unlock()
 
 	go pump(mux)
+}
+
+// startGame launches (or rematches) a game by service ID.
+func startGame(id string) {
+	current.mu.Lock()
+	starters := map[string]func() error{}
+	if current.chess != nil {
+		starters[chess.ID] = current.chess.Start
+	}
+	if current.bg != nil {
+		starters[backgammon.ID] = current.bg.Start
+	}
+	if current.c4 != nil {
+		starters[connect4.ID] = current.c4.Start
+	}
+	startFn, ok := starters[id]
+	current.mu.Unlock()
+	if !ok {
+		emitError("unknown game " + id)
+		return
+	}
+	if err := startFn(); err != nil {
+		emitError(err.Error())
+	}
 }
 
 func pump(mux *service.Mux) {
 	for ev := range mux.Events() {
 		switch e := ev.(type) {
 		case service.Roster:
-			members := map[string]string{}
-			for id, role := range e.Members {
-				members[fmt.Sprint(uint32(id))] = roleName(role)
-			}
-			emit("roster", map[string]any{"members": members})
+			emitRoster(e)
 		case chat.Message:
 			emit("chat.msg", map[string]any{"from": uint32(e.From), "text": e.Text})
 		case chess.State:
-			emit("chess.state", map[string]any{
-				"fen": e.FEN, "whiteId": uint32(e.WhiteID), "blackId": uint32(e.BlackID),
-				"turnId": uint32(e.TurnID), "outcome": e.Outcome, "method": e.Method,
-				"lastUci": e.LastUCI, "playing": e.Playing,
-			})
+			emitChessState(e)
 		case chess.DrawOffered:
 			emit("chess.drawOffered", map[string]any{"from": uint32(e.From)})
+		case chess.Desync:
+			emitError("game desynchronized: " + e.Reason)
 		case backgammon.State:
-			legal := make([][][2]int8, len(e.Legal))
-			for i, turn := range e.Legal {
-				legal[i] = make([][2]int8, len(turn))
-				for j, h := range turn {
-					legal[i][j] = [2]int8{h.From, h.To}
-				}
-			}
-			emit("bg.state", map[string]any{
-				"points": e.Board.Points[:], "barW": e.Board.Bar[backgammon.White],
-				"barB": e.Board.Bar[backgammon.Black], "offW": e.Board.Off[backgammon.White],
-				"offB":    e.Board.Off[backgammon.Black],
-				"whiteId": uint32(e.WhiteID), "blackId": uint32(e.BlackID),
-				"turnId": uint32(e.TurnID), "phase": e.Phase,
-				"dice": []int8{e.Dice[0], e.Dice[1]}, "legal": legal,
-				"outcome": e.Outcome, "pipsW": e.PipsW, "pipsB": e.PipsB,
-				"playing": e.Playing,
-			})
+			emitBGState(e)
 		case backgammon.Danced:
 			emit("bg.danced", map[string]any{"by": uint32(e.By)})
 		case backgammon.CheatDetected:
 			emitError(fmt.Sprintf("dice cheat detected from participant %d — game voided", e.By))
-		case chess.Desync:
-			emitError("game desynchronized: " + e.Reason)
+		case connect4.State:
+			emitC4State(e)
 		case service.ServiceError:
 			emitError(fmt.Sprintf("%s: %v", e.Service, e.Err))
 		case service.SessionEvent:
@@ -254,6 +263,50 @@ func pump(mux *service.Mux) {
 			}
 		}
 	}
+}
+
+func emitRoster(e service.Roster) {
+	members := map[string]string{}
+	for id, role := range e.Members {
+		members[fmt.Sprint(uint32(id))] = roleName(role)
+	}
+	emit("roster", map[string]any{"members": members})
+}
+
+func emitChessState(e chess.State) {
+	emit("chess.state", map[string]any{
+		"fen": e.FEN, "whiteId": uint32(e.WhiteID), "blackId": uint32(e.BlackID),
+		"turnId": uint32(e.TurnID), "outcome": e.Outcome, "method": e.Method,
+		"lastUci": e.LastUCI, "playing": e.Playing,
+	})
+}
+
+func emitBGState(e backgammon.State) {
+	legal := make([][][2]int8, len(e.Legal))
+	for i, turn := range e.Legal {
+		legal[i] = make([][2]int8, len(turn))
+		for j, h := range turn {
+			legal[i][j] = [2]int8{h.From, h.To}
+		}
+	}
+	emit("bg.state", map[string]any{
+		"points": e.Board.Points[:], "barW": e.Board.Bar[backgammon.White],
+		"barB": e.Board.Bar[backgammon.Black], "offW": e.Board.Off[backgammon.White],
+		"offB":    e.Board.Off[backgammon.Black],
+		"whiteId": uint32(e.WhiteID), "blackId": uint32(e.BlackID),
+		"turnId": uint32(e.TurnID), "phase": e.Phase,
+		"dice": []int8{e.Dice[0], e.Dice[1]}, "legal": legal,
+		"outcome": e.Outcome, "pipsW": e.PipsW, "pipsB": e.PipsB,
+		"playing": e.Playing,
+	})
+}
+
+func emitC4State(e connect4.State) {
+	emit("connect4.state", map[string]any{
+		"board": e.Board[:], "p1Id": uint32(e.P1ID), "p2Id": uint32(e.P2ID),
+		"turnId": uint32(e.TurnID), "outcome": e.Outcome,
+		"winCells": e.WinCells, "lastCol": e.LastCol, "playing": e.Playing,
+	})
 }
 
 func targets(from string, id int) {
@@ -273,7 +326,7 @@ func targets(from string, id int) {
 func leave() {
 	current.mu.Lock()
 	c := current.client
-	current.client, current.chat, current.chess = nil, nil, nil
+	current.client, current.chat, current.chess, current.bg, current.c4 = nil, nil, nil, nil, nil
 	current.mu.Unlock()
 	if c != nil {
 		_ = c.Close()
@@ -282,60 +335,38 @@ func leave() {
 
 func withChat(f func(*chat.Service) error) {
 	current.mu.Lock()
-	c := current.chat
+	s := current.chat
 	current.mu.Unlock()
-	if c == nil {
-		emitError("not in a session")
-		return
-	}
-	if err := f(c); err != nil {
-		emitError(err.Error())
-	}
+	callService(s == nil, func() error { return f(s) })
 }
 
 func withChess(f func(*chess.Service) error) {
 	current.mu.Lock()
-	c := current.chess
+	s := current.chess
 	current.mu.Unlock()
-	if c == nil {
-		emitError("not in a session")
-		return
-	}
-	if err := f(c); err != nil {
-		emitError(err.Error())
-	}
-}
-
-// startGame launches (or rematches) a game by service ID.
-func startGame(id string) {
-	current.mu.Lock()
-	starters := map[string]func() error{}
-	if current.chess != nil {
-		starters[chess.ID] = current.chess.Start
-	}
-	if current.bg != nil {
-		starters[backgammon.ID] = current.bg.Start
-	}
-	start, ok := starters[id]
-	current.mu.Unlock()
-	if !ok {
-		emitError("unknown game " + id)
-		return
-	}
-	if err := start(); err != nil {
-		emitError(err.Error())
-	}
+	callService(s == nil, func() error { return f(s) })
 }
 
 func withBG(f func(*backgammon.Service) error) {
 	current.mu.Lock()
-	b := current.bg
+	s := current.bg
 	current.mu.Unlock()
-	if b == nil {
+	callService(s == nil, func() error { return f(s) })
+}
+
+func withC4(f func(*connect4.Service) error) {
+	current.mu.Lock()
+	s := current.c4
+	current.mu.Unlock()
+	callService(s == nil, func() error { return f(s) })
+}
+
+func callService(missing bool, f func() error) {
+	if missing {
 		emitError("not in a session")
 		return
 	}
-	if err := f(b); err != nil {
+	if err := f(); err != nil {
 		emitError(err.Error())
 	}
 }

@@ -227,6 +227,28 @@ button.back { margin-bottom: 0.7rem; }
 .bg-tray.target { outline: 3px dashed #fff; outline-offset: -3px; }
 .dice { font-size: 2rem; line-height: 1; min-width: 4.5rem; }
 
+/* connect four */
+.c4-board {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  width: min(100%, 26rem);
+  background: var(--accent);
+  padding: 8px;
+  border-radius: 0.75rem;
+}
+.c4-cell {
+  all: unset;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--bg);
+  cursor: pointer;
+  box-sizing: border-box;
+}
+.c4-cell.red { background: #e04343; }
+.c4-cell.yellow { background: #f0c93c; }
+.c4-cell.win { outline: 3px solid #fff; outline-offset: -3px; }
+
 /* side pane */
 .side-pane {
   background: var(--panel);
