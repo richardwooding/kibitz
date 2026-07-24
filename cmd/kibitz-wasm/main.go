@@ -531,19 +531,24 @@ func emitCKState(e checkers.State) {
 func emitBSState(e battleship.State) {
 	emit("battleship.state", map[string]any{
 		"phase": e.Phase, "p1Id": uint32(e.P1ID), "p2Id": uint32(e.P2ID),
-		"turnId": uint32(e.TurnID), "myFleet": e.MyFleet[:],
+		"turnId": uint32(e.TurnID), "myFleet": u8ints(e.MyFleet[:]),
 		"committed": e.Committed[:],
 		"reveals":   [][]int8{e.Reveals[0][:], e.Reveals[1][:]},
-		"sunk":      [][]uint8{orEmpty(e.Sunk[0]), orEmpty(e.Sunk[1])},
+		"sunk":      [][]int{u8ints(e.Sunk[0]), u8ints(e.Sunk[1])},
 		"outcome":   e.Outcome, "cheatBy": uint32(e.CheatBy), "playing": e.Playing,
 	})
 }
 
-func orEmpty(v []uint8) []uint8 {
-	if v == nil {
-		return []uint8{}
+// u8ints copies a []uint8 to a []int so it JSON-marshals as a number array —
+// encoding/json renders []uint8 (== []byte) as a base64 string, which the JS
+// board would then choke on (e.g. sunk[side].map is not a function). Always
+// non-nil, so an empty fleet/sunk list becomes [] rather than null.
+func u8ints(b []uint8) []int {
+	out := make([]int, len(b))
+	for i, v := range b {
+		out[i] = int(v)
 	}
-	return v
+	return out
 }
 
 func emitRVState(e reversi.State) {
