@@ -7,18 +7,18 @@ import (
 	chesslib "github.com/corentings/chess/v2"
 )
 
-// The solo "Play the computer" bot's Hard move for chess: a small alpha-beta
-// negamax over material. It searches a CLONE of the position (corentings/chess
-// positions are immutable — Update returns a new one), so it never touches the
-// live game. Material-only eval, captures searched first for pruning; it finds
-// short tactics and, crucially, won't hang a piece to a recapture the way the
-// old static heuristic could.
+// The solo "Play the computer" bot's Hard move for chess: an alpha-beta negamax
+// with quiescence (captures settled at the horizon) over an evaluation of
+// material plus piece-square positional bonuses. It searches a CLONE of the
+// position (corentings/chess positions are immutable — Update returns a new
+// one), so it never touches the live game; captures are searched first for
+// pruning. It finds short tactics, won't hang a piece to a recapture, and now
+// develops with some positional sense (centre, castling).
 
 const (
-	botDepth  = 4       // plies of lookahead
-	botInf    = 1 << 30 // search infinity (> any score)
-	botMate   = 1 << 20 // checkmate magnitude (≫ any material total)
-	botMaxMat = 1 << 16 // guard: material never approaches mate/inf
+	botDepth = 4       // plies of lookahead
+	botInf   = 1 << 30 // search infinity (> any score)
+	botMate  = 1 << 20 // checkmate magnitude (≫ any material total)
 )
 
 // matValue is indexed by chesslib.PieceType: NoPieceType, King, Queen, Rook,
@@ -103,7 +103,7 @@ func quiesce(pos *chesslib.Position, alpha, beta int) int {
 		}
 		return 0 // stalemate
 	}
-	stand := evalMaterial(pos, pos.Turn())
+	stand := evaluate(pos, pos.Turn())
 	if stand >= beta {
 		return beta
 	}
@@ -127,12 +127,14 @@ func quiesce(pos *chesslib.Position, alpha, beta int) int {
 	return alpha
 }
 
-// evalMaterial is the leaf heuristic: own material minus opponent's, in
-// centipawns, from side's perspective.
-func evalMaterial(pos *chesslib.Position, side chesslib.Color) int {
+// evaluate is the leaf heuristic: material plus piece-square positional bonuses,
+// own minus opponent, in centipawns from side's perspective. The piece-square
+// tables give the bot positional sense — develop pieces toward the centre, push
+// central pawns, castle the king into safety — on top of pure material.
+func evaluate(pos *chesslib.Position, side chesslib.Color) int {
 	score := 0
-	for _, pc := range pos.Board().SquareMap() {
-		v := matValue[pc.Type()]
+	for sq, pc := range pos.Board().SquareMap() {
+		v := matValue[pc.Type()] + pstValue(pc.Type(), sq, pc.Color())
 		if pc.Color() == side {
 			score += v
 		} else {
@@ -140,6 +142,83 @@ func evalMaterial(pos *chesslib.Position, side chesslib.Color) int {
 		}
 	}
 	return score
+}
+
+// pstValue is the positional bonus for a piece on a square. Tables are written
+// from White's view (rank 8 first); a White piece reads the table directly, a
+// Black piece reads it vertically mirrored so the tables are colour-symmetric.
+func pstValue(pt chesslib.PieceType, sq chesslib.Square, c chesslib.Color) int {
+	f, r := int(sq.File()), int(sq.Rank()) // 0..7, rank 1 == 0
+	idx := r*8 + f                         // Black's view
+	if c == chesslib.White {
+		idx = (7-r)*8 + f
+	}
+	return pst[pt][idx]
+}
+
+// pst holds the middlegame piece-square tables (Michniewski's simplified set),
+// indexed by chesslib.PieceType then square (rank 8 first, files a..h).
+var pst = [7][64]int{
+	chesslib.Pawn: {
+		0, 0, 0, 0, 0, 0, 0, 0,
+		50, 50, 50, 50, 50, 50, 50, 50,
+		10, 10, 20, 30, 30, 20, 10, 10,
+		5, 5, 10, 25, 25, 10, 5, 5,
+		0, 0, 0, 20, 20, 0, 0, 0,
+		5, -5, -10, 0, 0, -10, -5, 5,
+		5, 10, 10, -20, -20, 10, 10, 5,
+		0, 0, 0, 0, 0, 0, 0, 0,
+	},
+	chesslib.Knight: {
+		-50, -40, -30, -30, -30, -30, -40, -50,
+		-40, -20, 0, 0, 0, 0, -20, -40,
+		-30, 0, 10, 15, 15, 10, 0, -30,
+		-30, 5, 15, 20, 20, 15, 5, -30,
+		-30, 0, 15, 20, 20, 15, 0, -30,
+		-30, 5, 10, 15, 15, 10, 5, -30,
+		-40, -20, 0, 5, 5, 0, -20, -40,
+		-50, -40, -30, -30, -30, -30, -40, -50,
+	},
+	chesslib.Bishop: {
+		-20, -10, -10, -10, -10, -10, -10, -20,
+		-10, 0, 0, 0, 0, 0, 0, -10,
+		-10, 0, 5, 10, 10, 5, 0, -10,
+		-10, 5, 5, 10, 10, 5, 5, -10,
+		-10, 0, 10, 10, 10, 10, 0, -10,
+		-10, 10, 10, 10, 10, 10, 10, -10,
+		-10, 5, 0, 0, 0, 0, 5, -10,
+		-20, -10, -10, -10, -10, -10, -10, -20,
+	},
+	chesslib.Rook: {
+		0, 0, 0, 0, 0, 0, 0, 0,
+		5, 10, 10, 10, 10, 10, 10, 5,
+		-5, 0, 0, 0, 0, 0, 0, -5,
+		-5, 0, 0, 0, 0, 0, 0, -5,
+		-5, 0, 0, 0, 0, 0, 0, -5,
+		-5, 0, 0, 0, 0, 0, 0, -5,
+		-5, 0, 0, 0, 0, 0, 0, -5,
+		0, 0, 0, 5, 5, 0, 0, 0,
+	},
+	chesslib.Queen: {
+		-20, -10, -10, -5, -5, -10, -10, -20,
+		-10, 0, 0, 0, 0, 0, 0, -10,
+		-10, 0, 5, 5, 5, 5, 0, -10,
+		-5, 0, 5, 5, 5, 5, 0, -5,
+		0, 0, 5, 5, 5, 5, 0, -5,
+		-10, 5, 5, 5, 5, 5, 0, -10,
+		-10, 0, 5, 0, 0, 0, 0, -10,
+		-20, -10, -10, -5, -5, -10, -10, -20,
+	},
+	chesslib.King: { // middlegame: stay tucked away / castled
+		-30, -40, -40, -50, -50, -40, -40, -30,
+		-30, -40, -40, -50, -50, -40, -40, -30,
+		-30, -40, -40, -50, -50, -40, -40, -30,
+		-30, -40, -40, -50, -50, -40, -40, -30,
+		-20, -30, -30, -40, -40, -30, -30, -20,
+		-10, -20, -20, -20, -20, -20, -20, -10,
+		20, 20, 0, 0, 0, 0, 20, 20,
+		20, 30, 10, 0, 0, 10, 30, 20,
+	},
 }
 
 // orderCaptures sorts moves so higher-value captures come first (better

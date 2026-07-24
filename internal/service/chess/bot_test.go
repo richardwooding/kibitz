@@ -40,11 +40,32 @@ func TestBotFindsMateInOne(t *testing.T) {
 	}
 }
 
+// TestPieceSquare checks the positional tables are oriented and colour-symmetric:
+// a central knight beats a rim knight, a pawn is rewarded for advancing, and a
+// Black piece mirrors the White value.
+func TestPieceSquare(t *testing.T) {
+	c3 := chesslib.NewSquare(chesslib.FileC, chesslib.Rank3)
+	a3 := chesslib.NewSquare(chesslib.FileA, chesslib.Rank3)
+	if pstValue(chesslib.Knight, c3, chesslib.White) <= pstValue(chesslib.Knight, a3, chesslib.White) {
+		t.Fatalf("knight: central c3 should beat rim a3")
+	}
+	e4 := chesslib.NewSquare(chesslib.FileE, chesslib.Rank4)
+	e2 := chesslib.NewSquare(chesslib.FileE, chesslib.Rank2)
+	if pstValue(chesslib.Pawn, e4, chesslib.White) <= pstValue(chesslib.Pawn, e2, chesslib.White) {
+		t.Fatalf("pawn: advanced e4 should beat home e2")
+	}
+	// Colour symmetry: a Black pawn on e5 mirrors a White pawn on e4.
+	e5 := chesslib.NewSquare(chesslib.FileE, chesslib.Rank5)
+	if pstValue(chesslib.Pawn, e5, chesslib.Black) != pstValue(chesslib.Pawn, e4, chesslib.White) {
+		t.Fatalf("pawn: black e5 should mirror white e4")
+	}
+}
+
 // TestQuiesceWinsHangingPiece: with an undefended black knight en prise, the
 // quiescence search resolves the free capture — the score rises above stand-pat.
 func TestQuiesceWinsHangingPiece(t *testing.T) {
 	pos := posFromFEN(t, "7k/8/8/4n3/8/8/4R3/7K w - - 0 1") // white Re2, loose black Ne5
-	stand := evalMaterial(pos, pos.Turn())
+	stand := evaluate(pos, pos.Turn())
 	q := quiesce(pos, -botInf, botInf)
 	if q <= stand {
 		t.Fatalf("quiesce = %d, want > stand-pat %d (it should win the knight)", q, stand)
@@ -55,7 +76,7 @@ func TestQuiesceWinsHangingPiece(t *testing.T) {
 // must fall back on the stand-pat score rather than the losing capture.
 func TestQuiesceStandsPatOnBadCapture(t *testing.T) {
 	pos := posFromFEN(t, "7k/4p3/3p4/8/8/8/3Q4/7K w - - 0 1") // Qd2; d6 pawn defended by e7
-	stand := evalMaterial(pos, pos.Turn())
+	stand := evaluate(pos, pos.Turn())
 	if q := quiesce(pos, -botInf, botInf); q != stand {
 		t.Fatalf("quiesce = %d, want stand-pat %d (must not enter the losing capture)", q, stand)
 	}
