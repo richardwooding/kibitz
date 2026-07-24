@@ -204,7 +204,6 @@ input[type="text"] {
   color: var(--accent);
   font-weight: 600;
   align-self: center;
-  margin-right: auto;
 }
 #view-table.solo .solo-banner { display: inline; }
 #view-table.solo .side-pane { display: none; }
@@ -632,7 +631,9 @@ button.back { margin-bottom: 0.7rem; }
 /* ============================ polish layer ============================ */
 
 /* board-pane header + mute toggle */
-.board-pane-head { display: flex; justify-content: flex-end; margin-bottom: 0.4rem; }
+.board-pane-head { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.4rem; }
+.board-pane-head #btn-mute { margin-left: auto; }
+.board-pane-head .back { margin-bottom: 0; }
 .icon-btn {
   all: unset;
   cursor: pointer;

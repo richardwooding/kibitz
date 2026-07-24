@@ -17,6 +17,7 @@
     names: {}, // id -> screen name (from the ctl roster)
     activeGame: null, // module id when a pane is open; null = picker
     solo: false, // local hot-seat (no relay); the user drives both sides
+    inSession: false, // pushed a history entry for the session (lobby/table)
   };
 
   // displayName returns a participant's screen name, "you" for self, or a
@@ -57,6 +58,32 @@
     for (const [k, v] of Object.entries(views)) v.classList.toggle("hidden", k !== name);
   }
 
+  // ---- navigation: home → table(picker) → game, mirrored by the OS/browser
+  // Back button via the History API. Each level's "up" is one popstate.
+  function pushSession() {
+    if (state.inSession) return;
+    state.inSession = true;
+    history.pushState({ k: "session" }, "");
+  }
+  // Leaving a session (solo or networked) reloads to a clean home: it tears down
+  // the core + session/loopback and drops any invite #phrase. Reload is the
+  // simplest bulletproof reset (board modules hold state with no reset hook).
+  function leaveToHome() {
+    location.replace(location.pathname);
+  }
+  function leaveSession() {
+    if (!state.solo) {
+      const msg = state.role === "host" ? "Leave and close the table?" : "Leave the table?";
+      if (!confirm(msg)) return;
+    }
+    leaveToHome();
+  }
+  window.addEventListener("popstate", () => {
+    if (state.activeGame) { closeGame(); return; }        // game pane → picker
+    if (views.home.classList.contains("hidden")) leaveToHome(); // in a session → home
+    // already home: nothing to do
+  });
+
   function send(obj) {
     if (window.kibitz_send) window.kibitz_send(JSON.stringify(obj));
   }
@@ -85,6 +112,7 @@
   }
 
   function openGame(id) {
+    if (state.activeGame !== id) history.pushState({ k: "game", id }, "");
     state.activeGame = id;
     $("game-picker").classList.add("hidden");
     $("game-pane").classList.remove("hidden");
@@ -102,7 +130,10 @@
     renderPicker();
   }
 
-  $("btn-back").addEventListener("click", closeGame);
+  // Back-button controls funnel through history so in-app and OS Back agree.
+  $("btn-back").addEventListener("click", () => history.back()); // game → picker
+  $("btn-leave").addEventListener("click", leaveSession);        // table → home
+  $("btn-cancel").addEventListener("click", leaveSession);       // lobby → home
 
   function renderPicker() {
     const el = $("game-picker");
@@ -203,6 +234,7 @@
       $("lobby-url").value = e.url;
       if (e.qr) $("lobby-qr").src = "data:image/png;base64," + e.qr;
       renderLobbyName();
+      pushSession();
       show("lobby");
     },
     "session.joined"(e) {
@@ -210,6 +242,7 @@
       state.role = e.role;
       state.solo = !!e.solo;
       views.table.classList.toggle("solo", state.solo);
+      pushSession();
       show("table");
       renderPicker();
     },
