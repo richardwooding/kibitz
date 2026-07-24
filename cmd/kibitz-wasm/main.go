@@ -24,6 +24,7 @@ import (
 
 	qrcode "github.com/skip2/go-qrcode"
 
+	"github.com/richardwooding/kibitz/internal/bot"
 	"github.com/richardwooding/kibitz/internal/service"
 	"github.com/richardwooding/kibitz/internal/service/backgammon"
 	"github.com/richardwooding/kibitz/internal/service/battleship"
@@ -52,6 +53,7 @@ type command struct {
 	Cell   uint8     `json:"cell"`            // battleship cell
 	Fleet  []uint8   `json:"fleet,omitempty"` // battleship placement
 	Name   string    `json:"name,omitempty"`  // screen name for create/join
+	Mode   string    `json:"mode,omitempty"`  // solo mode: "bot" | "hotseat"
 }
 
 type app struct {
@@ -111,7 +113,7 @@ func emitError(msg string) {
 var commands = map[string]func(command){
 	"create":     func(c command) { create(c.Name) },
 	"join":       func(c command) { join(c.Phrase, c.Name) },
-	"solo":       func(c command) { startSolo(c.Name) },
+	"solo":       func(c command) { startSolo(c.Name, c.Mode == "bot") },
 	"leave":      func(command) { leave() },
 	"game.start": func(c command) { startGame(c.Game) },
 
@@ -259,21 +261,26 @@ func start(client *session.Client, name string) {
 	current.bg, current.c4, current.ck, current.rv, current.bs = bg, c4, ck, rv, bs
 	current.mu.Unlock()
 
-	go pump(mux, false)
+	go pump(mux, false, false)
 }
 
-// startSolo runs a relay-free local hot-seat: two loopback ends, each with its
-// own service mux. The UI reads end A (host) and control actions target it;
-// turn-gated moves are routed to whichever end is on turn. No network, no
-// partner. See internal/solo.
-func startSolo(name string) {
+// startSolo runs a relay-free local session: two loopback ends, each with its
+// own service mux. The UI reads/controls end A (host, the user). In pass-and-play
+// (vsBot=false) the user drives both sides and turn-gated moves route to whichever
+// end is on turn. In "play the computer" (vsBot=true) the user is end A and a bot
+// drives end B. No network, no partner. See internal/solo and internal/bot.
+func startSolo(name string, vsBot bool) {
 	host, guest, seat := solo.New()
 	chA, csA, bgA, c4A, ckA, rvA, bsA := newServices()
 	muxA := service.NewMux(host, chA, csA, bgA, c4A, ckA, rvA, bsA)
 	muxA.SetName(name)
 	chB, csB, bgB, c4B, ckB, rvB, bsB := newServices()
 	muxB := service.NewMux(guest, chB, csB, bgB, c4B, ckB, rvB, bsB)
-	muxB.SetName("Player 2")
+	if vsBot {
+		muxB.SetName("Computer")
+	} else {
+		muxB.SetName("Player 2")
+	}
 
 	closePrev()
 	current.mu.Lock()
@@ -285,9 +292,16 @@ func startSolo(name string) {
 	current.c4B, current.ckB, current.rvB, current.bsB = c4B, ckB, rvB, bsB
 	current.mu.Unlock()
 
-	go pump(muxA, true) // end A drives the UI
-	go drainMux(muxB)   // end B stays in sync silently
-	seat()              // seat the guest on the host → roster announce → UI joins
+	go pump(muxA, true, vsBot) // end A drives the UI
+	if vsBot {
+		// The bot plays end B; Drive also drains it.
+		go bot.Drive(muxB.Events(), bot.Services{
+			Self: guest.Self(), Chess: csB, BG: bgB, C4: c4B, CK: ckB, RV: rvB,
+		}, 500*time.Millisecond)
+	} else {
+		go drainMux(muxB) // end B stays in sync silently
+	}
+	seat() // seat the guest on the host → roster announce → UI joins
 }
 
 // closePrev tears down any prior session (networked client or solo loopback).
@@ -405,7 +419,7 @@ func startGame(id string) {
 	}
 }
 
-func pump(mux *service.Mux, isSolo bool) {
+func pump(mux *service.Mux, isSolo, vsBot bool) {
 	joined := false
 	for ev := range mux.Events() {
 		switch e := ev.(type) {
@@ -414,7 +428,7 @@ func pump(mux *service.Mux, isSolo bool) {
 			// both ends), tell the UI to open the table — self is the host end.
 			if isSolo && !joined && len(e.Members) >= 2 {
 				joined = true
-				emit("session.joined", map[string]any{"self": uint32(1), "role": "host", "solo": true})
+				emit("session.joined", map[string]any{"self": uint32(1), "role": "host", "solo": true, "bot": vsBot})
 			}
 			emitRoster(e)
 		case chat.Message:

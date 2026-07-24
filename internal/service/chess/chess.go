@@ -304,6 +304,23 @@ func (s *Service) LegalTargets(from string) []string {
 	return out
 }
 
+// LegalMoves returns every legal move in UCI (e.g. "e2e4", "e7e8q") — the solo
+// bot picks one to reply with. Encoded the same way TryMove decodes it.
+func (s *Service) LegalMoves() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.game == nil {
+		return nil
+	}
+	moves := s.game.ValidMoves()
+	enc := chesslib.UCINotation{}
+	out := make([]string, 0, len(moves))
+	for i := range moves {
+		out = append(out, enc.Encode(nil, &moves[i]))
+	}
+	return out
+}
+
 func (s *Service) HandleFrame(from wire.ParticipantID, body []byte) error {
 	m, err := wire.Body[msg](body)
 	if err != nil {

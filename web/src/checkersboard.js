@@ -19,9 +19,9 @@
     // one-shot animation data (computed on state change, consumed by render)
     let anim = { slide: null, captured: new Set(), crowned: -1 };
 
-    const soloMode = () => ctx.solo && ctx.solo();
-    const isPlayer = () => soloMode() || (g && (g.p1Id === ctx.self() || g.p2Id === ctx.self()));
-    const myTurn = () => g && (soloMode() || g.turnId === ctx.self());
+    const isHotseat = () => ctx.hotseat && ctx.hotseat();
+    const isPlayer = () => isHotseat() || (g && (g.p1Id === ctx.self() || g.p2Id === ctx.self()));
+    const myTurn = () => g && (isHotseat() || g.turnId === ctx.self());
     const over = () => g && g.outcome !== "";
 
     function candidates() {
@@ -65,14 +65,14 @@
       }
       if (over()) {
         statusEl.textContent = g.outcome;
-      } else if (soloMode()) {
+      } else if (isHotseat()) {
         statusEl.textContent = `${g.turnId === g.p1Id ? "Dark" : "Light"} to move`;
       } else {
         statusEl.textContent = (myTurn() ? "Your move" : ctx.name(g.turnId) + " to move") +
           (isPlayer() ? ` · you are ${g.p1Id === ctx.self() ? "dark" : "light"}` : "");
       }
       $("checkers-resign").classList.toggle("hidden", !isPlayer() || over());
-      $("checkers-draw").classList.toggle("hidden", !isPlayer() || over());
+      $("checkers-draw").classList.toggle("hidden", !isPlayer() || over() || (ctx.vsBot && ctx.vsBot()));
 
       const el = $("checkers-board");
       el.classList.toggle("my-turn", myTurn() && !over());

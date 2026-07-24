@@ -49,9 +49,9 @@
     let visible = false;
     let animatedUci = null;   // last move we've already slide-animated
 
-    const soloMode = () => ctx.solo && ctx.solo();
-    const isPlayer = () => soloMode() || (g && (g.whiteId === ctx.self() || g.blackId === ctx.self()));
-    const myTurn = () => g && (soloMode() || g.turnId === ctx.self()) && !over();
+    const isHotseat = () => ctx.hotseat && ctx.hotseat();
+    const isPlayer = () => isHotseat() || (g && (g.whiteId === ctx.self() || g.blackId === ctx.self()));
+    const myTurn = () => g && (isHotseat() || g.turnId === ctx.self()) && !over();
     const over = () => g && g.outcome !== "*";
     const opts = () => ({
       flipped: g && g.blackId === ctx.self(),
@@ -131,7 +131,7 @@
       }
       // Which colour may be picked up: your own normally; in solo, whichever
       // side is to move (you drive both).
-      const pickWhite = soloMode() ? (g.turnId === g.whiteId) : (g.whiteId === ctx.self());
+      const pickWhite = isHotseat() ? (g.turnId === g.whiteId) : (g.whiteId === ctx.self());
       if (piece && (piece === piece.toUpperCase()) === pickWhite) {
         selected = sq;
         selectedPiece = piece;
@@ -154,7 +154,7 @@
         const result = g.outcome === "1/2-1/2" ? "Draw" :
           (g.outcome === "1-0" ? "White wins" : "Black wins");
         el.textContent = `${result} — ${g.method}`;
-      } else if (soloMode()) {
+      } else if (isHotseat()) {
         el.textContent = (g.turnId === g.whiteId ? "White" : "Black") + " to move";
       } else {
         el.textContent = (g.turnId === ctx.self() ? "Your move" :
@@ -162,7 +162,7 @@
           (isPlayer() ? "" : " (you're kibitzing)");
       }
       $("btn-resign").classList.toggle("hidden", !isPlayer() || over());
-      $("btn-draw").classList.toggle("hidden", !isPlayer() || over());
+      $("btn-draw").classList.toggle("hidden", !isPlayer() || over() || (ctx.vsBot && ctx.vsBot()));
       selected = null;
       selectedPiece = null;
       render($("board"), g.fen, opts(), []);

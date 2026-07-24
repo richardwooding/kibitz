@@ -21,15 +21,15 @@
     let popPoints = new Set(); // global points whose checkers just changed
     let diceRolled = false;    // fresh dice this render → tumble animation
 
-    const soloMode = () => ctx.solo && ctx.solo();
+    const isHotseat = () => ctx.hotseat && ctx.hotseat();
     const isWhite = () => g && g.whiteId === ctx.self();            // self's colour
     const moverIsWhite = () => g && g.turnId === g.whiteId;         // colour to move
     // Coordinate mapping / pending preview use the on-turn side's perspective.
     // Normally that's you (you only move on your turn); in solo you drive both,
     // so it follows the side to move.
-    const persWhite = () => (soloMode() ? moverIsWhite() : isWhite());
-    const isPlayer = () => soloMode() || (g && (g.whiteId === ctx.self() || g.blackId === ctx.self()));
-    const myTurn = () => g && (soloMode() || g.turnId === ctx.self());
+    const persWhite = () => (isHotseat() ? moverIsWhite() : isWhite());
+    const isPlayer = () => isHotseat() || (g && (g.whiteId === ctx.self() || g.blackId === ctx.self()));
+    const myTurn = () => g && (isHotseat() || g.turnId === ctx.self());
     const bgWon = () => {
       if (!isPlayer()) return null;
       if (g.outcome.startsWith("white")) return isWhite();
@@ -196,14 +196,14 @@
       let status;
       const moverIcon = moverIsWhite() ? "⚪" : "⚫";
       if (g.phase === "over") status = g.outcome;
-      else if (g.phase === "rolling") status = soloMode() ? `${moverIcon} to roll` : (myTurn() ? "Your roll" : "Waiting for opponent to roll");
+      else if (g.phase === "rolling") status = isHotseat() ? `${moverIcon} to roll` : (myTurn() ? "Your roll" : "Waiting for opponent to roll");
       else if (g.phase === "handshake") status = "Rolling…";
-      else if (soloMode()) status = `${moverIcon} to move`;
+      else if (isHotseat()) status = `${moverIcon} to move`;
       else if (myTurn()) status = "Your move";
       else if (isPlayer()) status = ctx.name(g.turnId) + " to move";
       else status = "Kibitzing";
       statusEl.textContent = `${status} · pips ⚪${g.pipsW} ⚫${g.pipsB}` +
-        (isPlayer() && !soloMode() ? ` · you are ${isWhite() ? "⚪" : "⚫"}` : "");
+        (isPlayer() && !isHotseat() ? ` · you are ${isWhite() ? "⚪" : "⚫"}` : "");
 
       const faces = ["", "⚀", "⚁", "⚂", "⚃", "⚄", "⚅"];
       const diceEl = $("bg-dice");

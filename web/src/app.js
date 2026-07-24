@@ -16,7 +16,8 @@
     members: {},
     names: {}, // id -> screen name (from the ctl roster)
     activeGame: null, // module id when a pane is open; null = picker
-    solo: false, // local hot-seat (no relay); the user drives both sides
+    solo: false, // local session (no relay): pass-and-play or vs the computer
+    vsBot: false, // solo vs the computer (user is player 1; a bot drives player 2)
     inSession: false, // pushed a history entry for the session (lobby/table)
   };
 
@@ -104,7 +105,9 @@
     self: () => state.self,
     role: () => state.role,
     name: displayName, // game modules label opponents by screen name
-    solo: () => state.solo, // hot-seat: modules enable input for both sides
+    solo: () => state.solo, // in a local session (no relay)
+    hotseat: () => state.solo && !state.vsBot, // pass-and-play: drive both sides
+    vsBot: () => state.vsBot, // playing the computer
   };
   const games = {}; // id -> instantiated module
   for (const [id, def] of Object.entries(window.GameModules || {})) {
@@ -211,6 +214,7 @@
       $("btn-join").disabled = false;
       $("join-phrase").disabled = false;
       $("btn-solo").disabled = false;
+      $("btn-hotseat").disabled = false;
       $("home-status").textContent = "";
       // Arriving via a share link: switch the home screen into "invited"
       // mode — a prominent invite banner, name field, and a big Join — rather
@@ -241,7 +245,13 @@
       state.self = e.self;
       state.role = e.role;
       state.solo = !!e.solo;
+      state.vsBot = !!e.bot;
       views.table.classList.toggle("solo", state.solo);
+      if (state.solo) {
+        $("solo-banner").textContent = state.vsBot
+          ? "Solo · playing the computer"
+          : "Solo · you play both sides";
+      }
       pushSession();
       show("table");
       renderPicker();
@@ -371,8 +381,13 @@
 
   $("btn-solo").addEventListener("click", () => {
     $("btn-solo").disabled = true;
-    $("home-status").textContent = "setting up a solo game…";
-    send({ type: "solo", name: myName() });
+    $("home-status").textContent = "setting up a game vs the computer…";
+    send({ type: "solo", mode: "bot", name: myName() });
+  });
+  $("btn-hotseat").addEventListener("click", () => {
+    $("btn-hotseat").disabled = true;
+    $("home-status").textContent = "setting up a pass-and-play game…";
+    send({ type: "solo", mode: "hotseat", name: myName() });
   });
 
   $("btn-join").addEventListener("click", joinFromInput);

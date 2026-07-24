@@ -13,10 +13,10 @@
     let visible = false;
     let dropCell = -1; // board index to animate this render (the last drop)
 
-    const soloMode = () => ctx.solo && ctx.solo();
-    const isPlayer = () => soloMode() || (g && (g.p1Id === ctx.self() || g.p2Id === ctx.self()));
+    const isHotseat = () => ctx.hotseat && ctx.hotseat();
+    const isPlayer = () => isHotseat() || (g && (g.p1Id === ctx.self() || g.p2Id === ctx.self()));
     // In solo the user drives both sides, so it is always "their" turn.
-    const myTurn = () => g && (soloMode() || g.turnId === ctx.self());
+    const myTurn = () => g && (isHotseat() || g.turnId === ctx.self());
     const over = () => g && g.outcome !== "";
     const myColorClass = () => (g.p1Id === ctx.self() ? "ghost-red" : "ghost-yellow");
 
@@ -31,7 +31,7 @@
         statusEl.textContent = g.outcome;
       } else {
         const color = g.turnId === g.p1Id ? "🔴" : "🟡";
-        if (soloMode()) {
+        if (isHotseat()) {
           statusEl.textContent = `${color} to move`;
         } else {
           const mine = g.turnId === ctx.self();
