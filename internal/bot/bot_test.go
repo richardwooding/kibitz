@@ -19,6 +19,7 @@ import (
 type end struct {
 	c4  *connect4.Service
 	rv  *reversi.Service
+	bs  *battleship.Service
 	mux *service.Mux
 }
 
@@ -31,8 +32,11 @@ func newEnd(conn service.Conn, level Level) end {
 	rv := reversi.New()
 	bs := battleship.New()
 	mux := service.NewMux(conn, ch, cs, bg, c4, ck, rv, bs)
-	go Drive(mux.Events(), Services{Self: conn.Self(), Chess: cs, BG: bg, C4: c4, CK: ck, RV: rv}, 0, level)
-	return end{c4: c4, rv: rv, mux: mux}
+	// A small move delay reflects real pacing (the app uses 500ms). It also keeps
+	// battleship self-play honest: a shot's reveal is a round-trip, so two bots
+	// reacting with zero delay can fire the next shot before the reveal lands.
+	go Drive(mux.Events(), Services{Self: conn.Self(), Chess: cs, BG: bg, C4: c4, CK: ck, RV: rv, BS: bs}, 3*time.Millisecond, level)
+	return end{c4: c4, rv: rv, bs: bs, mux: mux}
 }
 
 // TestBotSelfPlay runs the bot on BOTH loopback ends and lets them play full
@@ -141,5 +145,56 @@ func TestBgEval(t *testing.T) {
 	blot.Points[13] = 1 // a lone White checker
 	if bgEval(blot, backgammon.White) >= bgEval(base, backgammon.White) {
 		t.Fatalf("own blot should score lower than base")
+	}
+}
+
+// TestBsTarget: Easy fires anywhere un-shot; Hard targets an un-shot neighbour of
+// a live (unsunk) hit, and hunts on parity when there are no live hits.
+func TestBsTarget(t *testing.T) {
+	var blank [100]int8
+	for i := range blank {
+		blank[i] = -1
+	}
+	if _, ok := bsTarget(blank, nil, Easy); !ok {
+		t.Fatal("easy should find an un-shot cell on a blank board")
+	}
+	// One live hit at cell 44 (ship 1, not sunk): Hard must shoot a neighbour.
+	hit := blank
+	hit[44] = 1
+	nbrs := map[uint8]bool{34: true, 54: true, 43: true, 45: true}
+	got, ok := bsTarget(hit, nil, Hard)
+	if !ok || !nbrs[got] {
+		t.Fatalf("hard target = %d ok=%v, want a neighbour of 44 %v", got, ok, nbrs)
+	}
+	// Same hit but ship 1 already sunk → no live hit → hunt on parity.
+	if got, ok := bsTarget(hit, []uint8{1}, Hard); !ok || (int(got)%10+int(got)/10)%2 != 0 {
+		t.Fatalf("hard hunt = %d ok=%v, want a parity cell", got, ok)
+	}
+}
+
+// TestBotBattleshipSelfPlay: two bot ends play a full Battleship game over the
+// loopback — both place random fleets, then shoot to a finish — proving the
+// placement→shooting→validating flow works end to end with the real service.
+func TestBotBattleshipSelfPlay(t *testing.T) {
+	host, guest, seat := solo.New()
+	a := newEnd(host, Hard)
+	_ = newEnd(guest, Hard)
+	seat()
+
+	startDeadline := time.Now().Add(2 * time.Second)
+	for {
+		if err := a.bs.Start(); err == nil {
+			break
+		} else if time.Now().After(startDeadline) {
+			t.Fatalf("battleship start never succeeded: %v", err)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	deadline := time.Now().Add(15 * time.Second)
+	for a.bs.State().Phase != "over" && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if got := a.bs.State().Phase; got != "over" {
+		t.Fatalf("battleship did not finish: phase=%q outcome=%q", got, a.bs.State().Outcome)
 	}
 }

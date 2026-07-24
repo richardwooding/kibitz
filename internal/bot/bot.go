@@ -4,8 +4,9 @@
 // service. There is no separate AI engine — moves come from the legal moves the
 // services already expose (or derive), and heuristics reuse each game engine's
 // own simulation ops (connect4.Board.Drop/Winner, reversi.Place, checkers.Apply,
-// backgammon.ApplyTurn). Two levels: Easy (uniform random legal move — welcoming)
-// and Hard (per-game heuristics). This package is the seam for future difficulty.
+// backgammon.ApplyTurn; battleship places a random legal fleet and hunts/targets).
+// Three levels: Easy (uniform random), Medium (mostly Hard with occasional random
+// slips), and Hard (per-game heuristics). The seam for future difficulty tuning.
 package bot
 
 import (
@@ -13,10 +14,12 @@ import (
 	"time"
 
 	"github.com/richardwooding/kibitz/internal/service/backgammon"
+	"github.com/richardwooding/kibitz/internal/service/battleship"
 	"github.com/richardwooding/kibitz/internal/service/checkers"
 	"github.com/richardwooding/kibitz/internal/service/chess"
 	"github.com/richardwooding/kibitz/internal/service/connect4"
 	"github.com/richardwooding/kibitz/internal/service/reversi"
+	"github.com/richardwooding/kibitz/internal/shipcommit"
 	"github.com/richardwooding/kibitz/internal/wire"
 )
 
@@ -55,6 +58,7 @@ type Services struct {
 	C4    *connect4.Service
 	CK    *checkers.Service
 	RV    *reversi.Service
+	BS    *battleship.Service
 }
 
 // Drive consumes an end's merged event stream and plays the bot's move whenever
@@ -132,6 +136,36 @@ func Drive(events <-chan any, s Services, delay time.Duration, level Level) {
 						}
 						pause()
 						_ = s.BG.Move(bgPick(resolveLevel(level, rand.Float64()), e.Board, e.Legal, color))
+					}
+				}
+			}
+		case battleship.State:
+			if !e.Playing {
+				break
+			}
+			mySide := -1
+			if e.P1ID == s.Self {
+				mySide = 0
+			} else if e.P2ID == s.Self {
+				mySide = 1
+			}
+			if mySide < 0 {
+				break // spectator
+			}
+			switch e.Phase {
+			case "placing":
+				if !e.Committed[mySide] {
+					if fleet, err := shipcommit.RandomPlacement(); err == nil {
+						pause()
+						_ = s.BS.Commit(fleet)
+					}
+				}
+			case "shooting":
+				// TurnID is 0 while a shot awaits its reveal, so this waits.
+				if e.TurnID == s.Self {
+					if cell, ok := bsTarget(e.Reveals[1-mySide], e.Sunk[1-mySide], resolveLevel(level, rand.Float64())); ok {
+						pause()
+						_ = s.BS.Shoot(cell)
 					}
 				}
 			}
@@ -353,3 +387,76 @@ func bgEval(b backgammon.Board, color backgammon.Color) int {
 // Chess Hard is a material minimax that lives in the chess service (it owns the
 // corentings/chess position); the bot calls s.Chess.HardMove(). Easy plays a
 // random legal move (handled inline in Drive).
+
+// ---- battleship -----------------------------------------------------------
+
+// bsTarget chooses a cell (0..99) to shoot from the bot's view of the opponent
+// board: shots[cell] is -1 un-shot, 0 miss, 1..5 a hit ship id; sunk lists the
+// fully-sunk ship ids. Easy fires at a random un-shot cell; Hard hunts and
+// targets — it finishes off a struck-but-unsunk ship by firing at un-shot cells
+// next to it, otherwise hunts on the checkerboard parity (every ship covers a
+// parity cell, so half the board suffices to find them all).
+func bsTarget(shots [100]int8, sunk []uint8, level Level) (uint8, bool) {
+	if level != Hard {
+		return bsRandom(shots, func(int) bool { return true })
+	}
+	isSunk := func(id int8) bool {
+		for _, s := range sunk {
+			if int8(s) == id {
+				return true
+			}
+		}
+		return false
+	}
+	var targets []int
+	for c := 0; c < 100; c++ {
+		if shots[c] < 1 || isSunk(shots[c]) {
+			continue // not a live (unsunk) hit
+		}
+		x, y := c%10, c/10
+		for _, n := range neighbours(x, y) {
+			if shots[n] == -1 {
+				targets = append(targets, n)
+			}
+		}
+	}
+	if len(targets) > 0 {
+		return uint8(targets[rand.Intn(len(targets))]), true
+	}
+	if cell, ok := bsRandom(shots, func(c int) bool { return (c%10+c/10)%2 == 0 }); ok {
+		return cell, true // hunt on parity
+	}
+	return bsRandom(shots, func(int) bool { return true })
+}
+
+// neighbours returns the on-board orthogonal neighbour cells of (x,y).
+func neighbours(x, y int) []int {
+	var out []int
+	if y > 0 {
+		out = append(out, (y-1)*10+x)
+	}
+	if y < 9 {
+		out = append(out, (y+1)*10+x)
+	}
+	if x > 0 {
+		out = append(out, y*10+x-1)
+	}
+	if x < 9 {
+		out = append(out, y*10+x+1)
+	}
+	return out
+}
+
+// bsRandom returns a random un-shot cell satisfying pred, or false if none.
+func bsRandom(shots [100]int8, pred func(int) bool) (uint8, bool) {
+	var cs []int
+	for c := 0; c < 100; c++ {
+		if shots[c] == -1 && pred(c) {
+			cs = append(cs, c)
+		}
+	}
+	if len(cs) == 0 {
+		return 0, false
+	}
+	return uint8(cs[rand.Intn(len(cs))]), true
+}

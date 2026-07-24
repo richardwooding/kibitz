@@ -169,8 +169,9 @@
         card.classList.add("clickable");
         card.addEventListener("click", () => openGame(id));
         if (canStart) card.appendChild(actionButton("Rematch", id));
-      } else if (state.solo && id === "battleship") {
-        // Battleship's simultaneous fleet placement isn't supported in hot-seat.
+      } else if (state.solo && !state.vsBot && id === "battleship") {
+        // Battleship's simultaneous secret placement doesn't fit pass-and-play on
+        // one screen; vs the computer it's fully playable.
         badge.textContent = "two players";
         const note = document.createElement("div");
         note.className = "game-matchup";

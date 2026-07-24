@@ -304,7 +304,7 @@ func startSolo(name string, vsBot bool, level string) {
 			lvl = bot.Medium
 		}
 		go bot.Drive(muxB.Events(), bot.Services{
-			Self: guest.Self(), Chess: csB, BG: bgB, C4: c4B, CK: ckB, RV: rvB,
+			Self: guest.Self(), Chess: csB, BG: bgB, C4: c4B, CK: ckB, RV: rvB, BS: bsB,
 		}, 500*time.Millisecond, lvl)
 	} else {
 		go drainMux(muxB) // end B stays in sync silently
