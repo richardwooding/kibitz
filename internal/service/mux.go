@@ -1,6 +1,8 @@
 package service
 
 import (
+	"sync/atomic"
+
 	"github.com/richardwooding/kibitz/internal/session"
 	"github.com/richardwooding/kibitz/internal/wire"
 )
@@ -27,6 +29,12 @@ type Mux struct {
 	events   chan any
 	cmds     chan func() // local actions run on the mux goroutine
 	lastSeq  map[seqKey]uint64
+
+	// reconnectable, when set, keeps the merged event stream open across a
+	// connection drop so the caller can Reconnect the client and Rebind this
+	// mux onto it. When unset (solo, bot, tests), run() closes events on exit
+	// as before, so `range mux.Events()` consumers terminate.
+	reconnectable atomic.Bool
 }
 
 type seqKey struct {
@@ -74,8 +82,32 @@ func NewMux(c Conn, svcs ...Service) *Mux {
 		m.services[s.ID()] = s
 		s.Attach(ctx)
 	}
-	go m.run(ctl)
+	go m.run(true)
 	return m
+}
+
+// SetReconnectable marks this mux as surviving connection drops: its event
+// stream stays open when the client disconnects, so the caller can
+// Client.Reconnect and then Rebind. Call once right after NewMux. Terminal
+// teardown then goes through Close instead of the client closing the stream.
+func (m *Mux) SetReconnectable() { m.reconnectable.Store(true) }
+
+// Close finalizes a reconnectable mux, closing the merged event stream. No-op
+// semantics are the caller's responsibility (call exactly once).
+func (m *Mux) Close() { close(m.events) }
+
+// Rebind re-points the mux at a freshly reconnected Conn (same participant id,
+// key, and services — see Client.Reconnect) and resumes routing. It re-derives
+// Context and re-Attaches services (Attach only stores ctx; game state is
+// preserved), and does NOT request a snapshot: the in-memory state is intact.
+// The prior run goroutine has already returned (its client's stream closed).
+func (m *Mux) Rebind(c Conn) {
+	m.client = c
+	ctx := Context{Send: c, Emit: m.emit, Self: c.Self(), HostID: c.HostID(), Host: c.Role() == session.RoleHost}
+	for _, s := range m.services {
+		s.Attach(ctx)
+	}
+	go m.run(false)
 }
 
 // SetName sets the local participant's screen name and distributes it over
@@ -95,49 +127,59 @@ func (m *Mux) Events() <-chan any { return m.events }
 
 func (m *Mux) emit(e any) { m.events <- e }
 
-func (m *Mux) run(ctl *ctlService) {
-	defer close(m.events)
+func (m *Mux) run(requestSnap bool) {
+	// A reconnectable mux keeps its stream open across drops; the caller
+	// finalizes with Close. Otherwise close on exit so range-consumers stop.
+	defer func() {
+		if !m.reconnectable.Load() {
+			close(m.events)
+		}
+	}()
 
-	// A fresh joiner asks the host for state it missed.
-	if m.client.Role() != session.RoleHost {
-		ctl.requestSnapshot()
+	// A fresh joiner asks the host for state it missed. On a Rebind the state
+	// is already in memory, so the caller passes requestSnap=false.
+	if requestSnap && m.client.Role() != session.RoleHost {
+		m.ctl.requestSnapshot()
 	}
 
 	events := m.client.Events()
 	for {
-		var ev session.Event
-		var ok bool
 		select {
 		case fn := <-m.cmds: // local action (e.g. SetName), on this goroutine
 			fn()
-			continue
-		case ev, ok = <-events:
-			if !ok {
-				return
+		case ev, ok := <-events:
+			if !ok || m.dispatch(ev) {
+				return // stream closed, or a terminal session.Closed
 			}
 		}
-		switch e := ev.(type) {
-		case session.Frame:
-			m.handleFrame(e)
-		case session.MemberKeyed:
-			for _, s := range m.services {
-				if o, ok := s.(MemberObserver); ok {
-					o.MemberKeyed(e.ID, e.Role)
-				}
-			}
-			m.emit(SessionEvent{Event: e})
-		case session.MemberLeft:
-			for _, s := range m.services {
-				if o, ok := s.(MemberObserver); ok {
-					o.MemberLeft(e.ID)
-				}
-			}
-			m.emit(SessionEvent{Event: e})
-		case session.Closed:
-			m.emit(SessionEvent{Event: e})
-			return
-		default:
-			m.emit(SessionEvent{Event: ev})
+	}
+}
+
+// dispatch routes one session event to services and the merged stream. It
+// returns true when the run loop should stop (a terminal Closed).
+func (m *Mux) dispatch(ev session.Event) (stop bool) {
+	switch e := ev.(type) {
+	case session.Frame:
+		m.handleFrame(e)
+	case session.MemberKeyed:
+		m.observeMembers(func(o MemberObserver) { o.MemberKeyed(e.ID, e.Role) })
+		m.emit(SessionEvent{Event: e})
+	case session.MemberLeft:
+		m.observeMembers(func(o MemberObserver) { o.MemberLeft(e.ID) })
+		m.emit(SessionEvent{Event: e})
+	case session.Closed:
+		m.emit(SessionEvent{Event: e})
+		return true
+	default:
+		m.emit(SessionEvent{Event: ev})
+	}
+	return false
+}
+
+func (m *Mux) observeMembers(fn func(MemberObserver)) {
+	for _, s := range m.services {
+		if o, ok := s.(MemberObserver); ok {
+			fn(o)
 		}
 	}
 }

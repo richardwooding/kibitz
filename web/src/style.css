@@ -817,3 +817,40 @@ button.back { margin-bottom: 0.7rem; }
   max-width: 90vw;
   box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25);
 }
+
+/* Reconnect banner: a calm, non-destructive strip pinned to the top while the
+   session transparently re-establishes — the game view stays put underneath. */
+.reconnect-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 500;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
+}
+
+.reconnect-dot {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: #fff;
+  animation: reconnect-pulse 1s ease-in-out infinite;
+}
+
+@keyframes reconnect-pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reconnect-dot { animation: none; opacity: 0.8; }
+}

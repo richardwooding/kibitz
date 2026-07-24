@@ -50,6 +50,24 @@ func TestRoundTrip(t *testing.T) {
 				t.Fatalf("got %+v", got)
 			}
 		}},
+		{"SessionCreated", MsgSessionCreated, SessionCreated{ParticipantID: 1, ResumeToken: []byte{0xaa, 0xbb}}, func(t *testing.T, raw []byte) {
+			got, err := Body[SessionCreated](raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.ParticipantID != 1 || !bytes.Equal(got.ResumeToken, []byte{0xaa, 0xbb}) {
+				t.Fatalf("got %+v", got)
+			}
+		}},
+		{"ResumeSession", MsgResumeSession, ResumeSession{SessionID: sid, ParticipantID: 2, Token: []byte{0x01, 0x02, 0x03}}, func(t *testing.T, raw []byte) {
+			got, err := Body[ResumeSession](raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.SessionID != sid || got.ParticipantID != 2 || !bytes.Equal(got.Token, []byte{0x01, 0x02, 0x03}) {
+				t.Fatalf("got %+v", got)
+			}
+		}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

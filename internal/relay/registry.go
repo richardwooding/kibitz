@@ -14,13 +14,15 @@ type registry struct {
 	sessions map[wire.SessionID]*hub
 	maxCount int
 	maxAge   time.Duration
+	grace    time.Duration
 }
 
-func newRegistry(maxSessions int, maxAge time.Duration) *registry {
+func newRegistry(maxSessions int, maxAge, grace time.Duration) *registry {
 	return &registry{
 		sessions: map[wire.SessionID]*hub{},
 		maxCount: maxSessions,
 		maxAge:   maxAge,
+		grace:    grace,
 	}
 }
 
@@ -35,7 +37,7 @@ func (r *registry) create(id wire.SessionID, maxParticipants int) (*hub, uint16,
 	if len(r.sessions) >= r.maxCount {
 		return nil, wire.ErrCodeRateLimited, "relay at session capacity"
 	}
-	h := newHub(id, maxParticipants, func() { r.remove(id) })
+	h := newHub(id, maxParticipants, r.grace, func() { r.remove(id) })
 	r.sessions[id] = h
 	return h, 0, ""
 }

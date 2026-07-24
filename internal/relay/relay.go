@@ -24,6 +24,7 @@ type Options struct {
 	MaxAge          time.Duration // absolute session lifetime (default 24h)
 	SweepEvery      time.Duration // sweeper interval (default 1m)
 	IdleTimeout     time.Duration // per-connection read deadline; clients ping to stay alive (default 90s)
+	Grace           time.Duration // how long a dropped slot is held for reconnect/resume (default 30s)
 	ConnRate        rate.Limit    // per-IP connection attempts (default 5/min)
 	ConnBurst       int           // per-IP burst (default 5)
 	Logger          *slog.Logger
@@ -44,6 +45,9 @@ func (o *Options) defaults() {
 	}
 	if o.IdleTimeout <= 0 {
 		o.IdleTimeout = 90 * time.Second
+	}
+	if o.Grace <= 0 {
+		o.Grace = 30 * time.Second
 	}
 	if o.ConnRate <= 0 {
 		o.ConnRate = rate.Every(12 * time.Second) // 5/min
@@ -69,7 +73,7 @@ func New(opts Options) *Server {
 	opts.defaults()
 	s := &Server{
 		opts:    opts,
-		reg:     newRegistry(opts.MaxSessions, opts.MaxAge),
+		reg:     newRegistry(opts.MaxSessions, opts.MaxAge, opts.Grace),
 		limiter: newIPLimiter(opts.ConnRate, opts.ConnBurst),
 		stop:    make(chan struct{}),
 	}
@@ -113,7 +117,7 @@ func (s *Server) handle(ctx context.Context, conn *websocket.Conn) {
 	var kickOnce sync.Once
 	kick := func() { kickOnce.Do(func() { close(kicked) }) }
 
-	h, id, out, ok := s.hello(ctx, conn, kick)
+	h, id, gen, out, ok := s.hello(ctx, conn, kick)
 	if !ok {
 		cancel()
 		return
@@ -125,19 +129,23 @@ func (s *Server) handle(ctx context.Context, conn *websocket.Conn) {
 		writer(ctx, cancel, kicked, conn, out)
 	}()
 
-	s.readLoop(ctx, conn, h, id, out)
+	unexpected := s.readLoop(ctx, conn, h, id, out)
 
 	// Teardown, in order: tell the hub we're gone (it may be gone already),
 	// stop the writer — it drains anything the hub queued on the way out —
-	// and only then close the socket.
-	h.send(leaveCmd{id: id})
+	// and only then close the socket. An unexpected drop holds the slot for
+	// grace so the participant can reconnect; a clean close leaves for good.
+	h.send(leaveCmd{id: id, gen: gen, unexpected: unexpected})
 	kick()
 	<-writerDone
 	cancel()
 	_ = conn.Close(websocket.StatusNormalClosure, "")
 }
 
-func (s *Server) readLoop(ctx context.Context, conn *websocket.Conn, h *hub, id wire.ParticipantID, out chan []byte) {
+// readLoop pumps frames until the connection ends. It reports whether the end
+// was unexpected (network loss, idle timeout, abnormal close) — which holds the
+// slot for reconnect — versus a clean StatusNormalClosure, which leaves for good.
+func (s *Server) readLoop(ctx context.Context, conn *websocket.Conn, h *hub, id wire.ParticipantID, out chan []byte) bool {
 	for {
 		// Idle disconnect: clients heartbeat with MsgPing well inside this
 		// window; a silent connection is a dead one.
@@ -145,7 +153,7 @@ func (s *Server) readLoop(ctx context.Context, conn *websocket.Conn, h *hub, id 
 		typ, raw, err := readFrame(rctx, conn)
 		rcancel()
 		if err != nil {
-			return
+			return websocket.CloseStatus(err) != websocket.StatusNormalClosure
 		}
 		switch typ {
 		case wire.MsgPing:
@@ -168,7 +176,7 @@ const helloTimeout = 10 * time.Second
 // hello performs the first exchange on a fresh connection and hooks it into
 // a hub. On success it returns the client's out channel with the initial
 // reply already queued; the caller starts the writer that drains it.
-func (s *Server) hello(ctx context.Context, conn *websocket.Conn, cancel context.CancelFunc) (*hub, wire.ParticipantID, chan []byte, bool) {
+func (s *Server) hello(ctx context.Context, conn *websocket.Conn, cancel context.CancelFunc) (*hub, wire.ParticipantID, uint64, chan []byte, bool) {
 	hctx, hcancel := context.WithTimeout(ctx, helloTimeout)
 	typ, raw, err := readFrame(hctx, conn)
 	hcancel()
@@ -176,7 +184,11 @@ func (s *Server) hello(ctx context.Context, conn *websocket.Conn, cancel context
 		if errors.Is(err, wire.ErrUnsupportedVersion) {
 			writeFrame(ctx, conn, wire.MsgError, wire.Error{Code: wire.ErrCodeUnsupportedVersion, Msg: "unsupported protocol version"})
 		}
-		return nil, 0, nil, false
+		return nil, 0, 0, nil, false
+	}
+
+	if typ == wire.MsgResumeSession {
+		return s.resume(ctx, conn, cancel, raw)
 	}
 
 	var h *hub
@@ -185,7 +197,7 @@ func (s *Server) hello(ctx context.Context, conn *websocket.Conn, cancel context
 		cs, err := wire.Body[wire.CreateSession](raw)
 		if err != nil {
 			writeFrame(ctx, conn, wire.MsgError, wire.Error{Code: wire.ErrCodeBadFrame, Msg: "bad create frame"})
-			return nil, 0, nil, false
+			return nil, 0, 0, nil, false
 		}
 		maxP := int(cs.MaxParticipants)
 		if maxP <= 0 || maxP > s.opts.MaxParticipants {
@@ -196,39 +208,67 @@ func (s *Server) hello(ctx context.Context, conn *websocket.Conn, cancel context
 		h, code, msg = s.reg.create(cs.SessionID, maxP)
 		if h == nil {
 			writeFrame(ctx, conn, wire.MsgError, wire.Error{Code: code, Msg: msg})
-			return nil, 0, nil, false
+			return nil, 0, 0, nil, false
 		}
 	case wire.MsgJoinSession:
 		js, err := wire.Body[wire.JoinSession](raw)
 		if err != nil {
 			writeFrame(ctx, conn, wire.MsgError, wire.Error{Code: wire.ErrCodeBadFrame, Msg: "bad join frame"})
-			return nil, 0, nil, false
+			return nil, 0, 0, nil, false
 		}
 		var ok bool
 		h, ok = s.reg.get(js.SessionID)
 		if !ok {
 			writeFrame(ctx, conn, wire.MsgError, wire.Error{Code: wire.ErrCodeSessionNotFound, Msg: "session not found"})
-			return nil, 0, nil, false
+			return nil, 0, 0, nil, false
 		}
 	default:
 		writeFrame(ctx, conn, wire.MsgError, wire.Error{Code: wire.ErrCodeBadFrame, Msg: "expected create or join"})
-		return nil, 0, nil, false
+		return nil, 0, 0, nil, false
 	}
 
 	out := make(chan []byte, sendBuffer)
 	reply := make(chan joinReply, 1)
 	if !h.send(joinCmd{out: out, kick: cancel, isCreate: typ == wire.MsgCreateSession, reply: reply}) {
 		writeFrame(ctx, conn, wire.MsgError, wire.Error{Code: wire.ErrCodeSessionNotFound, Msg: "session closed"})
-		return nil, 0, nil, false
+		return nil, 0, 0, nil, false
 	}
 	jr := <-reply
 	if !jr.ok {
 		writeFrame(ctx, conn, wire.MsgError, wire.Error{Code: jr.errC, Msg: jr.errS})
-		return nil, 0, nil, false
+		return nil, 0, 0, nil, false
 	}
 	// The hub already queued SessionCreated/JoinResult into out (see
 	// handleJoin — ordering against broadcasts demands it).
-	return h, jr.id, out, true
+	return h, jr.id, jr.gen, out, true
+}
+
+// resume reclaims a held slot after an unexpected drop: it looks up the hub,
+// asks it to re-attach this connection to the prior participant id on a token
+// match, and returns the slot's out channel (JoinResult already queued ahead of
+// any frames buffered during the outage).
+func (s *Server) resume(ctx context.Context, conn *websocket.Conn, kick context.CancelFunc, raw []byte) (*hub, wire.ParticipantID, uint64, chan []byte, bool) {
+	rs, err := wire.Body[wire.ResumeSession](raw)
+	if err != nil {
+		writeFrame(ctx, conn, wire.MsgError, wire.Error{Code: wire.ErrCodeBadFrame, Msg: "bad resume frame"})
+		return nil, 0, 0, nil, false
+	}
+	h, ok := s.reg.get(rs.SessionID)
+	if !ok {
+		writeFrame(ctx, conn, wire.MsgError, wire.Error{Code: wire.ErrCodeSessionNotFound, Msg: "session not found"})
+		return nil, 0, 0, nil, false
+	}
+	reply := make(chan resumeReply, 1)
+	if !h.send(resumeCmd{id: rs.ParticipantID, token: rs.Token, kick: kick, reply: reply}) {
+		writeFrame(ctx, conn, wire.MsgError, wire.Error{Code: wire.ErrCodeSessionNotFound, Msg: "session closed"})
+		return nil, 0, 0, nil, false
+	}
+	rr := <-reply
+	if !rr.ok {
+		writeFrame(ctx, conn, wire.MsgError, wire.Error{Code: rr.errC, Msg: rr.errS})
+		return nil, 0, 0, nil, false
+	}
+	return h, rs.ParticipantID, rr.gen, rr.out, true
 }
 
 // send delivers a command to the hub unless it has already shut down.

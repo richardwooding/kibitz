@@ -34,6 +34,8 @@ phrase adequate.
 - Participant counts, join/leave times, relay-assigned participant IDs
 - Client IP addresses
 - Frame sizes, timing, and direction (who talks to whom: direct vs broadcast)
+- Per-participant **reclaim tokens** it mints for reconnect (opaque random
+  bytes it only equality-compares — see "Reconnect" below)
 
 Traffic analysis of move timing trivially reveals "this is probably a chess
 game". That is out of scope.
@@ -50,6 +52,31 @@ game". That is out of scope.
 Drop, delay, reorder, or partition traffic, and close sessions. Per-sender
 sequence numbers detect gaps (surfaced as desync errors); nothing hides an
 unavailable relay. If you don't trust a relay to stay up, run your own.
+
+## Reconnect (session resume)
+
+A dropped connection (flaky network, backgrounded tab, brief host blip) is
+recovered without losing the game. This adds relay behaviour but not relay
+knowledge:
+
+- At create/join the relay mints a 32-byte random **reclaim token** and returns
+  it to that participant. On an unexpected drop the relay holds the slot for a
+  short grace window (~30s) instead of evicting it; a reconnecting client
+  presents the token to reclaim its **same participant id** (constant-time
+  compared). The token is opaque to the relay — it grants only slot
+  re-attachment, never decryption (the group key never touches the relay).
+- **The relay stays blind.** Tokens carry no phrase, name, or role; payloads
+  remain E2E-encrypted throughout a reconnect (the group key and per-sender
+  AEAD binding are unchanged — the participant id is preserved, so no re-key).
+- **Token exposure.** A token travels client↔relay in the clear at the wire
+  layer, so it relies on transport TLS (wss) like the SessionID does. A stolen
+  token lets an attacker hijack that participant's relay slot (a targeted
+  availability attack — they receive ciphertext they cannot decrypt); it never
+  grants plaintext. Over plaintext ws (self-hosted, no TLS) it is exposed to a
+  network eavesdropper, same threat class as the SessionID.
+- **Bounded.** The grace hold is short and per-slot; a full relay restart drops
+  all tokens and sessions (in-memory only — reconnect then falls back to a
+  fresh rejoin). No new persistent state.
 
 ## Trust assumptions
 

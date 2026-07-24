@@ -59,6 +59,8 @@ type command struct {
 
 type app struct {
 	mu     sync.Mutex
+	gen    int          // bumped per session start; lets a superseded pump exit quietly
+	mux    *service.Mux // the networked mux (nil for solo); closed on teardown
 	client *session.Client
 	chat   *chat.Service
 	chess  *chess.Service
@@ -253,16 +255,19 @@ func newServices() (ch *chat.Service, cs *chess.Service, bg *backgammon.Service,
 func start(client *session.Client, name string) {
 	ch, cs, bg, c4, ck, rv, bs := newServices()
 	mux := service.NewMux(client, ch, cs, bg, c4, ck, rv, bs)
-	mux.SetName(name) // no-op for a blank name; peers then see "#id"
+	mux.SetName(name)      // no-op for a blank name; peers then see "#id"
+	mux.SetReconnectable() // survive transient drops; see reconnectNet
 
-	closePrev()
+	closePrev() // bumps gen, superseding any prior pump before its socket drops
 	current.mu.Lock()
+	myGen := current.gen
 	current.solo = false
+	current.mux = mux
 	current.client, current.chat, current.chess = client, ch, cs
 	current.bg, current.c4, current.ck, current.rv, current.bs = bg, c4, ck, rv, bs
 	current.mu.Unlock()
 
-	go pump(mux, false, false)
+	go pump(mux, myGen, false, false)
 }
 
 // startSolo runs a relay-free local session: two loopback ends, each with its
@@ -283,9 +288,11 @@ func startSolo(name string, vsBot bool, level string) {
 		muxB.SetName("Player 2")
 	}
 
-	closePrev()
+	closePrev() // bumps gen, superseding any prior pump before its socket drops
 	current.mu.Lock()
+	myGen := current.gen
 	current.solo = true
+	current.mux = nil // solo muxes are not reconnectable and never dropped
 	current.soloHost, current.soloGuest = host, guest
 	current.chat, current.chess, current.bg = chA, csA, bgA
 	current.c4, current.ck, current.rv, current.bs = c4A, ckA, rvA, bsA
@@ -293,7 +300,7 @@ func startSolo(name string, vsBot bool, level string) {
 	current.c4B, current.ckB, current.rvB, current.bsB = c4B, ckB, rvB, bsB
 	current.mu.Unlock()
 
-	go pump(muxA, true, vsBot) // end A drives the UI
+	go pump(muxA, myGen, true, vsBot) // end A drives the UI
 	if vsBot {
 		// The bot plays end B; Drive also drains it.
 		lvl := bot.Easy
@@ -315,11 +322,19 @@ func startSolo(name string, vsBot bool, level string) {
 // closePrev tears down any prior session (networked client or solo loopback).
 func closePrev() {
 	current.mu.Lock()
+	// Bump the generation FIRST: any running pump captured the old gen, so once
+	// we drop its socket below it sees the drop as superseded (gen mismatch) and
+	// exits quietly instead of trying to reconnect a session the user replaced.
+	current.gen++
 	c, host, guest := current.client, current.soloHost, current.soloGuest
 	current.client, current.soloHost, current.soloGuest = nil, nil, nil
+	current.mux = nil
 	current.chatB, current.chessB, current.bgB = nil, nil, nil
 	current.c4B, current.ckB, current.rvB, current.bsB = nil, nil, nil, nil
 	current.mu.Unlock()
+	// A clean Close (normal closure) tells the relay we left for good — no grace.
+	// We do NOT close the mux stream here: its run goroutine may still emit the
+	// Closed event, and the pump's gen check retires it without a stray notice.
 	if c != nil {
 		_ = c.Close()
 	}
@@ -427,7 +442,7 @@ func startGame(id string) {
 	}
 }
 
-func pump(mux *service.Mux, isSolo, vsBot bool) {
+func pump(mux *service.Mux, gen int, isSolo, vsBot bool) {
 	joined := false
 	for ev := range mux.Events() {
 		switch e := ev.(type) {
@@ -469,11 +484,72 @@ func pump(mux *service.Mux, isSolo, vsBot bool) {
 			emitError(fmt.Sprintf("%s: %v", e.Service, e.Err))
 		case service.SessionEvent:
 			if closed, ok := e.Event.(session.Closed); ok {
-				emit("session.closed", map[string]any{"reason": closed.Reason})
+				if pumpClosed(mux, gen, isSolo, closed.Reason) {
+					continue // resumed via reconnect — keep pumping the same mux
+				}
 				return
 			}
 		}
 	}
+}
+
+// pumpClosed handles a session.Closed. It returns true when the session was
+// transparently resumed (the caller keeps pumping) and false when the pump
+// should exit. A superseded pump (a newer session started) exits silently; a
+// solo or terminal close surfaces session.closed; an unexpected drop on a live
+// networked session triggers reconnectNet.
+func pumpClosed(mux *service.Mux, gen int, isSolo bool, reason string) bool {
+	if !isCurrent(gen) {
+		return false // a newer session replaced us; leave quietly
+	}
+	if !isSolo && reason == "connection lost" {
+		if reconnectNet(mux, gen) {
+			return true
+		}
+		if !isCurrent(gen) {
+			return false // superseded while we were retrying
+		}
+	}
+	emit("session.closed", map[string]any{"reason": reason})
+	return false
+}
+
+// isCurrent reports whether gen is still the active session generation.
+func isCurrent(gen int) bool {
+	current.mu.Lock()
+	defer current.mu.Unlock()
+	return current.gen == gen
+}
+
+// reconnectNet re-establishes a dropped networked session in place: it emits
+// session.reconnecting, retries Client.Reconnect with capped backoff for up to
+// a minute, and on success rebinds the mux (same id, key, and services — the
+// in-memory game state is untouched) and emits session.resumed. It bails early
+// if the session is superseded. Returns whether the session resumed.
+func reconnectNet(mux *service.Mux, gen int) bool {
+	current.mu.Lock()
+	c := current.client
+	current.mu.Unlock()
+	if c == nil {
+		return false
+	}
+	emit("session.reconnecting", map[string]any{})
+	delay := 500 * time.Millisecond
+	for attempts := 0; attempts < 40 && isCurrent(gen); attempts++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		err := c.Reconnect(ctx)
+		cancel()
+		if err == nil {
+			mux.Rebind(c)
+			emit("session.resumed", map[string]any{})
+			return true
+		}
+		time.Sleep(delay)
+		if delay < 4*time.Second {
+			delay *= 2
+		}
+	}
+	return false
 }
 
 func emitRoster(e service.Roster) {

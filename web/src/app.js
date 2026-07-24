@@ -257,7 +257,18 @@
       show("table");
       renderPicker();
     },
+    // A transient drop: the core is silently re-establishing the same session
+    // (same seat, same game). Show a non-destructive banner and keep the board.
+    "session.reconnecting"() {
+      $("reconnect-banner").classList.remove("hidden");
+    },
+    // Resumed transparently — the game continued underneath.
+    "session.resumed"() {
+      $("reconnect-banner").classList.add("hidden");
+      toast("Reconnected.");
+    },
     "session.closed"(e) {
+      $("reconnect-banner").classList.add("hidden");
       toast(e.reason === "host left" ? "The host closed the table." : `Session ended: ${e.reason || "connection lost"}`);
       setTimeout(() => location.replace(location.pathname), 1500);
     },

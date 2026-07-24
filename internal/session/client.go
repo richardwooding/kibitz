@@ -57,12 +57,15 @@ type (
 
 // Client is one end of a live session.
 type Client struct {
-	conn    *websocket.Conn
-	sid     wire.SessionID
-	phraseC string // canonical phrase — the PAKE secret
-	self    wire.ParticipantID
-	hostID  wire.ParticipantID
-	role    Role
+	conn     *websocket.Conn
+	relayURL string // kept so Reconnect can re-dial the same relay
+	sid      wire.SessionID
+	phraseC  string // canonical phrase — the PAKE secret
+	self     wire.ParticipantID
+	hostID   wire.ParticipantID
+	role     Role
+
+	resumeToken []byte // opaque relay-issued secret to reclaim this slot after a drop
 
 	groupKey crypto.Key
 	keyed    bool
@@ -76,7 +79,17 @@ type Client struct {
 	joiners map[wire.ParticipantID]Role
 }
 
-const eventBuffer = 256
+const (
+	eventBuffer = 256
+	// pingInterval elicits a pong that keeps both the relay's idle timeout from
+	// firing and the read deadline below refreshed. readTimeout is how long the
+	// read loop waits for ANY frame before declaring the connection dead — this
+	// is what catches a half-open drop (offline, NAT eviction) where reads would
+	// otherwise block forever. readTimeout > pingInterval so a healthy quiet
+	// connection (pongs every pingInterval) never times out.
+	pingInterval = 8 * time.Second
+	readTimeout  = 20 * time.Second
+)
 
 // Host creates a new session on the relay and returns a keyed client plus
 // the freshly generated code phrase. The first joiner becomes the player;
@@ -91,8 +104,8 @@ func Host(ctx context.Context, relayURL string) (*Client, string, error) {
 		_ = c.conn.CloseNow()
 		return nil, "", err
 	}
-	go c.readLoop()
-	go c.pingLoop()
+	go c.readLoop(c.conn)
+	go c.pingLoop(c.conn)
 	return c, p, nil
 }
 
@@ -108,21 +121,79 @@ func Join(ctx context.Context, relayURL, phraseText string) (*Client, error) {
 		_ = c.conn.CloseNow()
 		return nil, err
 	}
-	go c.readLoop()
-	go c.pingLoop()
+	go c.readLoop(c.conn)
+	go c.pingLoop(c.conn)
 	return c, nil
 }
 
-// pingLoop heartbeats so the relay's idle timeout (90s) never fires on a
-// healthy connection and NAT mappings stay warm. It exits when writing fails,
-// which happens exactly when the connection dies.
-func (c *Client) pingLoop() {
-	t := time.NewTicker(30 * time.Second)
+// Reconnect re-dials the relay and reclaims this client's slot after an
+// unexpected drop, preserving the participant id, role, group key, and per-
+// service send sequence — so peers see an uninterrupted sender and no re-key is
+// needed. It returns once keyed traffic can flow again; the caller then rebinds
+// its mux (see service.Mux.Rebind). A rejected reclaim (grace expired, relay
+// restarted, bad token) returns an error the caller should treat as terminal.
+//
+// Precondition: the previous readLoop has ended (the events channel closed),
+// which is exactly the state after a Closed event — so no goroutine is touching
+// the client when Reconnect runs.
+func (c *Client) Reconnect(ctx context.Context) error {
+	conn, _, err := websocket.Dial(ctx, c.relayURL, nil)
+	if err != nil {
+		return fmt.Errorf("session: redial relay: %w", err)
+	}
+	conn.SetReadLimit(wire.MaxFrame + 16)
+	c.conn = conn
+	if err := c.writeFrame(wire.MsgResumeSession, wire.ResumeSession{
+		SessionID: c.sid, ParticipantID: c.self, Token: c.resumeToken,
+	}); err != nil {
+		_ = conn.CloseNow()
+		return err
+	}
+	raw, err := c.awaitReply(ctx, wire.MsgJoinResult)
+	if err != nil {
+		_ = conn.CloseNow()
+		return err
+	}
+	jr, err := wire.Body[wire.JoinResult](raw)
+	if err != nil {
+		_ = conn.CloseNow()
+		return err
+	}
+	if !jr.OK {
+		_ = conn.CloseNow()
+		return fmt.Errorf("session: resume refused: %s", jr.Err)
+	}
+	if len(jr.ResumeToken) > 0 {
+		c.resumeToken = jr.ResumeToken
+	}
+	// Fresh event stream for the new connection; the mux picks it up on Rebind.
+	c.events = make(chan Event, eventBuffer)
+	go c.readLoop(c.conn)
+	go c.pingLoop(c.conn)
+	return nil
+}
+
+// pingLoop heartbeats every pingInterval so the relay's idle timeout never
+// fires, NAT mappings stay warm, and — most importantly — the read loop's
+// deadline keeps getting refreshed by the returning pongs on a healthy but
+// quiet connection. It writes to its own conn so a later Reconnect swapping
+// c.conn never makes a stale loop touch the new connection; a write failure
+// (dead socket) force-closes conn to unblock the read loop.
+func (c *Client) pingLoop(conn *websocket.Conn) {
+	t := time.NewTicker(pingInterval)
 	defer t.Stop()
 	var nonce uint32
 	for range t.C {
 		nonce++
-		if c.writeFrame(wire.MsgPing, wire.Ping{Nonce: nonce}) != nil {
+		frame, err := wire.Encode(wire.MsgPing, wire.Ping{Nonce: nonce})
+		if err != nil {
+			continue
+		}
+		c.writeMu.Lock()
+		err = conn.Write(context.Background(), websocket.MessageBinary, frame)
+		c.writeMu.Unlock()
+		if err != nil {
+			_ = conn.CloseNow()
 			return
 		}
 	}
@@ -136,12 +207,13 @@ func dial(ctx context.Context, relayURL, phraseText string) (*Client, error) {
 	conn.SetReadLimit(wire.MaxFrame + 16)
 	canonical := phrase.Canonical(phraseText)
 	return &Client{
-		conn:    conn,
-		sid:     phrase.SessionID(canonical),
-		phraseC: canonical,
-		events:  make(chan Event, eventBuffer),
-		seqs:    map[string]uint64{},
-		joiners: map[wire.ParticipantID]Role{},
+		conn:     conn,
+		relayURL: relayURL,
+		sid:      phrase.SessionID(canonical),
+		phraseC:  canonical,
+		events:   make(chan Event, eventBuffer),
+		seqs:     map[string]uint64{},
+		joiners:  map[wire.ParticipantID]Role{},
 	}, nil
 }
 
@@ -157,9 +229,18 @@ func (c *Client) HostID() wire.ParticipantID { return c.hostID }
 // Role returns this client's role (RoleHost, or as assigned by the host).
 func (c *Client) Role() Role { return c.role }
 
-// Close tears the connection down; the read loop emits Closed and exits.
+// Close tears the connection down gracefully (a normal-closure "bye"); the
+// relay treats this as leaving for good — no grace, no reconnect.
 func (c *Client) Close() error {
 	return c.conn.Close(websocket.StatusNormalClosure, "bye")
+}
+
+// CloseNow drops the connection abruptly, with no close handshake — as a real
+// network loss does. The relay classifies this as unexpected and holds the slot
+// for its grace window, so a subsequent Reconnect can reclaim it. The read loop
+// emits Closed("connection lost") and exits.
+func (c *Client) CloseNow() error {
+	return c.conn.CloseNow()
 }
 
 // Broadcast seals one service message to every other participant.
@@ -213,7 +294,13 @@ func (c *Client) writeFrame(t wire.MsgType, body any) error {
 }
 
 func (c *Client) readFrame(ctx context.Context) (wire.MsgType, []byte, error) {
-	_, data, err := c.conn.Read(ctx)
+	return c.readFrameConn(ctx, c.conn)
+}
+
+// readFrameConn reads one frame from a specific connection. The read loop
+// passes its own conn so a later Reconnect swapping c.conn never races it.
+func (c *Client) readFrameConn(ctx context.Context, conn *websocket.Conn) (wire.MsgType, []byte, error) {
+	_, data, err := conn.Read(ctx)
 	if err != nil {
 		return 0, nil, err
 	}

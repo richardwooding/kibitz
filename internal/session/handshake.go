@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/coder/websocket"
+
 	"github.com/richardwooding/kibitz/internal/crypto"
 	"github.com/richardwooding/kibitz/internal/wire"
 )
@@ -24,6 +26,7 @@ func (c *Client) hostHello(ctx context.Context) error {
 	}
 	c.self = sc.ParticipantID
 	c.hostID = sc.ParticipantID
+	c.resumeToken = sc.ResumeToken
 
 	key, err := crypto.NewGroupKey()
 	if err != nil {
@@ -54,6 +57,7 @@ func (c *Client) joinHello(ctx context.Context) error {
 	}
 	c.self = jr.ParticipantID
 	c.hostID = jr.HostID
+	c.resumeToken = jr.ResumeToken
 
 	j, err := crypto.NewJoiner(c.phraseC)
 	if err != nil {
@@ -198,12 +202,18 @@ func (c *Client) handleHandshakeDirect(from wire.ParticipantID, kind wire.Payloa
 	c.emit(MemberKeyed{ID: from, Role: role})
 }
 
-// readLoop pumps relay frames into events until the connection dies.
-func (c *Client) readLoop() {
+// readLoop pumps relay frames into events until the connection dies. It reads
+// from the conn it was started with (not c.conn) so a Reconnect that swaps in a
+// new connection never disturbs an already-exited loop. Each read carries a
+// deadline: a healthy connection sees a pong every pingInterval, so exceeding
+// readTimeout means the connection is dead (a half-open drop where reads would
+// otherwise block forever) — surfaced as a Closed the caller can reconnect.
+func (c *Client) readLoop(conn *websocket.Conn) {
 	defer close(c.events)
-	ctx := context.Background()
 	for {
-		typ, raw, err := c.readFrame(ctx)
+		rctx, cancel := context.WithTimeout(context.Background(), readTimeout)
+		typ, raw, err := c.readFrameConn(rctx, conn)
+		cancel()
 		if err != nil {
 			c.emit(Closed{Reason: "connection lost"})
 			return

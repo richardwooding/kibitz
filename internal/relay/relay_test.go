@@ -283,3 +283,152 @@ func TestSessionCapacity(t *testing.T) {
 		t.Fatalf("error code %d", e.Code)
 	}
 }
+
+// joinWithToken joins and returns the client plus its reclaim token.
+func joinWithToken(t *testing.T, srv *httptest.Server) (*testClient, []byte) {
+	t.Helper()
+	j := dial(t, srv)
+	j.write(wire.MsgJoinSession, wire.JoinSession{SessionID: sid})
+	jr := expect[wire.JoinResult](j, wire.MsgJoinResult)
+	if !jr.OK || len(jr.ResumeToken) == 0 {
+		t.Fatalf("join result %+v (want OK + token)", jr)
+	}
+	return j, jr.ResumeToken
+}
+
+// TestResumeReclaimsSlot: an unexpected drop holds the slot; resuming with the
+// token re-attaches to the SAME id, and frames buffered during the outage flush
+// (JoinResult-first) to the resumed connection.
+func TestResumeReclaimsSlot(t *testing.T) {
+	srv := newServer(t, Options{Grace: 5 * time.Second})
+	host := createSession(t, srv)
+	joiner, token := joinWithToken(t, srv)
+	expect[wire.ParticipantJoined](host, wire.MsgParticipantJoined)
+
+	// Abrupt drop (no close frame) → the relay holds the slot for grace.
+	_ = joiner.conn.CloseNow()
+	time.Sleep(150 * time.Millisecond) // let the hold register
+
+	// A broadcast during the outage buffers on the held slot.
+	host.write(wire.MsgBroadcast, wire.Broadcast{Payload: []byte("during-outage")})
+	time.Sleep(50 * time.Millisecond)
+
+	resumed := dial(t, srv)
+	resumed.write(wire.MsgResumeSession, wire.ResumeSession{SessionID: sid, ParticipantID: 2, Token: token})
+	jr := expect[wire.JoinResult](resumed, wire.MsgJoinResult)
+	if !jr.OK || jr.ParticipantID != 2 || jr.HostID != 1 {
+		t.Fatalf("resume result %+v", jr)
+	}
+	// The buffered broadcast arrives after the JoinResult.
+	b := expect[wire.Broadcast](resumed, wire.MsgBroadcast)
+	if string(b.Payload) != "during-outage" {
+		t.Fatalf("buffered payload %q", b.Payload)
+	}
+	// Live traffic resumes on the same id.
+	host.write(wire.MsgBroadcast, wire.Broadcast{Payload: []byte("after")})
+	if b := expect[wire.Broadcast](resumed, wire.MsgBroadcast); string(b.Payload) != "after" {
+		t.Fatalf("post-resume payload %q", b.Payload)
+	}
+}
+
+// TestResumeSupersedesLiveSlot: a half-open drop can leave the relay still
+// believing the old connection is live (it hasn't read an error yet). A resume
+// with the right token must still reclaim the id — kicking the stale connection
+// — rather than reject because the slot isn't "held".
+func TestResumeSupersedesLiveSlot(t *testing.T) {
+	srv := newServer(t, Options{Grace: 5 * time.Second})
+	host := createSession(t, srv)
+	joiner, token := joinWithToken(t, srv)
+	expect[wire.ParticipantJoined](host, wire.MsgParticipantJoined)
+
+	// The joiner is still live from the relay's view. Reclaim from a new conn.
+	resumed := dial(t, srv)
+	resumed.write(wire.MsgResumeSession, wire.ResumeSession{SessionID: sid, ParticipantID: 2, Token: token})
+	jr := expect[wire.JoinResult](resumed, wire.MsgJoinResult)
+	if !jr.OK || jr.ParticipantID != 2 {
+		t.Fatalf("supersede resume %+v", jr)
+	}
+	// The stale old connection is kicked; the new one carries traffic.
+	host.write(wire.MsgBroadcast, wire.Broadcast{Payload: []byte("to-resumed")})
+	if b := expect[wire.Broadcast](resumed, wire.MsgBroadcast); string(b.Payload) != "to-resumed" {
+		t.Fatalf("resumed got %q", b.Payload)
+	}
+	// The old joiner connection must be closed now.
+	joiner.conn.SetReadLimit(1 << 20)
+	if _, _, err := joiner.conn.Read(joiner.ctx); err == nil {
+		t.Fatal("stale connection was not kicked")
+	}
+}
+
+// TestResumeBadToken: a wrong token is rejected.
+func TestResumeBadToken(t *testing.T) {
+	srv := newServer(t, Options{Grace: 5 * time.Second})
+	createSession(t, srv)
+	joiner, _ := joinWithToken(t, srv)
+	_ = joiner.conn.CloseNow()
+	time.Sleep(150 * time.Millisecond)
+
+	c := dial(t, srv)
+	c.write(wire.MsgResumeSession, wire.ResumeSession{SessionID: sid, ParticipantID: 2, Token: []byte("wrong-token-bytes-................")})
+	e := expect[wire.Error](c, wire.MsgError)
+	if e.Code != wire.ErrCodeResumeRejected {
+		t.Fatalf("error code %d, want ResumeRejected", e.Code)
+	}
+}
+
+// TestGraceExpiryNotifies: with no resume, the held slot expires and peers are
+// finally told the participant left (which forfeits any live game).
+func TestGraceExpiryNotifies(t *testing.T) {
+	srv := newServer(t, Options{Grace: 80 * time.Millisecond})
+	host := createSession(t, srv)
+	joiner, _ := joinWithToken(t, srv)
+	expect[wire.ParticipantJoined](host, wire.MsgParticipantJoined)
+
+	_ = joiner.conn.CloseNow()
+	pl := expect[wire.ParticipantLeft](host, wire.MsgParticipantLeft)
+	if pl.ParticipantID != 2 {
+		t.Fatalf("left ID %d", pl.ParticipantID)
+	}
+}
+
+// TestHostResume: a host drop is held (no immediate SessionClosed); the host
+// reclaims id=1 with its token and the session survives.
+func TestHostResume(t *testing.T) {
+	srv := newServer(t, Options{Grace: 5 * time.Second})
+	host := dial(t, srv)
+	host.write(wire.MsgCreateSession, wire.CreateSession{SessionID: sid, MaxParticipants: 4})
+	created := expect[wire.SessionCreated](host, wire.MsgSessionCreated)
+	hostTok := created.ResumeToken
+	joiner, _ := joinWithToken(t, srv)
+
+	_ = host.conn.CloseNow()
+	time.Sleep(150 * time.Millisecond)
+
+	// The joiner must NOT have received SessionClosed during grace: resume and
+	// confirm the session is intact by round-tripping a broadcast.
+	resumed := dial(t, srv)
+	resumed.write(wire.MsgResumeSession, wire.ResumeSession{SessionID: sid, ParticipantID: 1, Token: hostTok})
+	jr := expect[wire.JoinResult](resumed, wire.MsgJoinResult)
+	if !jr.OK || jr.ParticipantID != 1 {
+		t.Fatalf("host resume %+v", jr)
+	}
+	resumed.write(wire.MsgBroadcast, wire.Broadcast{Payload: []byte("host-back")})
+	if b := expect[wire.Broadcast](joiner, wire.MsgBroadcast); string(b.Payload) != "host-back" {
+		t.Fatalf("joiner got %q after host resume", b.Payload)
+	}
+}
+
+// TestHostGraceExpiryCloses: if the host never returns, grace expiry closes the
+// session (today's "host left"), just deferred by the grace window.
+func TestHostGraceExpiryCloses(t *testing.T) {
+	srv := newServer(t, Options{Grace: 80 * time.Millisecond})
+	host := createSession(t, srv)
+	joiner, _ := joinWithToken(t, srv)
+	expect[wire.ParticipantJoined](host, wire.MsgParticipantJoined)
+
+	_ = host.conn.CloseNow()
+	sc := expect[wire.SessionClosed](joiner, wire.MsgSessionClosed)
+	if sc.Reason != "host left" {
+		t.Fatalf("reason %q", sc.Reason)
+	}
+}

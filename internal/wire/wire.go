@@ -36,6 +36,7 @@ const (
 	MsgPong              MsgType = 10 // either way Pong
 	MsgError             MsgType = 11 // r→c Error
 	MsgSessionClosed     MsgType = 12 // r→all SessionClosed
+	MsgResumeSession     MsgType = 13 // c→r ResumeSession (reclaim a held slot after a drop)
 )
 
 // Relay error codes carried in Error.Code.
@@ -47,6 +48,7 @@ const (
 	ErrCodeRateLimited        uint16 = 5
 	ErrCodeBadFrame           uint16 = 6
 	ErrCodeUnknownPeer        uint16 = 7
+	ErrCodeResumeRejected     uint16 = 8 // resume token mismatch, slot gone, or grace expired
 )
 
 // ParticipantID identifies a participant within one session. The relay
@@ -65,6 +67,9 @@ type CreateSession struct {
 
 type SessionCreated struct {
 	ParticipantID ParticipantID `cbor:"1,keyasint"`
+	// ResumeToken authorizes reclaiming this slot after an unexpected drop.
+	// Opaque random bytes; the relay only equality-compares it (stays blind).
+	ResumeToken []byte `cbor:"2,keyasint,omitempty"`
 }
 
 type JoinSession struct {
@@ -77,6 +82,18 @@ type JoinResult struct {
 	ParticipantID ParticipantID   `cbor:"3,keyasint"`
 	Peers         []ParticipantID `cbor:"4,keyasint,omitempty"`
 	HostID        ParticipantID   `cbor:"5,keyasint"`
+	// ResumeToken authorizes reclaiming this slot after an unexpected drop
+	// (also echoed on a successful ResumeSession). See SessionCreated.
+	ResumeToken []byte `cbor:"6,keyasint,omitempty"`
+}
+
+// ResumeSession reclaims a participant slot the relay is holding after an
+// unexpected drop: same SessionID, the ParticipantID the relay had assigned,
+// and the ResumeToken it issued. The relay replies with JoinResult.
+type ResumeSession struct {
+	SessionID     SessionID     `cbor:"1,keyasint"`
+	ParticipantID ParticipantID `cbor:"2,keyasint"`
+	Token         []byte        `cbor:"3,keyasint"`
 }
 
 type ParticipantJoined struct {
