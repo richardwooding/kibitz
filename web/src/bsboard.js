@@ -158,7 +158,7 @@
         statusEl.textContent = myTurn() ? "Your shot — click their waters"
           : (isPlayer() ? "Incoming…" : "Kibitzing");
       } else {
-        statusEl.textContent = g.outcome;
+        statusEl.textContent = outcomeLabel();
         if (g.cheatBy) statusEl.textContent += ` (participant ${g.cheatBy})`;
       }
       $("bs-resign").classList.toggle("hidden", !isPlayer() || g.phase === "over" || g.phase === "validating");
@@ -263,6 +263,21 @@
       return null;
     }
 
+    // outcomeLabel turns the seat-based outcome ("player 2 wins") into a
+    // perspective-aware label — "You win!" for the local player, otherwise the
+    // winner's name ("Computer wins" / "Ada wins") — preserving any trailing
+    // note like " (verifying boards…)".
+    function outcomeLabel() {
+      const o = g.outcome || "";
+      const i = o.indexOf(" (");
+      const note = i >= 0 ? o.slice(i) : "";
+      const base = i >= 0 ? o.slice(0, i) : o;
+      const winner = base === "player 1 wins" ? 0 : base === "player 2 wins" ? 1 : -1;
+      if (winner < 0) return o; // cheat / unknown text → show as-is
+      if (isPlayer() && winner === mySide()) return "You win!" + note;
+      return ctx.name(winner === 0 ? g.p1Id : g.p2Id) + " wins" + note;
+    }
+
     // computeShotFx diffs reveal grids prev→new to drive splash/boom/sunk +
     // sounds. Applies to both boards so you also see/hear incoming shots.
     function computeShotFx(prev) {
@@ -303,7 +318,7 @@
         computeShotFx(prev);
         render();
         if (prev && prev.playing && prev.phase !== "over" && g.phase === "over" && window.fx) {
-          window.fx.celebrate($("game-bs"), bsWon(), g.outcome);
+          window.fx.celebrate($("game-bs"), bsWon(), outcomeLabel());
         }
       },
       setVisible(v) { visible = v; if (v) render(); },
