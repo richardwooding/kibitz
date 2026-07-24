@@ -103,20 +103,6 @@ func TestC4HardWinsAndBlocks(t *testing.T) {
 	}
 }
 
-// TestChessPickMVV: with a free black queen capturable by the white rook, Hard
-// takes it over any quiet rook move.
-func TestChessPickMVV(t *testing.T) {
-	fen := "q7/8/8/8/8/8/8/R7 w - - 0 1" // black queen a8, white rook a1
-	occ := fenOccupancy(fen)
-	if occ["a8"] != 'q' || occ["a1"] != 'R' {
-		t.Fatalf("fen parse: a8=%q a1=%q", occ["a8"], occ["a1"])
-	}
-	moves := []string{"a1b1", "a1a2", "a1a8"} // last captures the queen
-	if got := chessPick(Hard, fen, moves, true); got != "a1a8" {
-		t.Fatalf("chessPick = %q, want a1a8", got)
-	}
-}
-
 // TestCkMaterial checks the material eval from each side's perspective.
 func TestCkMaterial(t *testing.T) {
 	var b checkers.Board

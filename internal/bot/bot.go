@@ -10,7 +10,6 @@ package bot
 
 import (
 	"math/rand"
-	"strings"
 	"time"
 
 	"github.com/richardwooding/kibitz/internal/service/backgammon"
@@ -90,9 +89,15 @@ func Drive(events <-chan any, s Services, delay time.Duration, level Level) {
 			}
 		case chess.State:
 			if e.Playing && e.Outcome == "*" && e.TurnID == s.Self {
-				if mv := s.Chess.LegalMoves(); len(mv) > 0 {
+				uci := ""
+				if level == Hard {
+					uci = s.Chess.HardMove() // alpha-beta material minimax
+				} else if mv := s.Chess.LegalMoves(); len(mv) > 0 {
+					uci = mv[rand.Intn(len(mv))]
+				}
+				if uci != "" {
 					pause()
-					_ = s.Chess.TryMove(chessPick(level, e.FEN, mv, e.WhiteID == s.Self))
+					_ = s.Chess.TryMove(uci)
 				}
 			}
 		case backgammon.State:
@@ -327,67 +332,6 @@ func bgEval(b backgammon.Board, color backgammon.Color) int {
 	return -b.PipCount(color) + 25*hits - 4*blots
 }
 
-// ---- chess ----------------------------------------------------------------
-
-var pieceValue = map[byte]int{'p': 1, 'n': 3, 'b': 3, 'r': 5, 'q': 9, 'k': 0}
-
-// chessPick prefers the most valuable capture (MVV) and promotions, else a random
-// legal move. It parses the FEN placement to see what sits on each destination.
-func chessPick(level Level, fen string, moves []string, botWhite bool) string {
-	if level != Hard || len(moves) == 0 {
-		return moves[rand.Intn(len(moves))]
-	}
-	occ := fenOccupancy(fen)
-	best, bestScore := "", 0
-	for _, uci := range moves {
-		if len(uci) < 4 {
-			continue
-		}
-		score := 0
-		if pc, ok := occ[uci[2:4]]; ok && isUpper(pc) != botWhite {
-			score += pieceValue[toLower(pc)]
-		}
-		if len(uci) >= 5 { // promotion
-			score += 8
-		}
-		if score > bestScore {
-			bestScore, best = score, uci
-		}
-	}
-	if best != "" {
-		return best
-	}
-	return moves[rand.Intn(len(moves))]
-}
-
-// fenOccupancy maps square name ("e4") → piece char from a FEN's placement field.
-func fenOccupancy(fen string) map[string]byte {
-	out := map[string]byte{}
-	field := fen
-	if i := strings.IndexByte(fen, ' '); i >= 0 {
-		field = fen[:i]
-	}
-	ranks := strings.Split(field, "/")
-	for r, rank := range ranks { // ranks[0] is rank 8
-		file := 0
-		for i := 0; i < len(rank); i++ {
-			ch := rank[i]
-			if ch >= '1' && ch <= '8' {
-				file += int(ch - '0')
-				continue
-			}
-			sq := string(rune('a'+file)) + string(rune('8'-r))
-			out[sq] = ch
-			file++
-		}
-	}
-	return out
-}
-
-func isUpper(b byte) bool { return b >= 'A' && b <= 'Z' }
-func toLower(b byte) byte {
-	if isUpper(b) {
-		return b + 32
-	}
-	return b
-}
+// Chess Hard is a material minimax that lives in the chess service (it owns the
+// corentings/chess position); the bot calls s.Chess.HardMove(). Easy plays a
+// random legal move (handled inline in Drive).
