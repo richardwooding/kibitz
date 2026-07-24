@@ -19,8 +19,9 @@
     // one-shot animation data (computed on state change, consumed by render)
     let anim = { slide: null, captured: new Set(), crowned: -1 };
 
-    const isPlayer = () => g && (g.p1Id === ctx.self() || g.p2Id === ctx.self());
-    const myTurn = () => g && g.turnId === ctx.self();
+    const soloMode = () => ctx.solo && ctx.solo();
+    const isPlayer = () => soloMode() || (g && (g.p1Id === ctx.self() || g.p2Id === ctx.self()));
+    const myTurn = () => g && (soloMode() || g.turnId === ctx.self());
     const over = () => g && g.outcome !== "";
 
     function candidates() {
@@ -64,6 +65,8 @@
       }
       if (over()) {
         statusEl.textContent = g.outcome;
+      } else if (soloMode()) {
+        statusEl.textContent = `${g.turnId === g.p1Id ? "Dark" : "Light"} to move`;
       } else {
         statusEl.textContent = (myTurn() ? "Your move" : ctx.name(g.turnId) + " to move") +
           (isPlayer() ? ` · you are ${g.p1Id === ctx.self() ? "dark" : "light"}` : "");

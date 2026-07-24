@@ -33,6 +33,7 @@ import (
 	"github.com/richardwooding/kibitz/internal/service/connect4"
 	"github.com/richardwooding/kibitz/internal/service/reversi"
 	"github.com/richardwooding/kibitz/internal/session"
+	"github.com/richardwooding/kibitz/internal/solo"
 )
 
 // command is every UI→core message; unused fields stay empty.
@@ -63,6 +64,20 @@ type app struct {
 	ck     *checkers.Service
 	rv     *reversi.Service
 	bs     *battleship.Service
+
+	// Solo hot-seat: a relay-free loopback runs two ends in one browser. The
+	// fields above are end A (host) — the set the UI reads and control actions
+	// use. The *B fields are end B (the synthetic opponent). Turn-gated moves
+	// try end A, then end B (exactly one is on turn). See internal/solo.
+	solo                bool
+	soloHost, soloGuest *solo.Endpoint
+	chatB               *chat.Service
+	chessB              *chess.Service
+	bgB                 *backgammon.Service
+	c4B                 *connect4.Service
+	ckB                 *checkers.Service
+	rvB                 *reversi.Service
+	bsB                 *battleship.Service
 }
 
 var current app
@@ -96,6 +111,7 @@ func emitError(msg string) {
 var commands = map[string]func(command){
 	"create":     func(c command) { create(c.Name) },
 	"join":       func(c command) { join(c.Phrase, c.Name) },
+	"solo":       func(c command) { startSolo(c.Name) },
 	"leave":      func(command) { leave() },
 	"game.start": func(c command) { startGame(c.Game) },
 
@@ -103,31 +119,31 @@ var commands = map[string]func(command){
 		withChat(func(s *chat.Service) error { return s.Say(c.Text) })
 	},
 
-	"chess.move":      func(c command) { withChess(func(s *chess.Service) error { return s.TryMove(c.UCI) }) },
+	"chess.move":      func(c command) { moveChess(func(s *chess.Service) error { return s.TryMove(c.UCI) }) },
 	"chess.resign":    func(command) { withChess((*chess.Service).Resign) },
 	"chess.offerDraw": func(command) { withChess((*chess.Service).OfferDraw) },
 	"chess.agreeDraw": func(command) { withChess((*chess.Service).AgreeDraw) },
 	"chess.targets":   func(c command) { targets(c.From, c.ID) },
 
-	"bg.roll": func(command) { withBG((*backgammon.Service).Roll) },
+	"bg.roll": func(command) { moveBG((*backgammon.Service).Roll) },
 	"bg.move": func(c command) {
 		hops := make([]backgammon.Hop, len(c.Hops))
 		for i, h := range c.Hops {
 			hops[i] = backgammon.Hop{From: h[0], To: h[1]}
 		}
-		withBG(func(s *backgammon.Service) error { return s.Move(hops) })
+		moveBG(func(s *backgammon.Service) error { return s.Move(hops) })
 	},
 	"bg.resign": func(command) { withBG((*backgammon.Service).Resign) },
 
-	"c4.drop":   func(c command) { withC4(func(s *connect4.Service) error { return s.Drop(c.Col) }) },
+	"c4.drop":   func(c command) { moveC4(func(s *connect4.Service) error { return s.Drop(c.Col) }) },
 	"c4.resign": func(command) { withC4((*connect4.Service).Resign) },
 
-	"checkers.move":      func(c command) { withCK(func(s *checkers.Service) error { return s.TryMove(c.Path) }) },
+	"checkers.move":      func(c command) { moveCK(func(s *checkers.Service) error { return s.TryMove(c.Path) }) },
 	"checkers.resign":    func(command) { withCK((*checkers.Service).Resign) },
 	"checkers.offerDraw": func(command) { withCK((*checkers.Service).OfferDraw) },
 	"checkers.agreeDraw": func(command) { withCK((*checkers.Service).AgreeDraw) },
 
-	"reversi.place":  func(c command) { withRV(func(s *reversi.Service) error { return s.PlaceDisc(c.Sq) }) },
+	"reversi.place":  func(c command) { moveRV(func(s *reversi.Service) error { return s.PlaceDisc(c.Sq) }) },
 	"reversi.resign": func(command) { withRV((*reversi.Service).Resign) },
 
 	"bs.commit": func(c command) {
@@ -223,27 +239,134 @@ func join(phrase, name string) {
 	})
 }
 
+// newServices builds a fresh set of the seven layered services.
+func newServices() (ch *chat.Service, cs *chess.Service, bg *backgammon.Service,
+	c4 *connect4.Service, ck *checkers.Service, rv *reversi.Service, bs *battleship.Service) {
+	return chat.New(), chess.New(), backgammon.New(), connect4.New(),
+		checkers.New(), reversi.New(), battleship.New()
+}
+
 // start attaches services and begins pumping mux events to the UI.
 func start(client *session.Client, name string) {
-	ch := chat.New()
-	cs := chess.New()
-	bg := backgammon.New()
-	c4 := connect4.New()
-	ck := checkers.New()
-	rv := reversi.New()
-	bs := battleship.New()
+	ch, cs, bg, c4, ck, rv, bs := newServices()
 	mux := service.NewMux(client, ch, cs, bg, c4, ck, rv, bs)
 	mux.SetName(name) // no-op for a blank name; peers then see "#id"
 
+	closePrev()
 	current.mu.Lock()
-	if current.client != nil {
-		_ = current.client.Close()
-	}
+	current.solo = false
 	current.client, current.chat, current.chess = client, ch, cs
 	current.bg, current.c4, current.ck, current.rv, current.bs = bg, c4, ck, rv, bs
 	current.mu.Unlock()
 
-	go pump(mux)
+	go pump(mux, false)
+}
+
+// startSolo runs a relay-free local hot-seat: two loopback ends, each with its
+// own service mux. The UI reads end A (host) and control actions target it;
+// turn-gated moves are routed to whichever end is on turn. No network, no
+// partner. See internal/solo.
+func startSolo(name string) {
+	host, guest, seat := solo.New()
+	chA, csA, bgA, c4A, ckA, rvA, bsA := newServices()
+	muxA := service.NewMux(host, chA, csA, bgA, c4A, ckA, rvA, bsA)
+	muxA.SetName(name)
+	chB, csB, bgB, c4B, ckB, rvB, bsB := newServices()
+	muxB := service.NewMux(guest, chB, csB, bgB, c4B, ckB, rvB, bsB)
+	muxB.SetName("Player 2")
+
+	closePrev()
+	current.mu.Lock()
+	current.solo = true
+	current.soloHost, current.soloGuest = host, guest
+	current.chat, current.chess, current.bg = chA, csA, bgA
+	current.c4, current.ck, current.rv, current.bs = c4A, ckA, rvA, bsA
+	current.chatB, current.chessB, current.bgB = chB, csB, bgB
+	current.c4B, current.ckB, current.rvB, current.bsB = c4B, ckB, rvB, bsB
+	current.mu.Unlock()
+
+	go pump(muxA, true) // end A drives the UI
+	go drainMux(muxB)   // end B stays in sync silently
+	seat()              // seat the guest on the host → roster announce → UI joins
+}
+
+// closePrev tears down any prior session (networked client or solo loopback).
+func closePrev() {
+	current.mu.Lock()
+	c, host, guest := current.client, current.soloHost, current.soloGuest
+	current.client, current.soloHost, current.soloGuest = nil, nil, nil
+	current.chatB, current.chessB, current.bgB = nil, nil, nil
+	current.c4B, current.ckB, current.rvB, current.bsB = nil, nil, nil, nil
+	current.mu.Unlock()
+	if c != nil {
+		_ = c.Close()
+	}
+	if host != nil {
+		host.Close()
+	}
+	if guest != nil {
+		guest.Close()
+	}
+}
+
+// drainMux discards end B's events — it must be drained (buffered) or B's mux
+// goroutine would block; the UI only ever renders end A.
+func drainMux(mux *service.Mux) {
+	for range mux.Events() {
+	}
+}
+
+// routeMove runs a turn-gated action. Networked: end A only. Solo: try end A,
+// and if it errors (not this end's turn), try end B — exactly one end is on
+// turn, so the move lands on the right side; a genuinely illegal move is
+// rejected by both and surfaced.
+func routeMove[T any](a, b *T, solo bool, f func(*T) error) {
+	if a == nil {
+		emitError("not in a session")
+		return
+	}
+	err := f(a)
+	if solo && err != nil && b != nil {
+		err = f(b)
+	}
+	if err != nil {
+		emitError(err.Error())
+	}
+}
+
+func moveChess(f func(*chess.Service) error) {
+	current.mu.Lock()
+	a, b, s := current.chess, current.chessB, current.solo
+	current.mu.Unlock()
+	routeMove(a, b, s, f)
+}
+
+func moveBG(f func(*backgammon.Service) error) {
+	current.mu.Lock()
+	a, b, s := current.bg, current.bgB, current.solo
+	current.mu.Unlock()
+	routeMove(a, b, s, f)
+}
+
+func moveC4(f func(*connect4.Service) error) {
+	current.mu.Lock()
+	a, b, s := current.c4, current.c4B, current.solo
+	current.mu.Unlock()
+	routeMove(a, b, s, f)
+}
+
+func moveCK(f func(*checkers.Service) error) {
+	current.mu.Lock()
+	a, b, s := current.ck, current.ckB, current.solo
+	current.mu.Unlock()
+	routeMove(a, b, s, f)
+}
+
+func moveRV(f func(*reversi.Service) error) {
+	current.mu.Lock()
+	a, b, s := current.rv, current.rvB, current.solo
+	current.mu.Unlock()
+	routeMove(a, b, s, f)
 }
 
 // startGame launches (or rematches) a game by service ID.
@@ -282,10 +405,17 @@ func startGame(id string) {
 	}
 }
 
-func pump(mux *service.Mux) {
+func pump(mux *service.Mux, isSolo bool) {
+	joined := false
 	for ev := range mux.Events() {
 		switch e := ev.(type) {
 		case service.Roster:
+			// Solo has no lobby: once the loopback guest is seated (roster shows
+			// both ends), tell the UI to open the table — self is the host end.
+			if isSolo && !joined && len(e.Members) >= 2 {
+				joined = true
+				emit("session.joined", map[string]any{"self": uint32(1), "role": "host", "solo": true})
+			}
 			emitRoster(e)
 		case chat.Message:
 			emit("chat.msg", map[string]any{"from": uint32(e.From), "text": e.Text})
@@ -426,13 +556,12 @@ func targets(from string, id int) {
 }
 
 func leave() {
+	closePrev()
 	current.mu.Lock()
-	c := current.client
-	current.client, current.chat, current.chess, current.bg, current.c4 = nil, nil, nil, nil, nil
+	current.solo = false
+	current.chat, current.chess, current.bg = nil, nil, nil
+	current.c4, current.ck, current.rv, current.bs = nil, nil, nil, nil
 	current.mu.Unlock()
-	if c != nil {
-		_ = c.Close()
-	}
 }
 
 func withChat(f func(*chat.Service) error) {

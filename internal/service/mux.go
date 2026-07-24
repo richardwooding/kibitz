@@ -5,12 +5,23 @@ import (
 	"github.com/richardwooding/kibitz/internal/wire"
 )
 
+// Conn is the transport a Mux drives: one keyed session end. *session.Client
+// satisfies it over the relay; internal/solo provides an in-memory loopback
+// end for the no-relay hot-seat mode. It is exactly the surface the mux uses.
+type Conn interface {
+	Sender
+	Self() wire.ParticipantID
+	HostID() wire.ParticipantID
+	Role() session.Role
+	Events() <-chan session.Event
+}
+
 // Mux drains a session client's events, routes envelopes to services by ID
 // (unknown IDs are ignored for forward compatibility), watches per-sender
 // sequence numbers, and merges everything the UI cares about into one event
 // stream.
 type Mux struct {
-	client   *session.Client
+	client   Conn
 	services map[string]Service
 	ctl      *ctlService
 	events   chan any
@@ -47,7 +58,7 @@ type SessionEvent struct{ Event session.Event }
 // NewMux attaches services to the client and starts routing. The ctl service
 // is always registered. Call Events for the merged stream; it closes when
 // the session ends.
-func NewMux(c *session.Client, svcs ...Service) *Mux {
+func NewMux(c Conn, svcs ...Service) *Mux {
 	m := &Mux{
 		client:   c,
 		services: map[string]Service{},

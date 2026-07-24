@@ -13,8 +13,10 @@
     let visible = false;
     let dropCell = -1; // board index to animate this render (the last drop)
 
-    const isPlayer = () => g && (g.p1Id === ctx.self() || g.p2Id === ctx.self());
-    const myTurn = () => g && g.turnId === ctx.self();
+    const soloMode = () => ctx.solo && ctx.solo();
+    const isPlayer = () => soloMode() || (g && (g.p1Id === ctx.self() || g.p2Id === ctx.self()));
+    // In solo the user drives both sides, so it is always "their" turn.
+    const myTurn = () => g && (soloMode() || g.turnId === ctx.self());
     const over = () => g && g.outcome !== "";
     const myColorClass = () => (g.p1Id === ctx.self() ? "ghost-red" : "ghost-yellow");
 
@@ -28,11 +30,15 @@
       if (over()) {
         statusEl.textContent = g.outcome;
       } else {
-        const mine = g.turnId === ctx.self();
         const color = g.turnId === g.p1Id ? "🔴" : "🟡";
-        statusEl.textContent = mine ? `Your move ${color}` : `${ctx.name(g.turnId)}'s move ${color}`;
-        if (isPlayer()) {
-          statusEl.textContent += ` · you are ${g.p1Id === ctx.self() ? "🔴" : "🟡"}`;
+        if (soloMode()) {
+          statusEl.textContent = `${color} to move`;
+        } else {
+          const mine = g.turnId === ctx.self();
+          statusEl.textContent = mine ? `Your move ${color}` : `${ctx.name(g.turnId)}'s move ${color}`;
+          if (isPlayer()) {
+            statusEl.textContent += ` · you are ${g.p1Id === ctx.self() ? "🔴" : "🟡"}`;
+          }
         }
       }
       $("c4-resign").classList.toggle("hidden", !isPlayer() || over());

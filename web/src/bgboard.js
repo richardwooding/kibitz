@@ -21,9 +21,15 @@
     let popPoints = new Set(); // global points whose checkers just changed
     let diceRolled = false;    // fresh dice this render → tumble animation
 
-    const isWhite = () => g && g.whiteId === ctx.self();
-    const isPlayer = () => g && (g.whiteId === ctx.self() || g.blackId === ctx.self());
-    const myTurn = () => g && g.turnId === ctx.self();
+    const soloMode = () => ctx.solo && ctx.solo();
+    const isWhite = () => g && g.whiteId === ctx.self();            // self's colour
+    const moverIsWhite = () => g && g.turnId === g.whiteId;         // colour to move
+    // Coordinate mapping / pending preview use the on-turn side's perspective.
+    // Normally that's you (you only move on your turn); in solo you drive both,
+    // so it follows the side to move.
+    const persWhite = () => (soloMode() ? moverIsWhite() : isWhite());
+    const isPlayer = () => soloMode() || (g && (g.whiteId === ctx.self() || g.blackId === ctx.self()));
+    const myTurn = () => g && (soloMode() || g.turnId === ctx.self());
     const bgWon = () => {
       if (!isPlayer()) return null;
       if (g.outcome.startsWith("white")) return isWhite();
@@ -31,8 +37,8 @@
       return null;
     };
 
-    const relToGlobal = (rel) => (rel === 25 || rel === 0) ? rel : (isWhite() ? rel : 25 - rel);
-    const globalToRel = (p) => (p === 25 || p === 0) ? p : (isWhite() ? p : 25 - p);
+    const relToGlobal = (rel) => (rel === 25 || rel === 0) ? rel : (persWhite() ? rel : 25 - rel);
+    const globalToRel = (p) => (p === 25 || p === 0) ? p : (persWhite() ? p : 25 - p);
 
     function candidates() {
       return (g.legal || []).filter((turn) =>
@@ -54,15 +60,15 @@
         points: [...g.points],
         barW: g.barW, barB: g.barB, offW: g.offW, offB: g.offB,
       };
-      const sign = isWhite() ? 1 : -1;
+      const sign = persWhite() ? 1 : -1;
       for (const [f, to] of pending) {
-        if (f === 25) { if (isWhite()) st.barW--; else st.barB--; }
+        if (f === 25) { if (persWhite()) st.barW--; else st.barB--; }
         else st.points[relToGlobal(f)] -= sign;
-        if (to === 0) { if (isWhite()) st.offW++; else st.offB++; continue; }
+        if (to === 0) { if (persWhite()) st.offW++; else st.offB++; continue; }
         const gp = relToGlobal(to);
         if (st.points[gp] === -sign) { // lone opposing blot: hit
           st.points[gp] = 0;
-          if (isWhite()) st.barB++; else st.barW++;
+          if (persWhite()) st.barB++; else st.barW++;
         }
         st.points[gp] += sign;
       }
@@ -188,14 +194,16 @@
         return;
       }
       let status;
+      const moverIcon = moverIsWhite() ? "⚪" : "⚫";
       if (g.phase === "over") status = g.outcome;
-      else if (g.phase === "rolling") status = myTurn() ? "Your roll" : "Waiting for opponent to roll";
+      else if (g.phase === "rolling") status = soloMode() ? `${moverIcon} to roll` : (myTurn() ? "Your roll" : "Waiting for opponent to roll");
       else if (g.phase === "handshake") status = "Rolling…";
+      else if (soloMode()) status = `${moverIcon} to move`;
       else if (myTurn()) status = "Your move";
       else if (isPlayer()) status = ctx.name(g.turnId) + " to move";
       else status = "Kibitzing";
       statusEl.textContent = `${status} · pips ⚪${g.pipsW} ⚫${g.pipsB}` +
-        (isPlayer() ? ` · you are ${isWhite() ? "⚪" : "⚫"}` : "");
+        (isPlayer() && !soloMode() ? ` · you are ${isWhite() ? "⚪" : "⚫"}` : "");
 
       const faces = ["", "⚀", "⚁", "⚂", "⚃", "⚄", "⚅"];
       const diceEl = $("bg-dice");
@@ -213,7 +221,7 @@
       $("bg-undo").classList.toggle("hidden", pending.length === 0);
       $("bg-resign").classList.toggle("hidden", !isPlayer() || g.phase === "over");
 
-      const hi = { sources: new Set(), targets: new Set(), mover: isWhite() ? "w" : "b" };
+      const hi = { sources: new Set(), targets: new Set(), mover: persWhite() ? "w" : "b" };
       if (g.phase === "moving" && myTurn()) {
         for (const o of options()) {
           const src = relToGlobal(o.from);

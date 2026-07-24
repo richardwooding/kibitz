@@ -13,8 +13,9 @@
     let lastPassToasted = false;
     let flips = new Set(); // squares to flip-animate this render
 
-    const isPlayer = () => g && (g.p1Id === ctx.self() || g.p2Id === ctx.self());
-    const myTurn = () => g && g.turnId === ctx.self();
+    const soloMode = () => ctx.solo && ctx.solo();
+    const isPlayer = () => soloMode() || (g && (g.p1Id === ctx.self() || g.p2Id === ctx.self()));
+    const myTurn = () => g && (soloMode() || g.turnId === ctx.self());
     const over = () => g && g.outcome !== "";
 
     function render() {
@@ -27,6 +28,8 @@
       const score = ` · ⚫${g.black} ⚪${g.white}`;
       if (over()) {
         statusEl.textContent = g.outcome + score;
+      } else if (soloMode()) {
+        statusEl.textContent = `${g.turnId === g.p1Id ? "⚫" : "⚪"} to move` + score;
       } else {
         statusEl.textContent = (myTurn() ? "Your move" : ctx.name(g.turnId) + " to move") +
           score + (isPlayer() ? ` · you are ${g.p1Id === ctx.self() ? "⚫" : "⚪"}` : "");

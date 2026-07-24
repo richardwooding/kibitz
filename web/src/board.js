@@ -49,8 +49,9 @@
     let visible = false;
     let animatedUci = null;   // last move we've already slide-animated
 
-    const isPlayer = () => g && (g.whiteId === ctx.self() || g.blackId === ctx.self());
-    const myTurn = () => g && g.turnId === ctx.self() && !over();
+    const soloMode = () => ctx.solo && ctx.solo();
+    const isPlayer = () => soloMode() || (g && (g.whiteId === ctx.self() || g.blackId === ctx.self()));
+    const myTurn = () => g && (soloMode() || g.turnId === ctx.self()) && !over();
     const over = () => g && g.outcome !== "*";
     const opts = () => ({
       flipped: g && g.blackId === ctx.self(),
@@ -128,8 +129,10 @@
           return;
         }
       }
-      const mineIsWhite = g.whiteId === ctx.self();
-      if (piece && (piece === piece.toUpperCase()) === mineIsWhite) {
+      // Which colour may be picked up: your own normally; in solo, whichever
+      // side is to move (you drive both).
+      const pickWhite = soloMode() ? (g.turnId === g.whiteId) : (g.whiteId === ctx.self());
+      if (piece && (piece === piece.toUpperCase()) === pickWhite) {
         selected = sq;
         selectedPiece = piece;
         send({ type: "chess.targets", from: sq, id: Date.now() });
@@ -151,6 +154,8 @@
         const result = g.outcome === "1/2-1/2" ? "Draw" :
           (g.outcome === "1-0" ? "White wins" : "Black wins");
         el.textContent = `${result} — ${g.method}`;
+      } else if (soloMode()) {
+        el.textContent = (g.turnId === g.whiteId ? "White" : "Black") + " to move";
       } else {
         el.textContent = (g.turnId === ctx.self() ? "Your move" :
           ctx.name(g.turnId) + " to move") +

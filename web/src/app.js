@@ -16,6 +16,7 @@
     members: {},
     names: {}, // id -> screen name (from the ctl roster)
     activeGame: null, // module id when a pane is open; null = picker
+    solo: false, // local hot-seat (no relay); the user drives both sides
   };
 
   // displayName returns a participant's screen name, "you" for self, or a
@@ -76,6 +77,7 @@
     self: () => state.self,
     role: () => state.role,
     name: displayName, // game modules label opponents by screen name
+    solo: () => state.solo, // hot-seat: modules enable input for both sides
   };
   const games = {}; // id -> instantiated module
   for (const [id, def] of Object.entries(window.GameModules || {})) {
@@ -133,6 +135,13 @@
         card.classList.add("clickable");
         card.addEventListener("click", () => openGame(id));
         if (canStart) card.appendChild(actionButton("Rematch", id));
+      } else if (state.solo && id === "battleship") {
+        // Battleship's simultaneous fleet placement isn't supported in hot-seat.
+        badge.textContent = "two players";
+        const note = document.createElement("div");
+        note.className = "game-matchup";
+        note.textContent = "Invite a friend to play";
+        card.appendChild(note);
       } else {
         badge.textContent = "not started";
         if (canStart) card.appendChild(actionButton("+ Start", id));
@@ -170,6 +179,7 @@
       $("btn-create").disabled = false;
       $("btn-join").disabled = false;
       $("join-phrase").disabled = false;
+      $("btn-solo").disabled = false;
       $("home-status").textContent = "";
       // Arriving via a share link: switch the home screen into "invited"
       // mode — a prominent invite banner, name field, and a big Join — rather
@@ -198,6 +208,8 @@
     "session.joined"(e) {
       state.self = e.self;
       state.role = e.role;
+      state.solo = !!e.solo;
+      views.table.classList.toggle("solo", state.solo);
       show("table");
       renderPicker();
     },
@@ -322,6 +334,12 @@
     $("btn-create").disabled = true;
     $("home-status").textContent = "opening a table…";
     send({ type: "create", name: myName() });
+  });
+
+  $("btn-solo").addEventListener("click", () => {
+    $("btn-solo").disabled = true;
+    $("home-status").textContent = "setting up a solo game…";
+    send({ type: "solo", name: myName() });
   });
 
   $("btn-join").addEventListener("click", joinFromInput);
