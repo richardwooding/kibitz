@@ -28,6 +28,53 @@
   .gl-term .you { color: var(--gl-accent); }
   .gl-term .enc { color: var(--gl-fg-dim); letter-spacing: .1em; }
   .gl-term .say { color: var(--gl-fg); }
+
+  /* hero gameplay montage — real screenshots crossfading inside the app frame */
+  .montage-stage {
+    position: relative;
+    aspect-ratio: 4 / 3;
+    width: 100%;
+    background: var(--gl-panel-2);
+    border-radius: 0 0 10px 10px;
+    overflow: hidden;
+  }
+  .montage-stage img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+    opacity: 0;
+    animation: montage 20s infinite;
+  }
+  .montage-stage img:nth-child(1) { animation-delay: 0s; }
+  .montage-stage img:nth-child(2) { animation-delay: 5s; }
+  .montage-stage img:nth-child(3) { animation-delay: 10s; }
+  .montage-stage img:nth-child(4) { animation-delay: 15s; }
+  @keyframes montage {
+    0%, 22%  { opacity: 1; }
+    28%, 94% { opacity: 0; }
+    100%     { opacity: 1; }
+  }
+
+  /* real board thumbnail atop each game card */
+  .game-shot {
+    display: block;
+    width: 100%;
+    height: 168px;
+    object-fit: cover;
+    object-position: center;
+    border-radius: 10px;
+    margin-bottom: 14px;
+    background: var(--gl-panel-2);
+  }
+  .game-shot.tall { object-position: center top; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .montage-stage img { animation: none; opacity: 0; }
+    .montage-stage img:first-child { opacity: 1; }
+  }
 </style>
 </head>
 <body class="gl">
@@ -78,15 +125,12 @@
         <span class="dot" style="background:#27c93f"></span>
         <span class="t">kibitz</span>
       </div>
-<pre><span class="pr">$</span> open a table
-your phrase   <span class="you">lion-42-maple</span>   <span class="loc">share link · QR ready</span>
-
-<span class="hd">&gt;&gt;</span> ada joined — she's <span class="you">Black</span>, you're White
-<span class="hd">chat</span>  ada: <span class="say">en passant? really?</span>
-<span class="hd">chess</span> e5 → move 4                <span class="ok">verified ✓</span>
-
-<span class="c"># the relay only ever saw:</span>
-<span class="enc">▓▓▓▓ ▓▓▓▓▓▓▓ ▓▓▓ ▓▓▓▓▓▓▓▓▓▓</span>  <span class="loc">opaque frames</span></pre>
+      <div class="montage-stage" role="img" aria-label="Real kibitz gameplay: a chess game with live chat, plus backgammon, Connect Four, and Battleship.">
+        <img src="shots/hero-table.png" alt="A chess game in kibitz with a live chat beside the board" width="896" height="717">
+        <img src="shots/backgammon.png" alt="" aria-hidden="true" width="588" height="311">
+        <img src="shots/connect4.png" alt="" aria-hidden="true" width="416" height="358">
+        <img src="shots/battleship.png" alt="" aria-hidden="true" width="588" height="916">
+      </div>
     </div>
   </div>
 </section>
@@ -98,45 +142,33 @@ your phrase   <span class="you">lion-42-maple</span>   <span class="loc">share l
     <p class="gl-lede" style="margin-top:14px">Games start on demand from a picker and run side by side — play a chess game and a backgammon game at once, chatting the whole time. Every rules engine is pure Go, compiled to WebAssembly, and runs identically on both screens.</p>
     <div class="gl-grid feat" style="margin-top:28px">
       <div class="gl-card">
-        <h3>
-          <span class="gl-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 21h8M9 21l.5-4h5l.5 4M9 17c-1-3 1-4 1-6a2 2 0 1 1 4 0c0 2 2 3 1 6M10 8h4"/></svg></span>
-          Chess
-        </h3>
+        <img class="game-shot" src="shots/chess.png" alt="A chess game in the kibitz app" loading="lazy" width="544" height="544">
+        <h3>Chess</h3>
         <p>The full ruleset — castling, en passant, promotion, draws and resignation — via the maintained corentings/chess engine. Kibitzers watch and heckle in chat.</p>
       </div>
       <div class="gl-card">
-        <h3>
-          <span class="gl-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 3h16v18H4zM12 3v18M8 4l-2 7M16 4l2 7M8 20l-2-7M16 20l2-7"/></svg></span>
-          Backgammon
-        </h3>
+        <img class="game-shot" src="shots/backgammon.png" alt="A backgammon game in the kibitz app" loading="lazy" width="588" height="311">
+        <h3>Backgammon</h3>
         <p>With a commit-reveal dice roll: each roll is committed then revealed, so neither side — nor a spectator — can doctor the dice. Forced moves and bear-off, all validated both sides.</p>
       </div>
       <div class="gl-card">
-        <h3>
-          <span class="gl-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="2.2"/><circle cx="16" cy="16" r="2.2" fill="currentColor"/></svg></span>
-          Checkers
-        </h3>
+        <img class="game-shot" src="shots/checkers.png" alt="A checkers game in the kibitz app" loading="lazy" width="480" height="480">
+        <h3>Checkers</h3>
         <p>American draughts with forced captures — the engine walks every capture chain, so a jump you're owed is a jump you must take.</p>
       </div>
       <div class="gl-card">
-        <h3>
-          <span class="gl-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none"/></svg></span>
-          Reversi
-        </h3>
+        <img class="game-shot" src="shots/reversi.png" alt="A reversi game in the kibitz app" loading="lazy" width="480" height="480">
+        <h3>Reversi</h3>
         <p>Othello, flips and all. Legal moves and passes are computed by the shared engine, never asserted — so both boards always agree on the count.</p>
       </div>
       <div class="gl-card">
-        <h3>
-          <span class="gl-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8" cy="9" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="14" r="1.6" fill="currentColor" stroke="none"/><circle cx="16" cy="9" r="1.6"/></svg></span>
-          Connect Four
-        </h3>
+        <img class="game-shot" src="shots/connect4.png" alt="A Connect Four game in the kibitz app" loading="lazy" width="416" height="358">
+        <h3>Connect Four</h3>
         <p>Drop, connect, gloat. A quick one between the longer games — with the disc-drop animation and a hover ghost showing where your piece will land.</p>
       </div>
       <div class="gl-card">
-        <h3>
-          <span class="gl-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17c2 1 4 1 6 0M15 17c2 1 4 1 6 0M6 17V9l4-3h5l2 4v7M9 7v4M13 6v5"/></svg></span>
-          Battleship
-        </h3>
+        <img class="game-shot tall" src="shots/battleship.png" alt="A Battleship game in the kibitz app, showing hits and misses" loading="lazy" width="588" height="916">
+        <h3>Battleship</h3>
         <p>Provably fair: each cell of your fleet is a cryptographic commitment made before the first shot. "Sunk" becomes a public derivation — there's no message left to lie in. No hidden server; nobody cheats.</p>
       </div>
     </div>
