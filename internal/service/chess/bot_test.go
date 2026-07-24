@@ -61,6 +61,32 @@ func TestPieceSquare(t *testing.T) {
 	}
 }
 
+// TestGamePhase: full material reads as middlegame (phaseMax); bare kings as a
+// deep endgame (0).
+func TestGamePhase(t *testing.T) {
+	start := posFromFEN(t, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+	if p := gamePhase(start.Board().SquareMap()); p != phaseMax {
+		t.Fatalf("start phase = %d, want %d", p, phaseMax)
+	}
+	bare := posFromFEN(t, "4k3/8/8/8/8/8/8/4K3 w - - 0 1")
+	if p := gamePhase(bare.Board().SquareMap()); p != 0 {
+		t.Fatalf("bare-kings phase = %d, want 0", p)
+	}
+}
+
+// TestKingTaper: in the endgame the king wants the centre; in the middlegame it
+// wants to stay tucked back.
+func TestKingTaper(t *testing.T) {
+	e4 := chesslib.NewSquare(chesslib.FileE, chesslib.Rank4)
+	g1 := chesslib.NewSquare(chesslib.FileG, chesslib.Rank1)
+	if kingBonus(e4, chesslib.White, 0) <= kingBonus(g1, chesslib.White, 0) {
+		t.Fatalf("endgame: central king should beat a back-rank king")
+	}
+	if kingBonus(g1, chesslib.White, phaseMax) <= kingBonus(e4, chesslib.White, phaseMax) {
+		t.Fatalf("middlegame: back-rank king should beat a central king")
+	}
+}
+
 // TestQuiesceWinsHangingPiece: with an undefended black knight en prise, the
 // quiescence search resolves the free capture — the score rises above stand-pat.
 func TestQuiesceWinsHangingPiece(t *testing.T) {

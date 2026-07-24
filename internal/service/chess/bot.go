@@ -12,8 +12,9 @@ import (
 // material plus piece-square positional bonuses. It searches a CLONE of the
 // position (corentings/chess positions are immutable — Update returns a new
 // one), so it never touches the live game; captures are searched first for
-// pruning. It finds short tactics, won't hang a piece to a recapture, and now
-// develops with some positional sense (centre, castling).
+// pruning. It finds short tactics, won't hang a piece to a recapture, and plays
+// with positional sense — including a game-phase king table so the king hides in
+// the middlegame but centralises in the endgame.
 
 const (
 	botDepth = 4       // plies of lookahead
@@ -132,9 +133,17 @@ func quiesce(pos *chesslib.Position, alpha, beta int) int {
 // tables give the bot positional sense — develop pieces toward the centre, push
 // central pawns, castle the king into safety — on top of pure material.
 func evaluate(pos *chesslib.Position, side chesslib.Color) int {
+	pieces := pos.Board().SquareMap()
+	phase := gamePhase(pieces)
 	score := 0
-	for sq, pc := range pos.Board().SquareMap() {
-		v := matValue[pc.Type()] + pstValue(pc.Type(), sq, pc.Color())
+	for sq, pc := range pieces {
+		pt := pc.Type()
+		v := matValue[pt]
+		if pt == chesslib.King {
+			v += kingBonus(sq, pc.Color(), phase) // tapered MG↔EG
+		} else {
+			v += pstValue(pt, sq, pc.Color())
+		}
 		if pc.Color() == side {
 			score += v
 		} else {
@@ -144,17 +153,48 @@ func evaluate(pos *chesslib.Position, side chesslib.Color) int {
 	return score
 }
 
-// pstValue is the positional bonus for a piece on a square. Tables are written
-// from White's view (rank 8 first); a White piece reads the table directly, a
-// Black piece reads it vertically mirrored so the tables are colour-symmetric.
-func pstValue(pt chesslib.PieceType, sq chesslib.Square, c chesslib.Color) int {
+// pstIndex maps a square to a table index, oriented so White reads the tables
+// (written rank 8 first) directly and Black reads them vertically mirrored — so
+// the tables are colour-symmetric.
+func pstIndex(sq chesslib.Square, c chesslib.Color) int {
 	f, r := int(sq.File()), int(sq.Rank()) // 0..7, rank 1 == 0
-	idx := r*8 + f                         // Black's view
 	if c == chesslib.White {
-		idx = (7-r)*8 + f
+		return (7-r)*8 + f
 	}
-	return pst[pt][idx]
+	return r*8 + f
 }
+
+// pstValue is the positional bonus for a non-king piece on a square.
+func pstValue(pt chesslib.PieceType, sq chesslib.Square, c chesslib.Color) int {
+	return pst[pt][pstIndex(sq, c)]
+}
+
+// kingBonus tapers the king's positional value between the middlegame table
+// (tucked back / castled) and the endgame table (centralised and active) by the
+// game phase, so the king comes out to fight as material leaves the board.
+func kingBonus(sq chesslib.Square, c chesslib.Color, phase int) int {
+	idx := pstIndex(sq, c)
+	mg, eg := pst[chesslib.King][idx], kingEG[idx]
+	return (mg*phase + eg*(phaseMax-phase)) / phaseMax
+}
+
+// gamePhase runs from phaseMax (full material — middlegame) down to 0 (bare
+// kings — deep endgame), summed from remaining non-pawn material.
+func gamePhase(pieces map[chesslib.Square]chesslib.Piece) int {
+	p := 0
+	for _, pc := range pieces {
+		p += phaseWeight[pc.Type()]
+	}
+	if p > phaseMax {
+		p = phaseMax // guard promotions pushing material above the starting sum
+	}
+	return p
+}
+
+const phaseMax = 24 // starting non-pawn material: 2×(Q·4 + 2R·2 + 2B·1 + 2N·1)
+
+// phaseWeight by chesslib.PieceType (king & pawn contribute 0).
+var phaseWeight = [7]int{chesslib.Queen: 4, chesslib.Rook: 2, chesslib.Bishop: 1, chesslib.Knight: 1}
 
 // pst holds the middlegame piece-square tables (Michniewski's simplified set),
 // indexed by chesslib.PieceType then square (rank 8 first, files a..h).
@@ -219,6 +259,19 @@ var pst = [7][64]int{
 		20, 20, 0, 0, 0, 0, 20, 20,
 		20, 30, 10, 0, 0, 10, 30, 20,
 	},
+}
+
+// kingEG is the endgame king table: unlike the middlegame king (pst[King]),
+// which hides in the corner, the endgame king is a strong piece — centralise it.
+var kingEG = [64]int{
+	-50, -40, -30, -20, -20, -30, -40, -50,
+	-30, -20, -10, 0, 0, -10, -20, -30,
+	-30, -10, 20, 30, 30, 20, -10, -30,
+	-30, -10, 30, 40, 40, 30, -10, -30,
+	-30, -10, 30, 40, 40, 30, -10, -30,
+	-30, -10, 20, 30, 30, 20, -10, -30,
+	-30, -30, 0, 0, 0, 0, -30, -30,
+	-50, -30, -30, -30, -30, -30, -30, -50,
 }
 
 // orderCaptures sorts moves so higher-value captures come first (better
