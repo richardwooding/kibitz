@@ -198,6 +198,18 @@ input[type="text"] {
 /* solo hot-seat */
 .solo-row { display: flex; gap: 0.5rem; }
 .solo-row button { flex: 1; }
+.difficulty { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.6rem; }
+.difficulty-label { font-size: 0.85rem; color: var(--muted); margin-right: 0.1rem; }
+.diff-btn {
+  all: unset;
+  cursor: pointer;
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.diff-btn[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: transparent; }
 .solo-hint { font-size: 0.8rem; color: var(--muted); text-align: center; margin: 0.35rem 0 0; }
 .solo-banner {
   display: none;

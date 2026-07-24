@@ -379,10 +379,22 @@
     send({ type: "create", name: myName() });
   });
 
+  // Computer difficulty (remembered): Easy = random bot, Hard = heuristics.
+  let difficulty = localStorage.getItem("kibitz.difficulty") === "hard" ? "hard" : "easy";
+  function setDifficulty(d) {
+    difficulty = d;
+    localStorage.setItem("kibitz.difficulty", d);
+    $("diff-easy").setAttribute("aria-pressed", String(d === "easy"));
+    $("diff-hard").setAttribute("aria-pressed", String(d === "hard"));
+  }
+  $("diff-easy").addEventListener("click", () => setDifficulty("easy"));
+  $("diff-hard").addEventListener("click", () => setDifficulty("hard"));
+  setDifficulty(difficulty); // reflect the stored choice on load
+
   $("btn-solo").addEventListener("click", () => {
     $("btn-solo").disabled = true;
     $("home-status").textContent = "setting up a game vs the computer…";
-    send({ type: "solo", mode: "bot", name: myName() });
+    send({ type: "solo", mode: "bot", level: difficulty, name: myName() });
   });
   $("btn-hotseat").addEventListener("click", () => {
     $("btn-hotseat").disabled = true;

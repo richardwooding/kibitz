@@ -54,6 +54,7 @@ type command struct {
 	Fleet  []uint8   `json:"fleet,omitempty"` // battleship placement
 	Name   string    `json:"name,omitempty"`  // screen name for create/join
 	Mode   string    `json:"mode,omitempty"`  // solo mode: "bot" | "hotseat"
+	Level  string    `json:"level,omitempty"` // solo bot difficulty: "easy" | "hard"
 }
 
 type app struct {
@@ -113,7 +114,7 @@ func emitError(msg string) {
 var commands = map[string]func(command){
 	"create":     func(c command) { create(c.Name) },
 	"join":       func(c command) { join(c.Phrase, c.Name) },
-	"solo":       func(c command) { startSolo(c.Name, c.Mode == "bot") },
+	"solo":       func(c command) { startSolo(c.Name, c.Mode == "bot", c.Level) },
 	"leave":      func(command) { leave() },
 	"game.start": func(c command) { startGame(c.Game) },
 
@@ -269,7 +270,7 @@ func start(client *session.Client, name string) {
 // (vsBot=false) the user drives both sides and turn-gated moves route to whichever
 // end is on turn. In "play the computer" (vsBot=true) the user is end A and a bot
 // drives end B. No network, no partner. See internal/solo and internal/bot.
-func startSolo(name string, vsBot bool) {
+func startSolo(name string, vsBot bool, level string) {
 	host, guest, seat := solo.New()
 	chA, csA, bgA, c4A, ckA, rvA, bsA := newServices()
 	muxA := service.NewMux(host, chA, csA, bgA, c4A, ckA, rvA, bsA)
@@ -295,9 +296,13 @@ func startSolo(name string, vsBot bool) {
 	go pump(muxA, true, vsBot) // end A drives the UI
 	if vsBot {
 		// The bot plays end B; Drive also drains it.
+		lvl := bot.Easy
+		if level == "hard" {
+			lvl = bot.Hard
+		}
 		go bot.Drive(muxB.Events(), bot.Services{
 			Self: guest.Self(), Chess: csB, BG: bgB, C4: c4B, CK: ckB, RV: rvB,
-		}, 500*time.Millisecond)
+		}, 500*time.Millisecond, lvl)
 	} else {
 		go drainMux(muxB) // end B stays in sync silently
 	}
