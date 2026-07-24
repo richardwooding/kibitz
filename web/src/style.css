@@ -249,12 +249,18 @@ input[type="text"] {
    phrase box + marketing lead, demote "Start a table" to a quiet escape hatch. */
 #view-home.invited .home-hero { grid-template-columns: 1fr; max-width: 26rem; margin-inline: auto; }
 #view-home.invited .home-lead { display: none; }
-#view-home.invited .or-divider, #view-home.invited #join-phrase { display: none; }
+/* The invite banner + big Join replace the manual "join a friend" row. */
+#view-home.invited #join-divider, #view-home.invited #join-phrase { display: none; }
 #view-home.invited .invite-banner { order: 0; }
 #view-home.invited .field { order: 1; }
 #view-home.invited .join-row { order: 2; }
 #view-home.invited #btn-create { order: 3; }
 #view-home.invited .home-card .note { order: 4; }
+/* Solo alternatives sit below the join, not above it. */
+#view-home.invited #solo-divider { order: 5; }
+#view-home.invited .difficulty { order: 6; }
+#view-home.invited .solo-row { order: 7; }
+#view-home.invited .solo-hint { order: 8; }
 #view-home.invited #btn-join {
   width: 100%;
   padding: 0.85rem 1.4rem;
