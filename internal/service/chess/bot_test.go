@@ -39,3 +39,24 @@ func TestBotFindsMateInOne(t *testing.T) {
 		t.Fatalf("bestMaterialMove = %q, want a1a8 (mate in one)", got)
 	}
 }
+
+// TestQuiesceWinsHangingPiece: with an undefended black knight en prise, the
+// quiescence search resolves the free capture — the score rises above stand-pat.
+func TestQuiesceWinsHangingPiece(t *testing.T) {
+	pos := posFromFEN(t, "7k/8/8/4n3/8/8/4R3/7K w - - 0 1") // white Re2, loose black Ne5
+	stand := evalMaterial(pos, pos.Turn())
+	q := quiesce(pos, -botInf, botInf)
+	if q <= stand {
+		t.Fatalf("quiesce = %d, want > stand-pat %d (it should win the knight)", q, stand)
+	}
+}
+
+// TestQuiesceStandsPatOnBadCapture: QxD6 loses the queen to exd6, so quiescence
+// must fall back on the stand-pat score rather than the losing capture.
+func TestQuiesceStandsPatOnBadCapture(t *testing.T) {
+	pos := posFromFEN(t, "7k/4p3/3p4/8/8/8/3Q4/7K w - - 0 1") // Qd2; d6 pawn defended by e7
+	stand := evalMaterial(pos, pos.Turn())
+	if q := quiesce(pos, -botInf, botInf); q != stand {
+		t.Fatalf("quiesce = %d, want stand-pat %d (must not enter the losing capture)", q, stand)
+	}
+}

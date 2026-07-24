@@ -71,7 +71,7 @@ func negamax(pos *chesslib.Position, depth, alpha, beta int) int {
 		return 0 // stalemate / no legal moves
 	}
 	if depth == 0 {
-		return evalMaterial(pos, pos.Turn())
+		return quiesce(pos, alpha, beta) // settle pending captures before scoring
 	}
 	orderCaptures(pos, moves)
 	best := -botInf
@@ -88,6 +88,43 @@ func negamax(pos *chesslib.Position, depth, alpha, beta int) int {
 		}
 	}
 	return best
+}
+
+// quiesce is a captures-only search that runs at the main-search horizon so a
+// leaf is never scored in the middle of an exchange (the horizon effect). It
+// starts from a "stand-pat" (do-nothing) material score — the side to move is
+// never forced to keep capturing — then tries each capture, recursing until the
+// position is quiet. Bounded because captures strictly reduce material.
+func quiesce(pos *chesslib.Position, alpha, beta int) int {
+	moves := pos.ValidMoves()
+	if len(moves) == 0 {
+		if pos.Status() == chesslib.Checkmate {
+			return -botMate
+		}
+		return 0 // stalemate
+	}
+	stand := evalMaterial(pos, pos.Turn())
+	if stand >= beta {
+		return beta
+	}
+	if stand > alpha {
+		alpha = stand
+	}
+	orderCaptures(pos, moves)
+	board := pos.Board()
+	for i := range moves {
+		if board.Piece(moves[i].S2()) == chesslib.NoPiece {
+			continue // quiescence explores captures only
+		}
+		v := -quiesce(pos.Update(&moves[i]), -beta, -alpha)
+		if v >= beta {
+			return beta
+		}
+		if v > alpha {
+			alpha = v
+		}
+	}
+	return alpha
 }
 
 // evalMaterial is the leaf heuristic: own material minus opponent's, in
