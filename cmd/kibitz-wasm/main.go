@@ -297,8 +297,11 @@ func startSolo(name string, vsBot bool, level string) {
 	if vsBot {
 		// The bot plays end B; Drive also drains it.
 		lvl := bot.Easy
-		if level == "hard" {
+		switch level {
+		case "hard":
 			lvl = bot.Hard
+		case "medium":
+			lvl = bot.Medium
 		}
 		go bot.Drive(muxB.Events(), bot.Services{
 			Self: guest.Self(), Chess: csB, BG: bgB, C4: c4B, CK: ckB, RV: rvB,

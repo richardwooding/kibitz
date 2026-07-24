@@ -24,9 +24,27 @@ import (
 type Level int
 
 const (
-	Easy Level = iota // uniform random legal move
-	Hard              // per-game heuristics
+	Easy   Level = iota // uniform random legal move
+	Medium              // mostly Hard, but slips to a random move sometimes
+	Hard                // per-game heuristics
 )
+
+// mediumMistake is how often Medium slips from its best move to a random legal
+// one — between Easy (always random) and Hard (always its best).
+const mediumMistake = 0.4
+
+// resolveLevel maps the configured level to the level used for a single move.
+// Medium plays Hard most of the time but slips to Easy (random) with probability
+// mediumMistake; r is a [0,1) draw (injected so it is testable).
+func resolveLevel(level Level, r float64) Level {
+	if level == Medium {
+		if r < mediumMistake {
+			return Easy
+		}
+		return Hard
+	}
+	return level
+}
 
 // Services is the one end the bot plays on: its game-service set plus the bot's
 // own participant id (the side it moves for).
@@ -59,7 +77,7 @@ func Drive(events <-chan any, s Services, delay time.Duration, level Level) {
 					disc = 2
 				}
 				col, ok := int8(-1), false
-				if level == Hard {
+				if resolveLevel(level, rand.Float64()) == Hard {
 					col, ok = c4Hard(e.Board, disc)
 				} else {
 					col, ok = c4Random(e.Board)
@@ -76,7 +94,7 @@ func Drive(events <-chan any, s Services, delay time.Duration, level Level) {
 					side = -1
 				}
 				pause()
-				_ = s.RV.PlaceDisc(rvPick(level, e.Board, e.Legal, side))
+				_ = s.RV.PlaceDisc(rvPick(resolveLevel(level, rand.Float64()), e.Board, e.Legal, side))
 			}
 		case checkers.State:
 			if e.Playing && e.Outcome == "" && e.TurnID == s.Self && len(e.Legal) > 0 {
@@ -85,12 +103,12 @@ func Drive(events <-chan any, s Services, delay time.Duration, level Level) {
 					side = checkers.White
 				}
 				pause()
-				_ = s.CK.TryMove([]int8(ckPick(level, e.Board, e.Legal, side)))
+				_ = s.CK.TryMove([]int8(ckPick(resolveLevel(level, rand.Float64()), e.Board, e.Legal, side)))
 			}
 		case chess.State:
 			if e.Playing && e.Outcome == "*" && e.TurnID == s.Self {
 				uci := ""
-				if level == Hard {
+				if resolveLevel(level, rand.Float64()) == Hard {
 					uci = s.Chess.HardMove() // alpha-beta material minimax
 				} else if mv := s.Chess.LegalMoves(); len(mv) > 0 {
 					uci = mv[rand.Intn(len(mv))]
@@ -113,7 +131,7 @@ func Drive(events <-chan any, s Services, delay time.Duration, level Level) {
 							color = backgammon.Black
 						}
 						pause()
-						_ = s.BG.Move(bgPick(level, e.Board, e.Legal, color))
+						_ = s.BG.Move(bgPick(resolveLevel(level, rand.Float64()), e.Board, e.Legal, color))
 					}
 				}
 			}

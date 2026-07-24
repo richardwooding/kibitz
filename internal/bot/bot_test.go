@@ -40,7 +40,7 @@ func newEnd(conn service.Conn, level Level) end {
 // legal moves and the two ends stay in hash-verified sync to a terminal result.
 // Both connect4 and reversi fill the board, so they terminate at either level.
 func TestBotSelfPlay(t *testing.T) {
-	for _, level := range []Level{Easy, Hard} {
+	for _, level := range []Level{Easy, Medium, Hard} {
 		host, guest, seat := solo.New()
 		a := newEnd(host, level)
 		b := newEnd(guest, level)
@@ -83,6 +83,20 @@ func TestBotSelfPlay(t *testing.T) {
 				t.Fatalf("%s(%d): ends disagree on final state", g.name, level)
 			}
 		}
+	}
+}
+
+// TestResolveLevel: Medium slips to Easy below the mistake threshold and plays
+// Hard above it; Easy and Hard are unaffected by the draw.
+func TestResolveLevel(t *testing.T) {
+	if got := resolveLevel(Medium, mediumMistake/2); got != Easy {
+		t.Fatalf("Medium low-r = %v, want Easy", got)
+	}
+	if got := resolveLevel(Medium, (mediumMistake+1)/2); got != Hard {
+		t.Fatalf("Medium high-r = %v, want Hard", got)
+	}
+	if resolveLevel(Easy, 0.99) != Easy || resolveLevel(Hard, 0.01) != Hard {
+		t.Fatal("Easy/Hard must ignore the draw")
 	}
 }
 

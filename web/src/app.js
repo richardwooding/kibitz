@@ -379,16 +379,17 @@
     send({ type: "create", name: myName() });
   });
 
-  // Computer difficulty (remembered): Easy = random bot, Hard = heuristics.
-  let difficulty = localStorage.getItem("kibitz.difficulty") === "hard" ? "hard" : "easy";
+  // Computer difficulty (remembered): Easy = random, Medium = mostly best with
+  // occasional slips, Hard = full heuristics.
+  const DIFFICULTIES = ["easy", "medium", "hard"];
+  let difficulty = localStorage.getItem("kibitz.difficulty");
+  if (!DIFFICULTIES.includes(difficulty)) difficulty = "easy";
   function setDifficulty(d) {
     difficulty = d;
     localStorage.setItem("kibitz.difficulty", d);
-    $("diff-easy").setAttribute("aria-pressed", String(d === "easy"));
-    $("diff-hard").setAttribute("aria-pressed", String(d === "hard"));
+    for (const x of DIFFICULTIES) $("diff-" + x).setAttribute("aria-pressed", String(d === x));
   }
-  $("diff-easy").addEventListener("click", () => setDifficulty("easy"));
-  $("diff-hard").addEventListener("click", () => setDifficulty("hard"));
+  for (const x of DIFFICULTIES) $("diff-" + x).addEventListener("click", () => setDifficulty(x));
   setDifficulty(difficulty); // reflect the stored choice on load
 
   $("btn-solo").addEventListener("click", () => {
