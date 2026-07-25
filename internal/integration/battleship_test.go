@@ -76,7 +76,7 @@ func TestBattleshipFullGameOverRelay(t *testing.T) {
 	t.Cleanup(func() { _ = hc.Close() })
 	host := newBSTable(t, hc)
 
-	jc, err := session.Join(testCtx(t), url, phrase)
+	jc, err := session.Join(testCtx(t), url, phrase, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func TestBattleshipFullGameOverRelay(t *testing.T) {
 
 	// A spectator joins mid-game and must pick up both commit vectors via
 	// snapshot to verify reveals it never saw the start of.
-	sc, err := session.Join(testCtx(t), url, phrase)
+	sc, err := session.Join(testCtx(t), url, phrase, false)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -48,7 +48,7 @@ func TestCheckersOverRelay(t *testing.T) {
 	t.Cleanup(func() { _ = hc.Close() })
 	host := newCKTable(t, hc)
 
-	jc, err := session.Join(testCtx(t), url, phrase)
+	jc, err := session.Join(testCtx(t), url, phrase, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestCheckersOverRelay(t *testing.T) {
 	}
 
 	// Late joiner syncs.
-	lc, err := session.Join(testCtx(t), url, phrase)
+	lc, err := session.Join(testCtx(t), url, phrase, false)
 	if err != nil {
 		t.Fatal(err)
 	}

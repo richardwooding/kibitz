@@ -66,7 +66,7 @@ func TestEncryptedEcho(t *testing.T) {
 		t.Fatalf("host self=%d role=%d", host.Self(), host.Role())
 	}
 
-	joiner, err := session.Join(ctx, url, phrase)
+	joiner, err := session.Join(ctx, url, phrase, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +121,7 @@ func TestWrongPhraseRejected(t *testing.T) {
 	// package. Here, assert the not-found path is clean.
 	shortCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	_, err = session.Join(shortCtx, url, phrase+"x")
+	_, err = session.Join(shortCtx, url, phrase+"x", false)
 	if err == nil {
 		t.Fatal("join with wrong phrase succeeded")
 	}
@@ -143,12 +143,12 @@ func TestSecondJoinerIsSpectator(t *testing.T) {
 	}
 	defer func() { _ = host.Close() }()
 
-	j1, err := session.Join(ctx, url, phrase)
+	j1, err := session.Join(ctx, url, phrase, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = j1.Close() }()
-	j2, err := session.Join(ctx, url, phrase)
+	j2, err := session.Join(ctx, url, phrase, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,6 +173,38 @@ func TestSecondJoinerIsSpectator(t *testing.T) {
 	}
 }
 
+// TestSpectateJoinKeepsPlayerSeat: a joiner that asks to watch is seated as a
+// spectator even when it joins FIRST — the open player seat is preserved for
+// the next real player. This is what makes a watch link safe to share early.
+func TestSpectateJoinKeepsPlayerSeat(t *testing.T) {
+	url := startRelay(t)
+	ctx := testCtx(t)
+
+	host, phrase, err := session.Host(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = host.Close() }()
+
+	watcher, err := session.Join(ctx, url, phrase, true) // watches, joins first
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = watcher.Close() }()
+	player, err := session.Join(ctx, url, phrase, false) // plays, joins second
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = player.Close() }()
+
+	if watcher.Role() != session.RoleSpectator {
+		t.Fatalf("early watcher role = %d, want spectator", watcher.Role())
+	}
+	if player.Role() != session.RolePlayer {
+		t.Fatalf("player role = %d, want player (seat must survive the watcher)", player.Role())
+	}
+}
+
 func TestHostCloseEndsSession(t *testing.T) {
 	url := startRelay(t)
 	ctx := testCtx(t)
@@ -181,7 +213,7 @@ func TestHostCloseEndsSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	joiner, err := session.Join(ctx, url, phrase)
+	joiner, err := session.Join(ctx, url, phrase, false)
 	if err != nil {
 		t.Fatal(err)
 	}

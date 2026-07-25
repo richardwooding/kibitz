@@ -57,6 +57,7 @@ type command struct {
 	Level    string `json:"level,omitempty"`    // solo bot difficulty: "easy" | "hard"
 	PushKey  string `json:"pushKey,omitempty"`  // host: shared session VAPID keypair blob
 	Endpoint string `json:"endpoint,omitempty"` // this client's Web Push endpoint
+	Spectate bool   `json:"spectate,omitempty"` // join intent: watch instead of play
 }
 
 type app struct {
@@ -117,7 +118,7 @@ func emitError(msg string) {
 // commands maps UI intents to actions. Handlers run on their own goroutine.
 var commands = map[string]func(command){
 	"create":     func(c command) { create(c.Name) },
-	"join":       func(c command) { join(c.Phrase, c.Name) },
+	"join":       func(c command) { join(c.Phrase, c.Name, c.Spectate) },
 	"solo":       func(c command) { startSolo(c.Name, c.Mode == "bot", c.Level) },
 	"leave":      func(command) { leave() },
 	"game.start": func(c command) { startGame(c.Game) },
@@ -226,7 +227,7 @@ func create(name string) {
 	})
 }
 
-func join(phrase, name string) {
+func join(phrase, name string, spectate bool) {
 	phrase = strings.TrimSpace(phrase)
 	if phrase == "" {
 		emitError("enter a code phrase")
@@ -234,7 +235,7 @@ func join(phrase, name string) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	client, err := session.Join(ctx, relayURL(), phrase)
+	client, err := session.Join(ctx, relayURL(), phrase, spectate)
 	if err != nil {
 		msg := "couldn't join: " + err.Error()
 		if strings.Contains(err.Error(), "not found") {

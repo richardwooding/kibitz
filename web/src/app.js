@@ -143,6 +143,14 @@
     const el = $("game-picker");
     el.innerHTML = "";
     const canStart = state.role === "host" || state.role === "player";
+    // A spectator can't start games — if none is live yet, say so rather than
+    // showing a grid of unstartable cards.
+    if (state.role === "spectator" && !Object.values(games).some((m) => m.card().status === "live")) {
+      const hint = document.createElement("p");
+      hint.className = "note picker-hint";
+      hint.textContent = "👁 You're watching — waiting for the players to start a game.";
+      el.appendChild(hint);
+    }
     for (const [id, mod] of Object.entries(games)) {
       const card = document.createElement("div");
       card.className = "game-card";
@@ -222,13 +230,19 @@
       // mode — a prominent invite banner, name field, and a big Join — rather
       // than auto-joining (which robbed link-openers of a name) or leaving the
       // join buried under "Start a table".
-      const phrase = decodeURIComponent(location.hash.slice(1));
+      let hash = location.hash.slice(1);
+      const watch = hash.startsWith("watch=");
+      if (watch) hash = hash.slice("watch=".length);
+      const phrase = decodeURIComponent(hash);
       if (phrase) {
         $("join-phrase").value = phrase;
         $("invite-phrase").textContent = phrase;
+        $("watch-toggle").checked = watch;
+        const kicker = $("invite-banner").querySelector(".invite-kicker");
+        if (kicker) kicker.textContent = watch ? "You've been invited to watch a game" : "You've been invited to a game";
         $("invite-banner").classList.remove("hidden");
         $("view-home").classList.add("invited");
-        $("btn-join").textContent = "Join game";
+        $("btn-join").textContent = watch ? "👁 Watch game" : "Join game";
         $("btn-create").textContent = "or start your own table";
         $("display-name").focus();
       }
@@ -238,6 +252,9 @@
       state.role = "host";
       $("lobby-phrase").textContent = e.phrase;
       $("lobby-url").value = e.url;
+      // A watch link is the same share URL with the "watch" intent, so openers
+      // land as spectators without taking the player seat.
+      watchLink = e.url.includes("#") ? e.url.replace("#", "#watch=") : e.url + "#watch=" + encodeURIComponent(e.phrase);
       if (e.qr) $("lobby-qr").src = "data:image/png;base64," + e.qr;
       renderLobbyName();
       pushSession();
@@ -258,6 +275,8 @@
       pushSession();
       show("table");
       renderPicker();
+      renderWatching();
+      syncNotifyButton();
     },
     // A transient drop: the core is silently re-establishing the same session
     // (same seat, same game). Show a non-destructive banner and keep the board.
@@ -283,6 +302,7 @@
       push.ingestKey(e.pushKey || "");
       push.generateIfHost(); // host mints the session VAPID key if not yet set
       syncNotifyButton();
+      renderWatching();
       renderMembers();
       renderLobbyName(); // no-op visually unless the lobby is showing
       // Names may have just arrived — refresh the open game's labels.
@@ -497,6 +517,23 @@
     push.notify(turnId);
   }
 
+  // renderWatching surfaces spectator presence: players see "👁 N watching";
+  // a spectator sees "👁 Watching" (the namesake, made visible to everyone).
+  function renderWatching() {
+    const el = $("watching");
+    if (!el) return;
+    const n = Object.values(state.members).filter((r) => r === "spectator").length;
+    if (state.role === "spectator") {
+      el.textContent = n > 1 ? `👁 Watching · ${n} here` : "👁 Watching";
+      el.classList.remove("hidden");
+    } else if (n > 0) {
+      el.textContent = `👁 ${n} watching`;
+      el.classList.remove("hidden");
+    } else {
+      el.classList.add("hidden");
+    }
+  }
+
   function syncNotifyButton() {
     const b = $("btn-notify");
     if (!b) return;
@@ -593,18 +630,29 @@
   function joinFromInput() {
     const phrase = $("join-phrase").value.trim();
     if (phrase) {
-      $("home-status").textContent = `joining ${phrase}…`;
-      send({ type: "join", phrase, name: myName() });
+      const spectate = $("watch-toggle").checked;
+      $("home-status").textContent = spectate ? `watching ${phrase}…` : `joining ${phrase}…`;
+      send({ type: "join", phrase, name: myName(), spectate });
     }
   }
 
+  let watchLink = "";
   $("btn-copy").addEventListener("click", async () => {
     try {
       await navigator.clipboard.writeText($("lobby-url").value);
-      toast("Link copied.");
+      toast("Play link copied.");
     } catch {
       $("lobby-url").select();
       toast("Press ⌘C / Ctrl-C to copy.");
+    }
+  });
+  $("btn-copy-watch").addEventListener("click", async () => {
+    if (!watchLink) return;
+    try {
+      await navigator.clipboard.writeText(watchLink);
+      toast("Watch link copied — send it to anyone who wants to kibitz.");
+    } catch {
+      toast("Couldn't copy — the watch link is your table link with #watch=.");
     }
   });
 

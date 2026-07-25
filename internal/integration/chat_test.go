@@ -30,7 +30,7 @@ func hostTable(t *testing.T, url string) (*table, string) {
 
 func joinTable(t *testing.T, url, phrase string) *table {
 	t.Helper()
-	c, err := session.Join(testCtx(t), url, phrase)
+	c, err := session.Join(testCtx(t), url, phrase, false)
 	if err != nil {
 		t.Fatal(err)
 	}

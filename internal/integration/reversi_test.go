@@ -51,7 +51,7 @@ func TestReversiFullGameOverRelay(t *testing.T) {
 	t.Cleanup(func() { _ = hc.Close() })
 	host := newRVTable(t, hc)
 
-	jc, err := session.Join(testCtx(t), url, phrase)
+	jc, err := session.Join(testCtx(t), url, phrase, false)
 	if err != nil {
 		t.Fatal(err)
 	}

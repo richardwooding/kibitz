@@ -30,7 +30,7 @@ func hostChess(t *testing.T, url string) (*chessTable, string) {
 
 func joinChess(t *testing.T, url, phrase string) *chessTable {
 	t.Helper()
-	c, err := session.Join(testCtx(t), url, phrase)
+	c, err := session.Join(testCtx(t), url, phrase, false)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -36,7 +36,7 @@ func hostFull(t *testing.T, url string) (*fullTable, string) {
 
 func joinFull(t *testing.T, url, phrase string) *fullTable {
 	t.Helper()
-	c, err := session.Join(testCtx(t), url, phrase)
+	c, err := session.Join(testCtx(t), url, phrase, false)
 	if err != nil {
 		t.Fatal(err)
 	}

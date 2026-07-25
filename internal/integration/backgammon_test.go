@@ -29,7 +29,7 @@ func hostBG(t *testing.T, url string) (*bgTable, string) {
 
 func joinBG(t *testing.T, url, phrase string) *bgTable {
 	t.Helper()
-	c, err := session.Join(testCtx(t), url, phrase)
+	c, err := session.Join(testCtx(t), url, phrase, false)
 	if err != nil {
 		t.Fatal(err)
 	}

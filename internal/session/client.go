@@ -66,6 +66,7 @@ type Client struct {
 	role     Role
 
 	resumeToken []byte // opaque relay-issued secret to reclaim this slot after a drop
+	spectate    bool   // joiner intent: ask the host to seat us as a spectator
 
 	groupKey crypto.Key
 	keyed    bool
@@ -111,12 +112,14 @@ func Host(ctx context.Context, relayURL string) (*Client, string, error) {
 
 // Join connects to an existing session with its phrase. It returns once the
 // handshake completes and the client is keyed; a wrong phrase surfaces as
-// crypto.ErrUnwrap.
-func Join(ctx context.Context, relayURL, phraseText string) (*Client, error) {
+// crypto.ErrUnwrap. When spectate is true the joiner asks to be seated as a
+// spectator regardless of join order (it never takes the open player seat).
+func Join(ctx context.Context, relayURL, phraseText string, spectate bool) (*Client, error) {
 	c, err := dial(ctx, relayURL, phraseText)
 	if err != nil {
 		return nil, err
 	}
+	c.spectate = spectate
 	if err := c.joinHello(ctx); err != nil {
 		_ = c.conn.CloseNow()
 		return nil, err

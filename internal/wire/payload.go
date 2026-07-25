@@ -24,9 +24,13 @@ const (
 
 // Pake carries one PAKE flight (schollz/pake/v3 serialized state; the
 // exchange is two flights — joiner init, host reply — and both sides are
-// keyed after it).
+// keyed after it). Spectate (set on the joiner's first flight) asks the host to
+// seat this participant as a spectator regardless of join order, so a watcher
+// never consumes the open player seat. It rides the encrypted handshake — the
+// relay never sees it.
 type Pake struct {
-	Data []byte `cbor:"1,keyasint"`
+	Data     []byte `cbor:"1,keyasint"`
+	Spectate bool   `cbor:"2,keyasint,omitempty"`
 }
 
 // GroupKey is the host-wrapped session group key: XChaCha20-Poly1305 under

@@ -41,7 +41,7 @@ func TestCtlPropagatesPushKeyAndEndpoint(t *testing.T) {
 	defer func() { _ = host.Close() }()
 	hostMux := NewMux(host, &probe{})
 
-	joiner, err := session.Join(ctx, url, phrase)
+	joiner, err := session.Join(ctx, url, phrase, false)
 	if err != nil {
 		t.Fatal(err)
 	}

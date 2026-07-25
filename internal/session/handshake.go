@@ -63,7 +63,7 @@ func (c *Client) joinHello(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	payload, err := wire.EncodePayload(wire.KindPake1, wire.Pake{Data: j.Flight1})
+	payload, err := wire.EncodePayload(wire.KindPake1, wire.Pake{Data: j.Flight1, Spectate: c.spectate})
 	if err != nil {
 		return err
 	}
@@ -167,15 +167,19 @@ func (c *Client) handleHandshakeDirect(from wire.ParticipantID, kind wire.Payloa
 
 	role := RoleSpectator
 	c.mu.Lock()
-	hasPlayer := false
-	for _, r := range c.joiners {
-		if r == RolePlayer {
-			hasPlayer = true
-			break
+	// A joiner that asked to watch is always a spectator, so it never takes the
+	// open player seat. Otherwise the first non-watcher to key becomes the player.
+	if !p.Spectate {
+		hasPlayer := false
+		for _, r := range c.joiners {
+			if r == RolePlayer {
+				hasPlayer = true
+				break
+			}
 		}
-	}
-	if !hasPlayer {
-		role = RolePlayer
+		if !hasPlayer {
+			role = RolePlayer
+		}
 	}
 	c.joiners[from] = role
 	key := c.groupKey

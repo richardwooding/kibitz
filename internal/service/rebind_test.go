@@ -70,7 +70,7 @@ func TestMuxRebindResumesRouting(t *testing.T) {
 	}
 	defer func() { _ = host.Close() }()
 
-	joiner, err := session.Join(ctx, url, phrase)
+	joiner, err := session.Join(ctx, url, phrase, false)
 	if err != nil {
 		t.Fatal(err)
 	}

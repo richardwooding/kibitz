@@ -33,7 +33,7 @@ func hostC4(t *testing.T, url string) (*c4Table, string) {
 
 func joinC4(t *testing.T, url, phrase string) *c4Table {
 	t.Helper()
-	c, err := session.Join(testCtx(t), url, phrase)
+	c, err := session.Join(testCtx(t), url, phrase, false)
 	if err != nil {
 		t.Fatal(err)
 	}

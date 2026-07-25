@@ -77,6 +77,7 @@
                  autocomplete="off" autocapitalize="none" spellcheck="false" disabled>
           <button id="btn-join" disabled>Join</button>
         </div>
+        <label class="watch-toggle"><input type="checkbox" id="watch-toggle"> Just watch — don't take a seat</label>
         <p class="note" id="home-status">loading core…</p>
         <div id="solo-divider" class="or-divider"><span>on your own?</span></div>
         <div class="difficulty" role="group" aria-label="Computer difficulty">
@@ -108,7 +109,10 @@
           <div class="phrase" id="lobby-phrase"></div>
           <div class="share-row">
             <input id="lobby-url" type="text" readonly>
-            <button id="btn-copy">Copy link</button>
+            <button id="btn-copy">Copy play link</button>
+          </div>
+          <div class="share-row">
+            <button id="btn-copy-watch" class="ghost">👁 Copy watch link</button>
           </div>
           <p class="note">The phrase never reaches the server — it's the encryption secret. Waiting for your opponent…</p>
         </div>
@@ -126,6 +130,7 @@
         <div class="board-pane-head">
           <button id="btn-leave" class="ghost back">← Leave</button>
           <span id="solo-banner" class="solo-banner">Solo practice · you play both sides</span>
+          <span id="watching" class="watching hidden" title="Spectators watching this table"></span>
           <button id="btn-notify" class="icon-btn hidden" title="Notify me when it's my turn" aria-label="Enable turn notifications">🔔</button>
           <button id="btn-mute" class="icon-btn" title="Mute sound" aria-label="Mute sound">🔊</button>
         </div>

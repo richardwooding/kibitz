@@ -858,6 +858,31 @@ button.back { margin-bottom: 0.7rem; }
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
 }
 
+/* "Just watch" join toggle on the home screen. */
+.watch-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  justify-content: center;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-top: 0.5rem;
+  cursor: pointer;
+}
+.watch-toggle input { accent-color: var(--accent); }
+
+/* "N watching" presence chip in the board header (right cluster). */
+.board-pane-head #watching {
+  margin-left: auto;
+  font-size: 0.82rem;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.2rem 0.6rem;
+  white-space: nowrap;
+}
+
 .reconnect-dot {
   width: 0.6rem;
   height: 0.6rem;
