@@ -198,9 +198,10 @@
             }
             animatedUci = g.lastUci;
             if (prev && prev.playing && prev.outcome === "*" && over() && window.fx) {
-              const result = g.outcome === "1/2-1/2" ? "Draw" :
+              const factual = g.outcome === "1/2-1/2" ? "Draw" :
                 (g.outcome === "1-0" ? "White wins" : "Black wins");
-              window.fx.celebrate($("game-chess"), outcomeWon(), `${result} — ${g.method}`);
+              window.fx.celebrate($("game-chess"), outcomeWon(), window.fx.result(outcomeWon(),
+                { draw: g.outcome === "1/2-1/2", spectator: factual, detail: g.method, hotseat: isHotseat() }));
             }
             break;
           }

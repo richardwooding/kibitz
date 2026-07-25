@@ -95,7 +95,8 @@
         lastPassToasted = g.passed;
         render();
         if (prev && prev.playing && prev.outcome === "" && over() && window.fx) {
-          window.fx.celebrate($("game-reversi"), outcomeWon(), g.outcome);
+          window.fx.celebrate($("game-reversi"), outcomeWon(), window.fx.result(outcomeWon(),
+            { draw: g.outcome.startsWith("draw"), spectator: g.outcome, hotseat: isHotseat() }));
         }
       },
       setVisible(v) { visible = v; if (v) render(); },

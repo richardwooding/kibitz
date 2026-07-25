@@ -274,7 +274,8 @@
             }
             renderPane();
             if (prev && prev.playing && prev.phase !== "over" && g.phase === "over" && window.fx) {
-              window.fx.celebrate($("game-bg"), bgWon(), g.outcome);
+              window.fx.celebrate($("game-bg"), bgWon(), window.fx.result(bgWon(),
+                { spectator: g.outcome, hotseat: isHotseat() }));
             }
             break;
           }

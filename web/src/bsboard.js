@@ -263,6 +263,15 @@
       return null;
     }
 
+    // bsFactual is the neutral "<winner> wins" line for the win banner's
+    // spectator branch (fx.result handles the player's "You win!"/"You lost").
+    function bsFactual() {
+      const base = (g.outcome || "").split(" (")[0];
+      const winner = base === "player 1 wins" ? 0 : base === "player 2 wins" ? 1 : -1;
+      if (winner < 0) return g.outcome || "Game over"; // cheat / unknown
+      return ctx.name(winner === 0 ? g.p1Id : g.p2Id) + " wins";
+    }
+
     // outcomeLabel turns the seat-based outcome ("player 2 wins") into a
     // perspective-aware label — "You win!" for the local player, otherwise the
     // winner's name ("Computer wins" / "Ada wins") — preserving any trailing
@@ -318,7 +327,7 @@
         computeShotFx(prev);
         render();
         if (prev && prev.playing && prev.phase !== "over" && g.phase === "over" && window.fx) {
-          window.fx.celebrate($("game-bs"), bsWon(), outcomeLabel());
+          window.fx.celebrate($("game-bs"), bsWon(), window.fx.result(bsWon(), { spectator: bsFactual() }));
         }
       },
       setVisible(v) { visible = v; if (v) render(); },

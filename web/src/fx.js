@@ -112,6 +112,25 @@
     else if (won === false) sound.lose();
   }
 
+  // result builds a consistent win-banner label from the local perspective, so
+  // every game reads the same: "You win!" / "You lost" / "Draw" for a player,
+  // a factual line for a spectator or pass-and-play (where "you" is ambiguous),
+  // plus an optional detail (e.g. "checkmate") after a middot. `won` is
+  // true|false|null (null = draw or spectator, matching celebrate's contract).
+  function result(won, opts) {
+    opts = opts || {};
+    const draw = !!opts.draw, hotseat = !!opts.hotseat;
+    const spectator = opts.spectator || "Game over";
+    let base;
+    if (hotseat) base = spectator;      // pass-and-play: no "you", show the result
+    else if (draw) base = "Draw";
+    else if (won === true) base = "You win!";
+    else if (won === false) base = "You lost";
+    else base = spectator;              // spectator / unknown
+    base = base.charAt(0).toUpperCase() + base.slice(1); // uniform capitalization
+    return opts.detail ? base + " · " + opts.detail : base;
+  }
+
   // ---- animation helpers --------------------------------------------------
 
   // slideFrom makes `el` appear to travel from (dxPx,dyPx) away to its real
@@ -129,5 +148,5 @@
     });
   }
 
-  window.fx = { sound, confetti, celebrate, slideFrom, reducedMotion };
+  window.fx = { sound, confetti, celebrate, result, slideFrom, reducedMotion };
 })();

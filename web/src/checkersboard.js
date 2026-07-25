@@ -162,7 +162,8 @@
             computeAnim(prev);
             render();
             if (prev && prev.playing && prev.outcome === "" && over() && window.fx) {
-              window.fx.celebrate($("game-checkers"), outcomeWon(), g.outcome);
+              window.fx.celebrate($("game-checkers"), outcomeWon(), window.fx.result(outcomeWon(),
+                { draw: g.outcome === "draw", spectator: g.outcome, hotseat: isHotseat() }));
             }
             break;
           }

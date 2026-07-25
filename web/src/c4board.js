@@ -121,7 +121,8 @@
         }
         render();
         if (prev && prev.playing && !over_(prev) && over() && window.fx) {
-          window.fx.celebrate($("game-c4"), outcomeWon(), g.outcome);
+          window.fx.celebrate($("game-c4"), outcomeWon(), window.fx.result(outcomeWon(),
+            { draw: g.outcome === "draw", spectator: g.outcome, hotseat: isHotseat() }));
         }
       },
       setVisible(v) { visible = v; if (v) render(); },
