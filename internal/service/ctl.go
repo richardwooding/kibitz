@@ -157,49 +157,75 @@ func (c *ctlService) HandleFrame(from wire.ParticipantID, body []byte) error {
 	}
 	switch msg.Kind {
 	case ctlKindAnnounce:
-		if from != c.ctx.HostID {
-			return fmt.Errorf("ctl: announce from non-host %d", from)
-		}
-		c.roster = map[wire.ParticipantID]session.Role{}
-		for id, r := range msg.Roster {
-			c.roster[wire.ParticipantID(id)] = session.Role(r)
-		}
-		c.names = map[wire.ParticipantID]string{}
-		for id, n := range msg.Names {
-			c.names[wire.ParticipantID(id)] = n
-		}
-		c.endpoints = map[wire.ParticipantID]string{}
-		for id, ep := range msg.Endpoints {
-			c.endpoints[wire.ParticipantID(id)] = ep
-		}
-		c.pushKey = msg.PushKey
-		c.mux.emit(c.roster3(msg.Services))
+		return c.handleAnnounce(from, msg)
 	case ctlKindIdentity:
-		// Only the host aggregates names/endpoints; a participant reports its own.
-		if !c.ctx.Host {
-			return nil
-		}
-		if msg.Name != "" {
-			c.names[from] = sanitizeName(msg.Name)
-		}
-		if msg.Endpoint != "" {
-			c.endpoints[from] = msg.Endpoint
-		}
-		c.announce()
+		return c.handleIdentity(from, msg)
 	case ctlKindSnapshotReq:
-		if !c.ctx.Host {
-			return nil
-		}
-		return c.sendSnapshot(from)
+		return c.handleSnapshotReq(from)
 	case ctlKindSnapshot:
-		if from != c.ctx.HostID {
-			return fmt.Errorf("ctl: snapshot from non-host %d", from)
-		}
-		for id, blob := range msg.Snapshots {
-			if svc, ok := c.mux.services[id]; ok && id != CtlID {
-				if err := svc.Restore(blob); err != nil {
-					return fmt.Errorf("ctl: restore %s: %w", id, err)
-				}
+		return c.handleSnapshot(from, msg)
+	}
+	return nil
+}
+
+// handleAnnounce adopts a host-authoritative roster (roster/names/endpoints/
+// pushKey) and emits the resulting Roster event. Host-only sender.
+func (c *ctlService) handleAnnounce(from wire.ParticipantID, msg ctlMsg) error {
+	if from != c.ctx.HostID {
+		return fmt.Errorf("ctl: announce from non-host %d", from)
+	}
+	c.roster = map[wire.ParticipantID]session.Role{}
+	for id, r := range msg.Roster {
+		c.roster[wire.ParticipantID(id)] = session.Role(r)
+	}
+	c.names = map[wire.ParticipantID]string{}
+	for id, n := range msg.Names {
+		c.names[wire.ParticipantID(id)] = n
+	}
+	c.endpoints = map[wire.ParticipantID]string{}
+	for id, ep := range msg.Endpoints {
+		c.endpoints[wire.ParticipantID(id)] = ep
+	}
+	c.pushKey = msg.PushKey
+	c.mux.emit(c.roster3(msg.Services))
+	return nil
+}
+
+// handleIdentity folds a participant's self-asserted name/endpoint into the
+// authoritative roster and re-announces. Only the host aggregates; a
+// participant reports its own.
+func (c *ctlService) handleIdentity(from wire.ParticipantID, msg ctlMsg) error {
+	if !c.ctx.Host {
+		return nil
+	}
+	if msg.Name != "" {
+		c.names[from] = sanitizeName(msg.Name)
+	}
+	if msg.Endpoint != "" {
+		c.endpoints[from] = msg.Endpoint
+	}
+	c.announce()
+	return nil
+}
+
+// handleSnapshotReq answers a late joiner's snapshot request. Host-only.
+func (c *ctlService) handleSnapshotReq(from wire.ParticipantID) error {
+	if !c.ctx.Host {
+		return nil
+	}
+	return c.sendSnapshot(from)
+}
+
+// handleSnapshot restores per-service state from a host snapshot. Host-only
+// sender; the ctl's own state never travels in snapshots.
+func (c *ctlService) handleSnapshot(from wire.ParticipantID, msg ctlMsg) error {
+	if from != c.ctx.HostID {
+		return fmt.Errorf("ctl: snapshot from non-host %d", from)
+	}
+	for id, blob := range msg.Snapshots {
+		if svc, ok := c.mux.services[id]; ok && id != CtlID {
+			if err := svc.Restore(blob); err != nil {
+				return fmt.Errorf("ctl: restore %s: %w", id, err)
 			}
 		}
 	}

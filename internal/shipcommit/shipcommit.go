@@ -140,47 +140,75 @@ func straightContiguous(cells []uint8) bool {
 func RandomPlacement() ([100]uint8, error) {
 	var placement [100]uint8
 	for id := uint8(1); id <= 5; id++ {
-		length := int(Lengths[id])
-		for attempt := 0; ; attempt++ {
-			if attempt > 1000 {
-				return placement, errors.New("shipcommit: placement failed to converge")
-			}
-			var rb [3]byte
-			if _, err := rand.Read(rb[:]); err != nil {
-				return placement, fmt.Errorf("shipcommit: rand: %w", err)
-			}
-			horizontal := rb[0]&1 == 0
-			x := int(rb[1]) % 10
-			y := int(rb[2]) % 10
-			if horizontal && x+length > 10 {
-				continue
-			}
-			if !horizontal && y+length > 10 {
-				continue
-			}
-			ok := true
-			for i := 0; i < length; i++ {
-				cell := (y+i)*10 + x
-				if horizontal {
-					cell = y*10 + x + i
-				}
-				if placement[cell] != 0 {
-					ok = false
-					break
-				}
-			}
-			if !ok {
-				continue
-			}
-			for i := 0; i < length; i++ {
-				if horizontal {
-					placement[y*10+x+i] = id
-				} else {
-					placement[(y+i)*10+x] = id
-				}
-			}
-			break
+		if err := placeShip(&placement, id); err != nil {
+			return placement, err
 		}
 	}
 	return placement, nil
+}
+
+// placeShip retries random candidates until ship id lands legally, matching
+// the original draw sequence: one rand.Read of 3 bytes per attempt, bounds
+// check then overlap check, giving up after 1000 attempts.
+func placeShip(placement *[100]uint8, id uint8) error {
+	length := int(Lengths[id])
+	for attempt := 0; ; attempt++ {
+		if attempt > 1000 {
+			return errors.New("shipcommit: placement failed to converge")
+		}
+		horizontal, x, y, err := randomShipCandidate()
+		if err != nil {
+			return err
+		}
+		if !shipFits(horizontal, x, y, length) {
+			continue
+		}
+		if !cellsFree(placement, horizontal, x, y, length) {
+			continue
+		}
+		writeShip(placement, id, horizontal, x, y, length)
+		return nil
+	}
+}
+
+// randomShipCandidate draws one orientation and origin from 3 random bytes.
+func randomShipCandidate() (horizontal bool, x, y int, err error) {
+	var rb [3]byte
+	if _, err := rand.Read(rb[:]); err != nil {
+		return false, 0, 0, fmt.Errorf("shipcommit: rand: %w", err)
+	}
+	return rb[0]&1 == 0, int(rb[1]) % 10, int(rb[2]) % 10, nil
+}
+
+// shipCell is the board index of the i-th cell of a ship at (x, y).
+func shipCell(horizontal bool, x, y, i int) int {
+	if horizontal {
+		return y*10 + x + i
+	}
+	return (y+i)*10 + x
+}
+
+// shipFits reports whether a ship of the given length stays on the board.
+func shipFits(horizontal bool, x, y, length int) bool {
+	if horizontal {
+		return x+length <= 10
+	}
+	return y+length <= 10
+}
+
+// cellsFree reports whether every cell the ship would occupy is empty.
+func cellsFree(placement *[100]uint8, horizontal bool, x, y, length int) bool {
+	for i := 0; i < length; i++ {
+		if placement[shipCell(horizontal, x, y, i)] != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// writeShip stamps ship id onto every cell it occupies.
+func writeShip(placement *[100]uint8, id uint8, horizontal bool, x, y, length int) {
+	for i := 0; i < length; i++ {
+		placement[shipCell(horizontal, x, y, i)] = id
+	}
 }

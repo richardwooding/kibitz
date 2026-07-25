@@ -135,16 +135,7 @@ func newHub(id wire.SessionID, maxParticipants int, grace time.Duration, onEmpty
 }
 
 func (h *hub) run(onEmpty func()) {
-	defer func() {
-		for _, c := range h.clients {
-			if c.timer != nil {
-				c.timer.Stop()
-			}
-			c.kick()
-		}
-		close(h.done)
-		onEmpty()
-	}()
+	defer h.shutdown(onEmpty)
 	for cmd := range h.inbox {
 		switch cmd := cmd.(type) {
 		case joinCmd:
@@ -160,19 +151,44 @@ func (h *hub) run(onEmpty func()) {
 				return
 			}
 		case claimHostCmd:
-			// A promoted successor becomes the join authority; route new joiners
-			// to it. Only a live participant can claim (the sender is stamped by
-			// the connection), and it's within the member trust boundary.
-			if _, ok := h.clients[cmd.id]; ok {
-				h.host = cmd.id
-			}
+			h.handleClaimHost(cmd)
 		case frameCmd:
 			h.route(cmd)
 		case closeCmd:
-			h.broadcastFrame(wire.MsgSessionClosed, wire.SessionClosed{Reason: cmd.reason}, 0)
+			h.handleClose(cmd)
 			return
 		}
 	}
+}
+
+// shutdown is run's deferred teardown: stop any grace timers, kick every
+// remaining connection, then close done and signal the empty callback. Ordering
+// (kick all, close done, onEmpty) is unchanged from the inline defer.
+func (h *hub) shutdown(onEmpty func()) {
+	for _, c := range h.clients {
+		if c.timer != nil {
+			c.timer.Stop()
+		}
+		c.kick()
+	}
+	close(h.done)
+	onEmpty()
+}
+
+// handleClaimHost records a host migration: a promoted successor becomes the
+// join authority so new joiners route to it. Only a live participant can claim
+// (the sender is stamped by the connection), and it's within the member trust
+// boundary.
+func (h *hub) handleClaimHost(cmd claimHostCmd) {
+	if _, ok := h.clients[cmd.id]; ok {
+		h.host = cmd.id
+	}
+}
+
+// handleClose broadcasts the SessionClosed notice to all remaining clients;
+// run returns immediately after, ending the session.
+func (h *hub) handleClose(cmd closeCmd) {
+	h.broadcastFrame(wire.MsgSessionClosed, wire.SessionClosed{Reason: cmd.reason}, 0)
 }
 
 func (h *hub) handleJoin(cmd joinCmd) {

@@ -41,6 +41,20 @@ func (c *Client) hostHello(ctx context.Context) error {
 // joinHello joins the session and runs the PAKE + group-key handshake to
 // completion, so Join returns a usable client or a clean error.
 func (c *Client) joinHello(ctx context.Context) error {
+	if err := c.joinRequest(ctx); err != nil {
+		return err
+	}
+	j, err := c.sendPake1()
+	if err != nil {
+		return err
+	}
+	return c.joinDriveHandshake(ctx, j)
+}
+
+// joinRequest sends the join request and records the identity the relay
+// assigns (self/host/resume token), returning a clean error if the join is
+// refused.
+func (c *Client) joinRequest(ctx context.Context) error {
 	if err := c.writeFrame(wire.MsgJoinSession, wire.JoinSession{SessionID: c.sid}); err != nil {
 		return err
 	}
@@ -58,23 +72,31 @@ func (c *Client) joinHello(ctx context.Context) error {
 	c.self = jr.ParticipantID
 	c.hostID = jr.HostID
 	c.resumeToken = jr.ResumeToken
+	return nil
+}
 
+// sendPake1 starts the joiner PAKE and sends its first flight to the host,
+// returning the joiner state the read side needs to finish the exchange.
+func (c *Client) sendPake1() (*crypto.Joiner, error) {
 	j, err := crypto.NewJoiner(c.phraseC)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	payload, err := wire.EncodePayload(wire.KindPake1, wire.Pake{Data: j.Flight1, Spectate: c.spectate})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := c.writeFrame(wire.MsgDirect, wire.Direct{To: c.hostID, Payload: payload}); err != nil {
-		return err
+		return nil, err
 	}
+	return j, nil
+}
 
-	// Drive the read side until keyed: Pake2 then GroupKey, both from the
-	// host. Anything else that arrives mid-handshake (membership notices,
-	// early broadcasts we can't decrypt yet) is skipped — the ctl snapshot
-	// catches joiners up once keyed.
+// joinDriveHandshake drives the read side until keyed: Pake2 then GroupKey,
+// both from the host. Anything else that arrives mid-handshake (membership
+// notices, early broadcasts we can't decrypt yet) is skipped — the ctl
+// snapshot catches joiners up once keyed.
+func (c *Client) joinDriveHandshake(ctx context.Context, j *crypto.Joiner) error {
 	var pairwise crypto.Key
 	havePairwise := false
 	for !c.keyed {
@@ -96,33 +118,46 @@ func (c *Client) joinHello(ctx context.Context) error {
 		if err != nil {
 			continue
 		}
-		switch kind {
-		case wire.KindPake2:
-			p, err := wire.Body[wire.Pake](praw)
-			if err != nil {
-				return err
-			}
-			pairwise, err = j.Finish(p.Data, c.sid, c.self, c.hostID)
-			if err != nil {
-				return err
-			}
-			havePairwise = true
-		case wire.KindGroupKey:
-			if !havePairwise {
-				return errors.New("session: group key arrived before pake reply")
-			}
-			gk, err := wire.Body[wire.GroupKey](praw)
-			if err != nil {
-				return err
-			}
-			key, role, err := crypto.UnwrapGroupKey(pairwise, gk, c.sid, c.self)
-			if err != nil {
-				return err // crypto.ErrUnwrap: wrong phrase
-			}
-			c.groupKey = key
-			c.role = Role(role)
-			c.keyed = true
+		if err := c.joinHandleDirect(j, kind, praw, &pairwise, &havePairwise); err != nil {
+			return err
 		}
+	}
+	return nil
+}
+
+// joinHandleDirect advances the joiner handshake for one Direct payload from
+// the host: Pake2 finishes the PAKE into the pairwise key; GroupKey unwraps
+// the group key (wrong phrase → crypto.ErrUnwrap) and marks the client keyed.
+// It runs on the single Join goroutine before readLoop starts, so it touches
+// client state without the lock, exactly as the inline loop did.
+func (c *Client) joinHandleDirect(j *crypto.Joiner, kind wire.PayloadKind, praw []byte, pairwise *crypto.Key, havePairwise *bool) error {
+	switch kind {
+	case wire.KindPake2:
+		p, err := wire.Body[wire.Pake](praw)
+		if err != nil {
+			return err
+		}
+		pw, err := j.Finish(p.Data, c.sid, c.self, c.hostID)
+		if err != nil {
+			return err
+		}
+		*pairwise = pw
+		*havePairwise = true
+	case wire.KindGroupKey:
+		if !*havePairwise {
+			return errors.New("session: group key arrived before pake reply")
+		}
+		gk, err := wire.Body[wire.GroupKey](praw)
+		if err != nil {
+			return err
+		}
+		key, role, err := crypto.UnwrapGroupKey(*pairwise, gk, c.sid, c.self)
+		if err != nil {
+			return err // crypto.ErrUnwrap: wrong phrase
+		}
+		c.groupKey = key
+		c.role = Role(role)
+		c.keyed = true
 	}
 	return nil
 }
@@ -171,22 +206,8 @@ func (c *Client) handleHandshakeDirect(from wire.ParticipantID, kind wire.Payloa
 		return
 	}
 
-	role := RoleSpectator
 	c.mu.Lock()
-	// A joiner that asked to watch is always a spectator, so it never takes the
-	// open player seat. Otherwise the first non-watcher to key becomes the player.
-	if !p.Spectate {
-		hasPlayer := false
-		for _, r := range c.joiners {
-			if r == RolePlayer {
-				hasPlayer = true
-				break
-			}
-		}
-		if !hasPlayer {
-			role = RolePlayer
-		}
-	}
+	role := c.assignJoinerRole(p.Spectate)
 	c.joiners[from] = role
 	key := c.groupKey
 	c.mu.Unlock()
@@ -212,6 +233,22 @@ func (c *Client) handleHandshakeDirect(from wire.ParticipantID, kind wire.Payloa
 	c.emit(MemberKeyed{ID: from, Role: role})
 }
 
+// assignJoinerRole picks the role for a newly keyed joiner. The caller must
+// hold c.mu: it reads c.joiners without re-locking. A joiner that asked to
+// watch is always a spectator, so it never takes the open player seat.
+// Otherwise the first non-watcher to key becomes the player.
+func (c *Client) assignJoinerRole(spectate bool) Role {
+	if spectate {
+		return RoleSpectator
+	}
+	for _, r := range c.joiners {
+		if r == RolePlayer {
+			return RoleSpectator
+		}
+	}
+	return RolePlayer
+}
+
 // readLoop pumps relay frames into events until the connection dies. It reads
 // from the conn it was started with (not c.conn) so a Reconnect that swaps in a
 // new connection never disturbs an already-exited loop. Each read carries a
@@ -228,35 +265,46 @@ func (c *Client) readLoop(conn *websocket.Conn) {
 			c.emit(Closed{Reason: "connection lost"})
 			return
 		}
-		switch typ {
-		case wire.MsgParticipantJoined:
-			if pj, err := wire.Body[wire.ParticipantJoined](raw); err == nil {
-				c.emit(MemberJoined{ID: pj.ParticipantID})
-			}
-		case wire.MsgParticipantLeft:
-			if pl, err := wire.Body[wire.ParticipantLeft](raw); err == nil {
-				c.mu.Lock()
-				delete(c.joiners, pl.ParticipantID)
-				c.mu.Unlock()
-				c.emit(MemberLeft{ID: pl.ParticipantID})
-			}
-		case wire.MsgSessionClosed:
-			reason := ""
-			if sc, err := wire.Body[wire.SessionClosed](raw); err == nil {
-				reason = sc.Reason
-			}
-			c.emit(Closed{Reason: reason})
+		if c.dispatchFrame(typ, raw) {
 			return
-		case wire.MsgDirect:
-			if d, err := wire.Body[wire.Direct](raw); err == nil {
-				c.handlePayload(d.From, d.Payload)
-			}
-		case wire.MsgBroadcast:
-			if b, err := wire.Body[wire.Broadcast](raw); err == nil {
-				c.handlePayload(b.From, b.Payload)
-			}
 		}
 	}
+}
+
+// dispatchFrame turns one relay frame into events, mirroring the readLoop
+// switch exactly. It returns true when the session closed and the loop should
+// stop. The MsgParticipantLeft case takes c.mu only around the map delete,
+// unchanged from the inline version.
+func (c *Client) dispatchFrame(typ wire.MsgType, raw []byte) (stop bool) {
+	switch typ {
+	case wire.MsgParticipantJoined:
+		if pj, err := wire.Body[wire.ParticipantJoined](raw); err == nil {
+			c.emit(MemberJoined{ID: pj.ParticipantID})
+		}
+	case wire.MsgParticipantLeft:
+		if pl, err := wire.Body[wire.ParticipantLeft](raw); err == nil {
+			c.mu.Lock()
+			delete(c.joiners, pl.ParticipantID)
+			c.mu.Unlock()
+			c.emit(MemberLeft{ID: pl.ParticipantID})
+		}
+	case wire.MsgSessionClosed:
+		reason := ""
+		if sc, err := wire.Body[wire.SessionClosed](raw); err == nil {
+			reason = sc.Reason
+		}
+		c.emit(Closed{Reason: reason})
+		return true
+	case wire.MsgDirect:
+		if d, err := wire.Body[wire.Direct](raw); err == nil {
+			c.handlePayload(d.From, d.Payload)
+		}
+	case wire.MsgBroadcast:
+		if b, err := wire.Body[wire.Broadcast](raw); err == nil {
+			c.handlePayload(b.From, b.Payload)
+		}
+	}
+	return false
 }
 
 // handlePayload routes one inner payload: handshake kinds to the host

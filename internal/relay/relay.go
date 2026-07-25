@@ -196,32 +196,13 @@ func (s *Server) hello(ctx context.Context, conn *websocket.Conn, cancel context
 	var h *hub
 	switch typ {
 	case wire.MsgCreateSession:
-		cs, err := wire.Body[wire.CreateSession](raw)
-		if err != nil {
-			writeFrame(ctx, conn, wire.MsgError, wire.Error{Code: wire.ErrCodeBadFrame, Msg: "bad create frame"})
-			return nil, 0, 0, nil, false
-		}
-		maxP := int(cs.MaxParticipants)
-		if maxP <= 0 || maxP > s.opts.MaxParticipants {
-			maxP = s.opts.MaxParticipants
-		}
-		var code uint16
-		var msg string
-		h, code, msg = s.reg.create(cs.SessionID, maxP)
-		if h == nil {
-			writeFrame(ctx, conn, wire.MsgError, wire.Error{Code: code, Msg: msg})
+		var ok bool
+		if h, ok = s.helloCreate(ctx, conn, raw); !ok {
 			return nil, 0, 0, nil, false
 		}
 	case wire.MsgJoinSession:
-		js, err := wire.Body[wire.JoinSession](raw)
-		if err != nil {
-			writeFrame(ctx, conn, wire.MsgError, wire.Error{Code: wire.ErrCodeBadFrame, Msg: "bad join frame"})
-			return nil, 0, 0, nil, false
-		}
 		var ok bool
-		h, ok = s.reg.get(js.SessionID)
-		if !ok {
-			writeFrame(ctx, conn, wire.MsgError, wire.Error{Code: wire.ErrCodeSessionNotFound, Msg: "session not found"})
+		if h, ok = s.helloJoin(ctx, conn, raw); !ok {
 			return nil, 0, 0, nil, false
 		}
 	default:
@@ -243,6 +224,43 @@ func (s *Server) hello(ctx context.Context, conn *websocket.Conn, cancel context
 	// The hub already queued SessionCreated/JoinResult into out (see
 	// handleJoin — ordering against broadcasts demands it).
 	return h, jr.id, jr.gen, out, true
+}
+
+// helloCreate handles a MsgCreateSession handshake: decode, clamp the
+// participant cap, and register a fresh session. On any failure it writes the
+// error frame and reports !ok.
+func (s *Server) helloCreate(ctx context.Context, conn *websocket.Conn, raw []byte) (*hub, bool) {
+	cs, err := wire.Body[wire.CreateSession](raw)
+	if err != nil {
+		writeFrame(ctx, conn, wire.MsgError, wire.Error{Code: wire.ErrCodeBadFrame, Msg: "bad create frame"})
+		return nil, false
+	}
+	maxP := int(cs.MaxParticipants)
+	if maxP <= 0 || maxP > s.opts.MaxParticipants {
+		maxP = s.opts.MaxParticipants
+	}
+	h, code, msg := s.reg.create(cs.SessionID, maxP)
+	if h == nil {
+		writeFrame(ctx, conn, wire.MsgError, wire.Error{Code: code, Msg: msg})
+		return nil, false
+	}
+	return h, true
+}
+
+// helloJoin handles a MsgJoinSession handshake: decode and look up the target
+// session. On any failure it writes the error frame and reports !ok.
+func (s *Server) helloJoin(ctx context.Context, conn *websocket.Conn, raw []byte) (*hub, bool) {
+	js, err := wire.Body[wire.JoinSession](raw)
+	if err != nil {
+		writeFrame(ctx, conn, wire.MsgError, wire.Error{Code: wire.ErrCodeBadFrame, Msg: "bad join frame"})
+		return nil, false
+	}
+	h, ok := s.reg.get(js.SessionID)
+	if !ok {
+		writeFrame(ctx, conn, wire.MsgError, wire.Error{Code: wire.ErrCodeSessionNotFound, Msg: "session not found"})
+		return nil, false
+	}
+	return h, true
 }
 
 // resume reclaims a held slot after an unexpected drop: it looks up the hub,
@@ -304,19 +322,29 @@ func writer(ctx context.Context, cancel context.CancelFunc, kicked <-chan struct
 				return
 			}
 		case <-kicked:
-			for {
-				select {
-				case b := <-out:
-					if !write(b) {
-						cancel()
-						return
-					}
-				default:
-					cancel()
-					return
-				}
-			}
+			drainAndCancel(cancel, out, write)
+			return
 		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// drainAndCancel flushes whatever is already queued in out — each frame with
+// its own write deadline, exactly as the main pump — then cancels the
+// connection context. It is the kick path: drain first, cancel last, so a
+// frame the hub queued on the way out (e.g. SessionClosed) still reaches the
+// wire. A failed write short-circuits: cancel and stop.
+func drainAndCancel(cancel context.CancelFunc, out <-chan []byte, write func([]byte) bool) {
+	for {
+		select {
+		case b := <-out:
+			if !write(b) {
+				cancel()
+				return
+			}
+		default:
+			cancel()
 			return
 		}
 	}
