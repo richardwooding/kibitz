@@ -158,6 +158,8 @@ func (c *Client) joinHandleDirect(j *crypto.Joiner, kind wire.PayloadKind, praw 
 		c.groupKey = key
 		c.role = Role(role)
 		c.keyed = true
+		c.hostPairwise = *pairwise // retained so a later host rekey can be unwrapped
+		c.haveHostPairwise = true
 	}
 	return nil
 }
@@ -209,6 +211,7 @@ func (c *Client) handleHandshakeDirect(from wire.ParticipantID, kind wire.Payloa
 	c.mu.Lock()
 	role := c.assignJoinerRole(p.Spectate)
 	c.joiners[from] = role
+	c.pairwise[from] = pairwise // retained so we can re-wrap a fresh key on a later leave
 	key := c.groupKey
 	c.mu.Unlock()
 
@@ -285,8 +288,10 @@ func (c *Client) dispatchFrame(typ wire.MsgType, raw []byte) (stop bool) {
 		if pl, err := wire.Body[wire.ParticipantLeft](raw); err == nil {
 			c.mu.Lock()
 			delete(c.joiners, pl.ParticipantID)
+			delete(c.pairwise, pl.ParticipantID)
 			c.mu.Unlock()
 			c.emit(MemberLeft{ID: pl.ParticipantID})
+			c.rekeyAfterLeave() // host rotates the key so the departed member is locked out
 		}
 	case wire.MsgSessionClosed:
 		reason := ""
@@ -314,7 +319,13 @@ func (c *Client) handlePayload(from wire.ParticipantID, payload []byte) {
 	if err != nil {
 		return
 	}
-	if kind != wire.KindSealed {
+	switch kind {
+	case wire.KindSealed:
+		// fall through to decryption below
+	case wire.KindRekey:
+		c.handleRekey(from, praw)
+		return
+	default:
 		c.handleHandshakeDirect(from, kind, praw)
 		return
 	}
@@ -322,15 +333,9 @@ func (c *Client) handlePayload(from wire.ParticipantID, payload []byte) {
 	if err != nil {
 		return
 	}
-	c.mu.Lock()
-	key, keyed := c.groupKey, c.keyed
-	c.mu.Unlock()
-	if !keyed {
-		return
-	}
-	plain, err := crypto.Open(key, sf, c.sid, from)
-	if err != nil {
-		return // tampered or not-for-this-session; drop silently
+	plain, ok := c.openFrame(sf, from)
+	if !ok {
+		return // not keyed, tampered, foreign, or too old; drop silently
 	}
 	env, err := wire.Body[wire.Envelope](plain)
 	if err != nil {

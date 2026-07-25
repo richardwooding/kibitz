@@ -117,14 +117,45 @@ the authority model but not the key model:
 - **Succession is decided in the encrypted channel**, not by the relay: every
   survivor deterministically elects the same successor from the ctl roster; the
   elected one promotes itself and claims host. The relay only records the claim.
-- **No group-key rotation.** The successor already holds the group key (it was
-  keyed) and wraps that *same* key to future joiners. The departed host still
-  knows the key — identical posture to the documented no-re-key-on-leave.
+- **The departing host is not locked out.** The successor already holds the
+  group key (it was keyed) and wraps that *same* key to future joiners. Unlike a
+  non-host leaver — who **is** locked out by a rekey (see "Key rotation on
+  member-leave" below) — a departing host cannot be: the successor only ran a
+  PAKE with the *original* host, so it shares no pairwise channel with the other
+  members to distribute a fresh key. Rotating on a host departure would require
+  the survivors to re-PAKE with the new host (future work); until then the
+  departed host still knows the current key.
 - **`ClaimHost` is unauthenticated at the blind relay.** A malicious *member*
   (already inside the trust boundary — it holds the group key) could claim host
   to hijack *new-joiner routing* — a denial-of-service on new joins, never a key
   compromise or a way to read traffic. Existing members are unaffected (they
   keep the key and coordinate succession among themselves).
+
+## Key rotation on member-leave (forward secrecy)
+
+When a member leaves, a participant who kept a copy of the group key could —
+colluding with the relay to keep receiving frames — still decrypt whatever is
+said afterwards. To close that, the host **rotates the group key on a leave**:
+
+- **What happens.** When a non-host member departs, the host generates a fresh
+  32-byte group key and re-wraps it to each *surviving* member under that
+  member's pairwise PAKE key (the same wrap used at join, `KindRekey`), then
+  switches its own key. Survivors install the new key; the departed member never
+  receives it, so it is locked out of all subsequent traffic. This rides the
+  encrypted layer — the relay only sees opaque Direct frames, as ever.
+- **No mixed-key desync.** Each end keeps a short ring of recently-superseded
+  keys and tries them when a frame won't open under the current one, so a frame
+  still in flight under the old key when the rotation lands is decrypted
+  normally. Senders always seal under the newest key; per-sender ordering means
+  the host's own new-key frames never arrive before the rekey that precedes them.
+- **Requires the original host.** Re-wrapping needs a pairwise key with every
+  survivor, which only the original host holds (it PAKE'd with each). A promoted
+  successor lacks pairwise channels with the members it never handshook, so it
+  keeps the current key (see "Host migration"). Rotation is therefore a no-op
+  after a host migration until a re-PAKE mechanism exists.
+- **Scope.** This gives forward secrecy across a **non-host member's departure**
+  from an original-host session. It does not provide forward secrecy within a
+  continuous membership, nor against a departing host.
 
 ## Trust assumptions
 
@@ -132,10 +163,12 @@ the authority model but not the key model:
   fine: the host is a player, not infrastructure.
 - **Everyone who knows the phrase is inside the boundary.** Spectators
   decrypt everything, including the players' chat.
-- **No key rotation on leave (MVP).** A departed participant who colludes
-  with the relay to keep receiving frames can still decrypt them. Acceptable
-  for casual games; host-initiated re-keying is future work (the protocol's
-  group-key wrap already supports it).
+- **Key rotation on member-leave (partial).** When a non-host member leaves an
+  original-host session, the host rotates the group key so the departed member
+  is locked out of later traffic (see "Key rotation on member-leave"). A
+  *departing host* is not locked out, and a current member reads everything
+  while present — so this is forward secrecy across a non-host departure, not
+  full forward secrecy.
 - Games are **both-sides-validate**: each client runs the same rules engine
   and checks a position hash on every move. A cheating client can't make an
   illegal move stick; it can only cause a visible desync.
@@ -144,4 +177,7 @@ the authority model but not the key model:
 
 - Anonymity (the relay sees IPs; use your own transport-level protections)
 - Hiding that kibitz is in use, or which session sizes/timings exist
-- Perfect forward secrecy within a session
+- Full forward secrecy. A member reads all traffic while present, and a
+  departing host keeps the key. The group key IS rotated when a non-host member
+  leaves an original-host session, locking that member out of later traffic
+  (see "Key rotation on member-leave").

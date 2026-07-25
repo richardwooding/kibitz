@@ -20,6 +20,7 @@ const (
 	KindPake2    PayloadKind = 2 // host→joiner: second PAKE flight
 	KindGroupKey PayloadKind = 3 // host→joiner: wrapped group key + role
 	KindSealed   PayloadKind = 4 // any→any: encrypted Envelope
+	KindRekey    PayloadKind = 5 // host→member: a fresh wrapped group key after a member leaves
 )
 
 // Pake carries one PAKE flight (schollz/pake/v3 serialized state; the

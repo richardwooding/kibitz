@@ -71,6 +71,16 @@ type Client struct {
 	groupKey crypto.Key
 	keyed    bool
 
+	// Forward secrecy on member-leave: the (original) host rotates the group key
+	// when a non-host member leaves, re-wrapping a fresh key to each survivor
+	// under its retained pairwise key. prevKeys is a short ring of superseded
+	// keys kept only to Open frames still in flight across the swap (survivors
+	// are trusted; the departed member never receives the new key).
+	prevKeys         []crypto.Key                      // superseded group keys, newest first
+	pairwise         map[wire.ParticipantID]crypto.Key // host: per-member pairwise keys, for re-wrapping
+	hostPairwise     crypto.Key                        // joiner: pairwise key with the host, for unwrapping a rekey
+	haveHostPairwise bool
+
 	events chan Event
 
 	writeMu sync.Mutex // coder/websocket allows one concurrent writer
@@ -79,6 +89,11 @@ type Client struct {
 	seqs    map[string]uint64 // per-service send sequence
 	joiners map[wire.ParticipantID]Role
 }
+
+// prevKeyRing bounds how many superseded group keys we retain to decrypt frames
+// in flight across a rekey. Eight is far more than any realistic burst of leaves
+// within a single frame's flight window.
+const prevKeyRing = 8
 
 const (
 	eventBuffer = 256
@@ -217,6 +232,7 @@ func dial(ctx context.Context, relayURL, phraseText string) (*Client, error) {
 		events:   make(chan Event, eventBuffer),
 		seqs:     map[string]uint64{},
 		joiners:  map[wire.ParticipantID]Role{},
+		pairwise: map[wire.ParticipantID]crypto.Key{},
 	}, nil
 }
 
@@ -318,6 +334,119 @@ func (c *Client) seal(serviceID string, body []byte) ([]byte, error) {
 		return nil, err
 	}
 	return wire.EncodePayload(wire.KindSealed, sf)
+}
+
+// openFrame decrypts a received SealedFrame, trying the current group key first
+// and then any recently-superseded key (a frame may have been sealed under the
+// old key and still be in flight when a rekey lands). Returns ok=false if not
+// keyed or no key opens it (tampered / foreign / too-old).
+func (c *Client) openFrame(sf wire.SealedFrame, sender wire.ParticipantID) ([]byte, bool) {
+	c.mu.Lock()
+	if !c.keyed {
+		c.mu.Unlock()
+		return nil, false
+	}
+	keys := make([]crypto.Key, 0, 1+len(c.prevKeys))
+	keys = append(keys, c.groupKey)
+	keys = append(keys, c.prevKeys...)
+	c.mu.Unlock()
+	for _, k := range keys {
+		if plain, err := crypto.Open(k, sf, c.sid, sender); err == nil {
+			return plain, true
+		}
+	}
+	return nil, false
+}
+
+// pushPrevKeyLocked records a superseded group key at the front of the ring,
+// dropping the oldest past prevKeyRing. Caller holds c.mu.
+func (c *Client) pushPrevKeyLocked(old crypto.Key) {
+	c.prevKeys = append([]crypto.Key{old}, c.prevKeys...)
+	if len(c.prevKeys) > prevKeyRing {
+		c.prevKeys = c.prevKeys[:prevKeyRing]
+	}
+}
+
+// rekeyAfterLeave rotates the group key when a member leaves so the departed
+// participant can no longer decrypt new traffic. It is a no-op unless this
+// client is the original host — it must hold a pairwise key for EVERY surviving
+// member to re-wrap the fresh key. A promoted (migrated) host lacks pairwise
+// keys with the members it never handshook, so it keeps the current key (the
+// documented host-departure limitation). Runs on the readLoop goroutine, the
+// same one that keys new joiners, so it never races a concurrent join.
+func (c *Client) rekeyAfterLeave() {
+	c.mu.Lock()
+	if c.role != RoleHost || c.hostID != c.self || len(c.joiners) == 0 {
+		c.mu.Unlock()
+		return
+	}
+	for id := range c.joiners {
+		if _, ok := c.pairwise[id]; !ok {
+			c.mu.Unlock()
+			return // can't re-wrap to every survivor (migrated host) — keep the key
+		}
+	}
+	newKey, err := crypto.NewGroupKey()
+	if err != nil {
+		c.mu.Unlock()
+		return
+	}
+	type rekeyTo struct {
+		to wire.ParticipantID
+		gk wire.GroupKey
+	}
+	outs := make([]rekeyTo, 0, len(c.joiners))
+	for id, role := range c.joiners {
+		wrapped, werr := crypto.WrapGroupKey(c.pairwise[id], newKey, byte(role), c.sid, id)
+		if werr != nil {
+			c.mu.Unlock()
+			return
+		}
+		outs = append(outs, rekeyTo{to: id, gk: wrapped})
+	}
+	c.mu.Unlock()
+
+	// Send every rekey (wrapped under pairwise keys, independent of the group
+	// key) BEFORE swapping our own key. Per-sender ordering then guarantees each
+	// survivor installs the new key before any new-key group frame from us.
+	for _, o := range outs {
+		payload, perr := wire.EncodePayload(wire.KindRekey, o.gk)
+		if perr != nil {
+			continue
+		}
+		_ = c.writeFrame(wire.MsgDirect, wire.Direct{To: o.to, Payload: payload})
+	}
+	c.mu.Lock()
+	c.pushPrevKeyLocked(c.groupKey)
+	c.groupKey = newKey
+	c.mu.Unlock()
+}
+
+// handleRekey installs a fresh group key a member received from the host after
+// another member left. Verified to come from the host and unwrapped under the
+// retained pairwise key; the old key is kept briefly (prev-key ring) so frames
+// in flight still open.
+func (c *Client) handleRekey(from wire.ParticipantID, praw []byte) {
+	c.mu.Lock()
+	ok := c.haveHostPairwise && from == c.hostID
+	pw := c.hostPairwise
+	c.mu.Unlock()
+	if !ok {
+		return
+	}
+	gk, err := wire.Body[wire.GroupKey](praw)
+	if err != nil {
+		return
+	}
+	key, role, err := crypto.UnwrapGroupKey(pw, gk, c.sid, c.self)
+	if err != nil {
+		return
+	}
+	c.mu.Lock()
+	c.pushPrevKeyLocked(c.groupKey)
+	c.groupKey = key
+	c.role = Role(role)
+	c.mu.Unlock()
 }
 
 func (c *Client) writeFrame(t wire.MsgType, body any) error {
