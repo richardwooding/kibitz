@@ -63,6 +63,20 @@ type ServiceError struct {
 // MemberLeft, Closed) on the mux stream.
 type SessionEvent struct{ Event session.Event }
 
+// Promoted is emitted when THIS end becomes the session host via migration
+// (the previous host left), so the UI can show host affordances.
+type Promoted struct{ Self wire.ParticipantID }
+
+// Promoter is the subset of the client the mux needs for host migration.
+// *session.Client satisfies it; the solo loopback does NOT — so solo/bot
+// sessions never migrate (they have no host concept). Asserted at runtime, so
+// the Conn interface stays unchanged.
+type Promoter interface {
+	BecomeHost()
+	SetHostID(wire.ParticipantID)
+	ClaimHost() error
+}
+
 // NewMux attaches services to the client and starts routing. The ctl service
 // is always registered. Call Events for the merged stream; it closes when
 // the session ends.
@@ -185,6 +199,7 @@ func (m *Mux) dispatch(ev session.Event) (stop bool) {
 	case session.MemberLeft:
 		m.observeMembers(func(o MemberObserver) { o.MemberLeft(e.ID) })
 		m.emit(SessionEvent{Event: e})
+		m.maybeMigrate(e.ID) // if the host left, elect + promote a successor
 	case session.Closed:
 		m.emit(SessionEvent{Event: e})
 		return true
@@ -199,6 +214,44 @@ func (m *Mux) observeMembers(fn func(MemberObserver)) {
 		if o, ok := s.(MemberObserver); ok {
 			fn(o)
 		}
+	}
+}
+
+// maybeMigrate promotes a successor when the current host leaves. Runs on the
+// mux goroutine (from dispatch), so re-Attaching services is serialized with
+// frame handling — no new run loop (unlike Rebind; the connection is alive).
+// Solo/tests whose Conn isn't a Promoter simply skip this.
+func (m *Mux) maybeMigrate(left wire.ParticipantID) {
+	p, ok := m.client.(Promoter)
+	if !ok || left != m.client.HostID() {
+		return
+	}
+	successor := m.ctl.electSuccessor(left)
+	if successor == 0 {
+		return
+	}
+	amNew := successor == m.client.Self()
+	if amNew {
+		p.BecomeHost()
+	} else {
+		p.SetHostID(successor)
+	}
+	// Re-derive Context from the now-updated client and re-Attach so every
+	// service picks up the new Host/HostID (Attach only stores ctx; game state
+	// and the ctl roster are preserved — the Rebind discipline).
+	ctx := Context{Send: m.client, Emit: m.emit, Self: m.client.Self(), HostID: m.client.HostID(), Host: m.client.Role() == session.RoleHost}
+	for _, s := range m.services {
+		s.Attach(ctx)
+	}
+	if amNew {
+		for _, s := range m.services {
+			if pr, ok := s.(Promotable); ok {
+				pr.OnPromote()
+			}
+		}
+		m.ctl.assumeHost(left)
+		_ = p.ClaimHost()
+		m.emit(Promoted{Self: m.client.Self()})
 	}
 }
 

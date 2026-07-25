@@ -489,6 +489,9 @@ func pump(mux *service.Mux, gen int, isSolo, vsBot bool) {
 			emitBSState(e)
 		case battleship.CheatDetected:
 			emitError(fmt.Sprintf("battleship: cheating detected from participant %d — game voided", e.By))
+		case service.Promoted:
+			// Host migration: this end just became the session host.
+			emit("session.promoted", map[string]any{"self": uint32(e.Self)})
 		case service.ServiceError:
 			emitError(fmt.Sprintf("%s: %v", e.Service, e.Err))
 		case service.SessionEvent:

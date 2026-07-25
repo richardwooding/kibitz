@@ -55,9 +55,9 @@ func (r *registry) remove(id wire.SessionID) {
 	r.mu.Unlock()
 }
 
-// sweep closes sessions past the absolute age cap. Host-less and empty
-// sessions never linger (the hub shuts down the moment its host or last
-// participant leaves), so age is the only time-based reaper needed.
+// sweep closes sessions past the absolute age cap. A hub shuts down on its own
+// the moment its LAST participant leaves (the host is not special — survivors
+// migrate the host role among themselves), so age is the only other reaper.
 func (r *registry) sweep() {
 	r.mu.Lock()
 	var expired []*hub

@@ -163,6 +163,8 @@ func (s *Server) readLoop(ctx context.Context, conn *websocket.Conn, h *hub, id 
 			}
 		case wire.MsgDirect, wire.MsgBroadcast:
 			h.send(frameCmd{from: id, typ: typ, raw: raw})
+		case wire.MsgClaimHost:
+			h.send(claimHostCmd{id: id})
 		default:
 			queueFrame(out, wire.MsgError, wire.Error{Code: wire.ErrCodeBadFrame, Msg: "unexpected message type"})
 		}

@@ -205,7 +205,11 @@ func TestSpectateJoinKeepsPlayerSeat(t *testing.T) {
 	}
 }
 
-func TestHostCloseEndsSession(t *testing.T) {
+// TestHostLeaveKeepsSessionOpen: the host is no longer special at the relay —
+// when it leaves, a survivor sees a normal MemberLeft (not a session Closed) and
+// the session stays alive (the survivors migrate the host role; see the mux
+// promotion tests). This is the relay/client-level half of host migration.
+func TestHostLeaveKeepsSessionOpen(t *testing.T) {
 	url := startRelay(t)
 	ctx := testCtx(t)
 
@@ -220,9 +224,22 @@ func TestHostCloseEndsSession(t *testing.T) {
 	defer func() { _ = joiner.Close() }()
 
 	_ = host.Close()
-	closed := waitFor[session.Closed](t, joiner)
-	if closed.Reason != "host left" {
-		t.Fatalf("reason %q", closed.Reason)
+	left := waitFor[session.MemberLeft](t, joiner)
+	if left.ID != host.Self() {
+		t.Fatalf("MemberLeft %d, want the departed host %d", left.ID, host.Self())
+	}
+	// The stream is NOT closed — a Closed would have failed waitFor above; assert
+	// the events channel is still open by confirming no Closed is queued.
+	select {
+	case ev, ok := <-joiner.Events():
+		if !ok {
+			t.Fatal("joiner stream closed after host left — session should survive")
+		}
+		if _, isClosed := ev.(session.Closed); isClosed {
+			t.Fatal("joiner got Closed after host left — session should survive")
+		}
+	case <-time.After(300 * time.Millisecond):
+		// No further event — session quietly alive, as expected.
 	}
 }
 

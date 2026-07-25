@@ -200,7 +200,10 @@ func TestDuplicateCreate(t *testing.T) {
 	}
 }
 
-func TestHostLeaveClosesSession(t *testing.T) {
+// TestHostLeaveMigratesNotCloses: the host is no longer special — a host leave
+// with survivors broadcasts ParticipantLeft (not SessionClosed), the session
+// stays open, and the survivor can claim host so a new joiner is routed to it.
+func TestHostLeaveMigratesNotCloses(t *testing.T) {
 	srv := newServer(t, Options{})
 	host := createSession(t, srv)
 	joiner := dial(t, srv)
@@ -208,12 +211,29 @@ func TestHostLeaveClosesSession(t *testing.T) {
 	expect[wire.JoinResult](joiner, wire.MsgJoinResult)
 
 	_ = host.conn.Close(websocket.StatusNormalClosure, "bye")
-	sc := expect[wire.SessionClosed](joiner, wire.MsgSessionClosed)
-	if sc.Reason != "host left" {
-		t.Fatalf("reason %q", sc.Reason)
+	pl := expect[wire.ParticipantLeft](joiner, wire.MsgParticipantLeft)
+	if pl.ParticipantID != 1 {
+		t.Fatalf("left ID %d, want the departed host (1)", pl.ParticipantID)
 	}
 
-	// The session must be gone: a new join fails.
+	// The session lives on. The survivor claims host → a new joiner is routed to
+	// it (JoinResult.HostID == the survivor, id 2).
+	joiner.write(wire.MsgClaimHost, wire.ClaimHost{})
+	c := dial(t, srv)
+	c.write(wire.MsgJoinSession, wire.JoinSession{SessionID: sid})
+	jr := expect[wire.JoinResult](c, wire.MsgJoinResult)
+	if !jr.OK || jr.HostID != 2 {
+		t.Fatalf("new joiner routed to host %d, want migrated host 2 (%+v)", jr.HostID, jr)
+	}
+}
+
+// TestLastLeaveClosesSession: the hub closes only when the LAST participant is
+// gone (empty), regardless of who it was.
+func TestLastLeaveClosesSession(t *testing.T) {
+	srv := newServer(t, Options{})
+	host := createSession(t, srv)
+	_ = host.conn.Close(websocket.StatusNormalClosure, "bye")
+	// The now-empty session must be gone: a new join fails.
 	c := dial(t, srv)
 	c.write(wire.MsgJoinSession, wire.JoinSession{SessionID: sid})
 	e := expect[wire.Error](c, wire.MsgError)
@@ -418,17 +438,18 @@ func TestHostResume(t *testing.T) {
 	}
 }
 
-// TestHostGraceExpiryCloses: if the host never returns, grace expiry closes the
-// session (today's "host left"), just deferred by the grace window.
-func TestHostGraceExpiryCloses(t *testing.T) {
+// TestHostGraceExpiryMigrates: an abrupt host drop is held for grace (no
+// ParticipantLeft yet); if the host never returns, grace expiry surfaces the
+// departure as a normal ParticipantLeft — the survivor migrates, not closes.
+func TestHostGraceExpiryMigrates(t *testing.T) {
 	srv := newServer(t, Options{Grace: 80 * time.Millisecond})
 	host := createSession(t, srv)
 	joiner, _ := joinWithToken(t, srv)
 	expect[wire.ParticipantJoined](host, wire.MsgParticipantJoined)
 
 	_ = host.conn.CloseNow()
-	sc := expect[wire.SessionClosed](joiner, wire.MsgSessionClosed)
-	if sc.Reason != "host left" {
-		t.Fatalf("reason %q", sc.Reason)
+	pl := expect[wire.ParticipantLeft](joiner, wire.MsgParticipantLeft)
+	if pl.ParticipantID != 1 {
+		t.Fatalf("left ID %d, want the departed host (1)", pl.ParticipantID)
 	}
 }

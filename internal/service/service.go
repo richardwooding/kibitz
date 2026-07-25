@@ -44,3 +44,10 @@ type MemberObserver interface {
 	MemberKeyed(id wire.ParticipantID, role session.Role)
 	MemberLeft(id wire.ParticipantID)
 }
+
+// Promotable is implemented by services whose host-only bookkeeping must reset
+// when this end is promoted to host mid-session (host migration). Optional:
+// asserted at runtime by the mux, so services that don't seat can skip it.
+type Promotable interface {
+	OnPromote()
+}

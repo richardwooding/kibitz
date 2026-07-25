@@ -294,6 +294,14 @@
       setTimeout(() => location.replace(location.pathname), 1500);
     },
     roster(e) {
+      // Detect a host handoff (migration) to nudge the other survivors. Only
+      // the NEW host toasts itself (via session.promoted); here we toast the
+      // rest once the roster shows a different host than before.
+      const newHost = Number(Object.entries(e.members || {}).find(([, r]) => r === "host")?.[0] || 0);
+      if (prevHost && newHost && newHost !== prevHost && newHost !== state.self) {
+        toast(((e.names && e.names[newHost]) || ("#" + newHost)) + " is hosting now.");
+      }
+      if (newHost) prevHost = newHost;
       state.members = e.members;
       state.names = {};
       for (const [id, n] of Object.entries(e.names || {})) state.names[Number(id)] = n;
@@ -314,6 +322,15 @@
         show("table");
         renderPicker();
       }
+    },
+    // Host migration: this end was promoted to host (the previous host left).
+    "session.promoted"() {
+      state.role = "host";
+      toast("You're hosting now.");
+      renderPicker();       // host affordances (Start/Rematch)
+      renderWatching();
+      syncNotifyButton();
+      push.generateIfHost(); // mint the session VAPID key if not already set
     },
     "chat.msg"(e) {
       appendChat(e.from, e.text);
@@ -637,6 +654,7 @@
   }
 
   let watchLink = "";
+  let prevHost = 0; // last-seen host id, to detect a migration handoff
   $("btn-copy").addEventListener("click", async () => {
     try {
       await navigator.clipboard.writeText($("lobby-url").value);

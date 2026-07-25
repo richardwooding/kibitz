@@ -273,6 +273,42 @@ func (c *ctlService) roster3(infos []ServiceInfo) Roster {
 	}
 }
 
+// electSuccessor picks the host successor from the current roster minus the
+// leaver: the lowest-id remaining player (host/player role), else the lowest-id
+// remaining participant. Deterministic, so every survivor agrees without
+// coordination. Returns 0 if nobody remains.
+func (c *ctlService) electSuccessor(leaver wire.ParticipantID) wire.ParticipantID {
+	var player, any wire.ParticipantID
+	for id, r := range c.roster {
+		if id == leaver {
+			continue
+		}
+		if any == 0 || id < any {
+			any = id
+		}
+		if (r == session.RoleHost || r == session.RolePlayer) && (player == 0 || id < player) {
+			player = id
+		}
+	}
+	if player != 0 {
+		return player
+	}
+	return any
+}
+
+// assumeHost makes this end the authoritative host after a migration: prune the
+// departed host from the roster, mark self host, and re-announce so every
+// survivor adopts the new roster + host id. The roster/names/endpoints/pushKey
+// are already held from prior announces (re-announce carries them — no VAPID
+// regen). Runs on the mux goroutine after re-Attach set ctx.Host/HostID.
+func (c *ctlService) assumeHost(leaver wire.ParticipantID) {
+	delete(c.roster, leaver)
+	delete(c.names, leaver)
+	delete(c.endpoints, leaver)
+	c.roster[c.ctx.Self] = session.RoleHost
+	c.announce()
+}
+
 func (c *ctlService) requestSnapshot() {
 	body, err := wire.Marshal(ctlMsg{Kind: ctlKindSnapshotReq})
 	if err != nil {

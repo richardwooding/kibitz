@@ -21,6 +21,9 @@ type hub struct {
 	// Owned by run() — never touched from outside.
 	clients map[wire.ParticipantID]*client
 	nextID  wire.ParticipantID
+	// host is the current authority id used to route new joiners' handshake.
+	// It starts as the creator (id 1) and moves on host migration via ClaimHost.
+	host wire.ParticipantID
 }
 
 // client is the hub's view of one connected participant. out is drained by
@@ -110,6 +113,9 @@ type frameCmd struct {
 
 type closeCmd struct{ reason string }
 
+// claimHostCmd records a host migration: the sender is the new join authority.
+type claimHostCmd struct{ id wire.ParticipantID }
+
 const hostID wire.ParticipantID = 1
 
 func newHub(id wire.SessionID, maxParticipants int, grace time.Duration, onEmpty func()) *hub {
@@ -122,6 +128,7 @@ func newHub(id wire.SessionID, maxParticipants int, grace time.Duration, onEmpty
 		done:    make(chan struct{}),
 		clients: map[wire.ParticipantID]*client{},
 		nextID:  hostID,
+		host:    hostID,
 	}
 	go h.run(onEmpty)
 	return h
@@ -152,6 +159,13 @@ func (h *hub) run(onEmpty func()) {
 			if h.handleGraceExpired(cmd) {
 				return
 			}
+		case claimHostCmd:
+			// A promoted successor becomes the join authority; route new joiners
+			// to it. Only a live participant can claim (the sender is stamped by
+			// the connection), and it's within the member trust boundary.
+			if _, ok := h.clients[cmd.id]; ok {
+				h.host = cmd.id
+			}
 		case frameCmd:
 			h.route(cmd)
 		case closeCmd:
@@ -180,7 +194,7 @@ func (h *hub) handleJoin(cmd joinCmd) {
 		frame, err = wire.Encode(wire.MsgSessionCreated, wire.SessionCreated{ParticipantID: id, ResumeToken: token})
 	} else {
 		frame, err = wire.Encode(wire.MsgJoinResult, wire.JoinResult{
-			OK: true, ParticipantID: id, Peers: h.peersExcept(id), HostID: hostID, ResumeToken: token,
+			OK: true, ParticipantID: id, Peers: h.peersExcept(id), HostID: h.host, ResumeToken: token,
 		})
 	}
 	if err != nil {
@@ -236,7 +250,10 @@ func (h *hub) handleGraceExpired(cmd graceExpiredCmd) bool {
 
 // removeParticipant does the real teardown for one participant: the host
 // leaving closes the session; the last participant leaving empties it;
-// otherwise peers are told it left (which forfeits any live game).
+// otherwise peers are told it left. The host is NOT special: its departure
+// broadcasts ParticipantLeft like any other, and the survivors migrate the host
+// role among themselves (see the client's promotion path). The session closes
+// only when the last participant is gone.
 func (h *hub) removeParticipant(id wire.ParticipantID) bool {
 	c, ok := h.clients[id]
 	if !ok {
@@ -247,10 +264,6 @@ func (h *hub) removeParticipant(id wire.ParticipantID) bool {
 	}
 	delete(h.clients, id)
 	c.kick()
-	if id == hostID {
-		h.broadcastFrame(wire.MsgSessionClosed, wire.SessionClosed{Reason: "host left"}, 0)
-		return true
-	}
 	if len(h.clients) == 0 {
 		return true
 	}
@@ -268,7 +281,7 @@ func (h *hub) handleResume(cmd resumeCmd) {
 		return
 	}
 	jr, err := wire.Encode(wire.MsgJoinResult, wire.JoinResult{
-		OK: true, ParticipantID: cmd.id, Peers: h.peersExcept(cmd.id), HostID: hostID, ResumeToken: c.token,
+		OK: true, ParticipantID: cmd.id, Peers: h.peersExcept(cmd.id), HostID: h.host, ResumeToken: c.token,
 	})
 	if err != nil {
 		cmd.reply <- resumeReply{errC: wire.ErrCodeBadFrame, errS: "encode reply"}

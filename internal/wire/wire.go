@@ -37,6 +37,7 @@ const (
 	MsgError             MsgType = 11 // r→c Error
 	MsgSessionClosed     MsgType = 12 // r→all SessionClosed
 	MsgResumeSession     MsgType = 13 // c→r ResumeSession (reclaim a held slot after a drop)
+	MsgClaimHost         MsgType = 14 // c→r ClaimHost (a promoted successor becomes the join authority)
 )
 
 // Relay error codes carried in Error.Code.
@@ -95,6 +96,11 @@ type ResumeSession struct {
 	ParticipantID ParticipantID `cbor:"2,keyasint"`
 	Token         []byte        `cbor:"3,keyasint"`
 }
+
+// ClaimHost asserts that the sender is the session's new host after a host
+// migration, so the relay routes future joiners' handshake to it. The relay
+// stamps the sender id from the connection; the body carries nothing.
+type ClaimHost struct{}
 
 type ParticipantJoined struct {
 	ParticipantID ParticipantID `cbor:"1,keyasint"`

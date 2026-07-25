@@ -121,6 +121,16 @@ func (t *Table) AuthorizeStart(host bool, from, hostID wire.ParticipantID, ph Ph
 	return nil
 }
 
+// OnPromote resets the host-only seat bookkeeping when this end is promoted to
+// host (migration). There is only ever one non-host player, so after the old
+// host leaves there is no surviving opponent: clear Opponent (the next joiner
+// re-seeds it via NoteKeyed) and reset the rematch parity (anchored on the old
+// host, now meaningless). Seats are left as-is — NextSeats overwrites on Start.
+func (t *Table) OnPromote() {
+	t.Opponent = 0
+	t.Games = 0
+}
+
 // NextSeats assigns seats for the next game, alternating who takes P1 on
 // each rematch, and bumps the games counter.
 func (t *Table) NextSeats(hostID wire.ParticipantID) Seats {

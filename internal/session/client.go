@@ -226,11 +226,45 @@ func (c *Client) Events() <-chan Event { return c.events }
 // Self returns this client's participant ID (valid after construction).
 func (c *Client) Self() wire.ParticipantID { return c.self }
 
-// HostID returns the session host's participant ID.
-func (c *Client) HostID() wire.ParticipantID { return c.hostID }
+// HostID returns the session host's participant ID. Locked because host
+// migration can reassign it from another goroutine (see SetHostID/BecomeHost).
+func (c *Client) HostID() wire.ParticipantID {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.hostID
+}
 
 // Role returns this client's role (RoleHost, or as assigned by the host).
-func (c *Client) Role() Role { return c.role }
+func (c *Client) Role() Role {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.role
+}
+
+// BecomeHost promotes this client to session host in place after a host
+// migration: role→RoleHost, hostID→self. The group key and keyed flag are
+// untouched — the successor already holds the key and wraps that same key to
+// future joiners (no re-key). Called on the mux goroutine during promotion.
+func (c *Client) BecomeHost() {
+	c.mu.Lock()
+	c.role = RoleHost
+	c.hostID = c.self
+	c.mu.Unlock()
+}
+
+// SetHostID re-points a non-host survivor at the newly elected host so its ctl
+// accepts the new host's announces and its services address the right authority.
+func (c *Client) SetHostID(id wire.ParticipantID) {
+	c.mu.Lock()
+	c.hostID = id
+	c.mu.Unlock()
+}
+
+// ClaimHost tells the relay this client is the new host, so it routes future
+// joiners' handshake here. Safe from any goroutine (writeFrame holds writeMu).
+func (c *Client) ClaimHost() error {
+	return c.writeFrame(wire.MsgClaimHost, wire.ClaimHost{})
+}
 
 // Close tears the connection down gracefully (a normal-closure "bye"); the
 // relay treats this as leaving for good — no grace, no reconnect.

@@ -104,6 +104,28 @@ never gains keys or content:
   over plaintext ws a network eavesdropper sees endpoints (metadata), never
   plaintext.
 
+## Host migration
+
+When the host leaves permanently the session no longer ends — a surviving
+participant is promoted to host so play/chat/spectating continue. This changes
+the authority model but not the key model:
+
+- **The relay stops treating the host specially.** Any departure broadcasts
+  `ParticipantLeft`; the hub closes only when the last participant leaves. It
+  tracks a mutable current-host id purely to route new joiners' handshake,
+  updated by an opaque `ClaimHost` message.
+- **Succession is decided in the encrypted channel**, not by the relay: every
+  survivor deterministically elects the same successor from the ctl roster; the
+  elected one promotes itself and claims host. The relay only records the claim.
+- **No group-key rotation.** The successor already holds the group key (it was
+  keyed) and wraps that *same* key to future joiners. The departed host still
+  knows the key — identical posture to the documented no-re-key-on-leave.
+- **`ClaimHost` is unauthenticated at the blind relay.** A malicious *member*
+  (already inside the trust boundary — it holds the group key) could claim host
+  to hijack *new-joiner routing* — a denial-of-service on new joins, never a key
+  compromise or a way to read traffic. Existing members are unaffected (they
+  keep the key and coordinate succession among themselves).
+
 ## Trust assumptions
 
 - **The host is trusted.** It holds the group key and assigns roles. That's

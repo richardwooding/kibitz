@@ -97,6 +97,14 @@ func (s *Service) Version() int { return 1 }
 
 func (s *Service) Attach(ctx service.Context) { s.ctx = ctx }
 
+// OnPromote resets host-only seat bookkeeping when this end is promoted to host
+// (migration); the next joiner re-seeds the opponent via NoteKeyed.
+func (s *Service) OnPromote() {
+	s.mu.Lock()
+	s.table.OnPromote()
+	s.mu.Unlock()
+}
+
 // MemberKeyed (host side) records the seated player; games start on demand
 // via Start().
 func (s *Service) MemberKeyed(id wire.ParticipantID, role session.Role) {

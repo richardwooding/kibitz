@@ -153,7 +153,13 @@ func (c *Client) awaitReply(ctx context.Context, want wire.MsgType) ([]byte, err
 // stateless exchange — reply Pake2, then the wrapped group key with the
 // joiner's assigned role.
 func (c *Client) handleHandshakeDirect(from wire.ParticipantID, kind wire.PayloadKind, praw []byte) {
-	if c.role != RoleHost || kind != wire.KindPake1 {
+	// Read the role under the lock: host migration can flip it from the mux
+	// goroutine (BecomeHost). Once promoted, this responder path serves new
+	// joiners using c.phraseC + the already-held group key — no re-key.
+	c.mu.Lock()
+	isHost := c.role == RoleHost
+	c.mu.Unlock()
+	if !isHost || kind != wire.KindPake1 {
 		return
 	}
 	p, err := wire.Body[wire.Pake](praw)
