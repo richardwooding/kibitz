@@ -187,6 +187,26 @@ var commands = map[string]func(command){
 	"xiangqi.move":   func(c command) { moveXiangqi(func(s *xiangqi.Service) error { return s.Move(c.Frm, c.To) }) },
 	"xiangqi.resign": func(command) { withXiangqi((*xiangqi.Service).Resign) },
 
+	// Takeback (1-level undo of the last move) for every deterministic game.
+	"connect4.offerTakeback":  func(command) { withC4((*connect4.Service).OfferTakeback) },
+	"connect4.acceptTakeback": func(command) { withC4((*connect4.Service).AcceptTakeback) },
+	"gomoku.offerTakeback":    func(command) { withGM((*gomoku.Service).OfferTakeback) },
+	"gomoku.acceptTakeback":   func(command) { withGM((*gomoku.Service).AcceptTakeback) },
+	"hex.offerTakeback":       func(command) { withHex((*hex.Service).OfferTakeback) },
+	"hex.acceptTakeback":      func(command) { withHex((*hex.Service).AcceptTakeback) },
+	"dots.offerTakeback":      func(command) { withDots((*dots.Service).OfferTakeback) },
+	"dots.acceptTakeback":     func(command) { withDots((*dots.Service).AcceptTakeback) },
+	"weiqi.offerTakeback":     func(command) { withWeiqi((*weiqi.Service).OfferTakeback) },
+	"weiqi.acceptTakeback":    func(command) { withWeiqi((*weiqi.Service).AcceptTakeback) },
+	"xiangqi.offerTakeback":   func(command) { withXiangqi((*xiangqi.Service).OfferTakeback) },
+	"xiangqi.acceptTakeback":  func(command) { withXiangqi((*xiangqi.Service).AcceptTakeback) },
+	"checkers.offerTakeback":  func(command) { withCK((*checkers.Service).OfferTakeback) },
+	"checkers.acceptTakeback": func(command) { withCK((*checkers.Service).AcceptTakeback) },
+	"reversi.offerTakeback":   func(command) { withRV((*reversi.Service).OfferTakeback) },
+	"reversi.acceptTakeback":  func(command) { withRV((*reversi.Service).AcceptTakeback) },
+	"chess.offerTakeback":     func(command) { withChess((*chess.Service).OfferTakeback) },
+	"chess.acceptTakeback":    func(command) { withChess((*chess.Service).AcceptTakeback) },
+
 	"checkers.move":      func(c command) { moveCK(func(s *checkers.Service) error { return s.TryMove(c.Path) }) },
 	"checkers.resign":    func(command) { withCK((*checkers.Service).Resign) },
 	"checkers.offerDraw": func(command) { withCK((*checkers.Service).OfferDraw) },
@@ -703,6 +723,7 @@ func emitRoster(e service.Roster) {
 
 func emitChessState(e chess.State) {
 	emit("chess.state", map[string]any{
+		"canTakeback": e.CanTakeback, "takebackBy": uint32(e.TakebackBy),
 		"fen": e.FEN, "whiteId": uint32(e.WhiteID), "blackId": uint32(e.BlackID),
 		"turnId": uint32(e.TurnID), "outcome": e.Outcome, "method": e.Method,
 		"lastUci": e.LastUCI, "playing": e.Playing,
@@ -736,6 +757,7 @@ func emitCKState(e checkers.State) {
 		legal[i] = []int8(m)
 	}
 	emit("checkers.state", map[string]any{
+		"canTakeback": e.CanTakeback, "takebackBy": uint32(e.TakebackBy),
 		"board": e.Board[:], "p1Id": uint32(e.P1ID), "p2Id": uint32(e.P2ID),
 		"turnId": uint32(e.TurnID), "outcome": e.Outcome,
 		"legal": legal, "lastPath": e.LastPath, "playing": e.Playing,
@@ -769,6 +791,7 @@ func u8ints(b []uint8) []int {
 
 func emitRVState(e reversi.State) {
 	emit("reversi.state", map[string]any{
+		"canTakeback": e.CanTakeback, "takebackBy": uint32(e.TakebackBy),
 		"board": e.Board[:], "p1Id": uint32(e.P1ID), "p2Id": uint32(e.P2ID),
 		"turnId": uint32(e.TurnID), "outcome": e.Outcome, "legal": e.Legal,
 		"passed": e.Passed, "black": e.Black, "white": e.White,
@@ -778,6 +801,7 @@ func emitRVState(e reversi.State) {
 
 func emitC4State(e connect4.State) {
 	emit("connect4.state", map[string]any{
+		"canTakeback": e.CanTakeback, "takebackBy": uint32(e.TakebackBy),
 		"board": e.Board[:], "p1Id": uint32(e.P1ID), "p2Id": uint32(e.P2ID),
 		"turnId": uint32(e.TurnID), "outcome": e.Outcome,
 		"winCells": e.WinCells, "lastCol": e.LastCol, "playing": e.Playing,
@@ -787,6 +811,7 @@ func emitC4State(e connect4.State) {
 
 func emitGomokuState(e gomoku.State) {
 	emit("gomoku.state", map[string]any{
+		"canTakeback": e.CanTakeback, "takebackBy": uint32(e.TakebackBy),
 		"board": e.Board[:], "p1Id": uint32(e.P1ID), "p2Id": uint32(e.P2ID),
 		"turnId": uint32(e.TurnID), "outcome": e.Outcome,
 		"winCells": e.WinCells, "last": e.Last, "playing": e.Playing,
@@ -796,6 +821,7 @@ func emitGomokuState(e gomoku.State) {
 
 func emitHexState(e hex.State) {
 	emit("hex.state", map[string]any{
+		"canTakeback": e.CanTakeback, "takebackBy": uint32(e.TakebackBy),
 		"board": e.Board[:], "p1Id": uint32(e.P1ID), "p2Id": uint32(e.P2ID),
 		"turnId": uint32(e.TurnID), "outcome": e.Outcome,
 		"winCells": e.WinCells, "last": e.Last, "legal": e.Legal,
@@ -805,6 +831,7 @@ func emitHexState(e hex.State) {
 
 func emitDotsState(e dots.State) {
 	emit("dots.state", map[string]any{
+		"canTakeback": e.CanTakeback, "takebackBy": uint32(e.TakebackBy),
 		"edges": e.Edges[:], "boxes": e.Boxes[:],
 		"scoreP1": e.ScoreP1, "scoreP2": e.ScoreP2,
 		"p1Id": uint32(e.P1ID), "p2Id": uint32(e.P2ID),
@@ -816,6 +843,7 @@ func emitDotsState(e dots.State) {
 
 func emitWeiqiState(e weiqi.State) {
 	emit("weiqi.state", map[string]any{
+		"canTakeback": e.CanTakeback, "takebackBy": uint32(e.TakebackBy),
 		"board": e.Board[:], "p1Id": uint32(e.P1ID), "p2Id": uint32(e.P2ID),
 		"turnId": uint32(e.TurnID), "outcome": e.Outcome,
 		"last": e.Last, "legal": e.Legal, "playing": e.Playing,
@@ -829,6 +857,7 @@ func emitXiangqiState(e xiangqi.State) {
 	legal := make([][2]int8, len(e.Legal))
 	copy(legal, e.Legal)
 	emit("xiangqi.state", map[string]any{
+		"canTakeback": e.CanTakeback, "takebackBy": uint32(e.TakebackBy),
 		"board": e.Board[:], "p1Id": uint32(e.P1ID), "p2Id": uint32(e.P2ID),
 		"turnId": uint32(e.TurnID), "outcome": e.Outcome,
 		"legal": legal, "lastFrom": e.LastFrom, "lastTo": e.LastTo,

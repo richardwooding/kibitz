@@ -22,10 +22,12 @@ import (
 const ID = "xiangqi"
 
 const (
-	kindNewGame  uint8 = 1
-	kindStartReq uint8 = 2
-	kindMove     uint8 = 3
-	kindResign   uint8 = 4
+	kindNewGame        uint8 = 1
+	kindStartReq       uint8 = 2
+	kindMove           uint8 = 3
+	kindResign         uint8 = 4
+	kindTakebackOffer  uint8 = 5
+	kindTakebackAccept uint8 = 6
 )
 
 type msg struct {
@@ -47,6 +49,7 @@ type snapshot struct {
 	LastFrom int8     `cbor:"7,keyasint"`
 	LastTo   int8     `cbor:"8,keyasint"`
 	History  []string `cbor:"9,keyasint,omitempty"`
+	Prev     []byte   `cbor:"10,keyasint,omitempty"` // pre-move state for 1-level takeback
 }
 
 // State is emitted after every change; the UI renders it directly.
@@ -62,6 +65,10 @@ type State struct {
 	LastTo   int8               // last move's destination, -1 when none
 	InCheck  bool               // side to move is in check (UI hint)
 	Legal    [][2]int8          // all legal {from,to} for the side to move
+	// CanTakeback: this end made the last move and may offer to undo it.
+	// TakebackBy: participant who has offered a takeback (0 = none).
+	CanTakeback bool
+	TakebackBy  wire.ParticipantID
 }
 
 // ErrNotTurn is returned when a player tries to move out of turn.
@@ -81,6 +88,9 @@ type Service struct {
 	lastFrom int8
 	lastTo   int8
 	history  []string
+
+	prevSnap []byte             // serialized pre-move state (1-level takeback)
+	offerBy  wire.ParticipantID // who offered a takeback (0 = none)
 }
 
 // New constructs an idle Xiangqi service.
@@ -163,6 +173,8 @@ func (s *Service) resetLocked(seats game.Seats) {
 	s.lastFrom = -1
 	s.lastTo = -1
 	s.history = nil
+	s.prevSnap = nil
+	s.offerBy = 0
 }
 
 // noteLocked appends a move's notation ("🔴 車 h3-e3"): side glyph + piece glyph
@@ -189,8 +201,11 @@ func (s *Service) Move(from, to int8) error {
 		s.mu.Unlock()
 		return err
 	}
+	prev, _ := s.snapshotBlobLocked(nil) // pre-move state, committed only on a valid move
 	s.noteLocked(from, to)
 	s.board = Apply(s.board, from, to)
+	s.prevSnap = prev
+	s.offerBy = 0
 	s.lastFrom, s.lastTo = from, to
 	hash := s.applyAndHashLocked()
 	s.mu.Unlock()
@@ -253,8 +268,100 @@ func (s *Service) HandleFrame(from wire.ParticipantID, body []byte) error {
 		return s.handleMove(from, m)
 	case kindResign:
 		return s.handleResign(from)
+	case kindTakebackOffer:
+		return s.handleTakebackOffer(from)
+	case kindTakebackAccept:
+		return s.handleTakebackAccept(from)
 	}
 	return fmt.Errorf("xiangqi: unknown message kind %d", m.Kind)
+}
+
+// OfferTakeback asks the opponent to undo this end's last move. Valid only for
+// the last mover (it's the opponent's turn now) while a stashed move exists.
+func (s *Service) OfferTakeback() error {
+	s.mu.Lock()
+	if !s.canOfferLocked(s.ctx.Self) {
+		s.mu.Unlock()
+		return errors.New("xiangqi: no takeback available")
+	}
+	s.offerBy = s.ctx.Self
+	s.mu.Unlock()
+	body, err := wire.Marshal(msg{Kind: kindTakebackOffer})
+	if err != nil {
+		return err
+	}
+	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+		return err
+	}
+	s.emitState()
+	return nil
+}
+
+func (s *Service) canOfferLocked(who wire.ParticipantID) bool {
+	side, seated := s.table.Seats.SideOf(who)
+	return seated && s.ph == game.Playing && s.prevSnap != nil && s.turn != side
+}
+
+func (s *Service) handleTakebackOffer(from wire.ParticipantID) error {
+	s.mu.Lock()
+	if s.canOfferLocked(from) {
+		s.offerBy = from
+	}
+	s.mu.Unlock()
+	s.emitState()
+	return nil
+}
+
+// AcceptTakeback accepts a pending offer from the opponent and reverts one move.
+func (s *Service) AcceptTakeback() error {
+	s.mu.Lock()
+	if s.offerBy == 0 || s.offerBy == s.ctx.Self || s.ph != game.Playing {
+		s.mu.Unlock()
+		return errors.New("xiangqi: no takeback to accept")
+	}
+	s.revertLocked()
+	s.mu.Unlock()
+	body, err := wire.Marshal(msg{Kind: kindTakebackAccept})
+	if err != nil {
+		return err
+	}
+	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+		return err
+	}
+	s.emitState()
+	return nil
+}
+
+func (s *Service) handleTakebackAccept(from wire.ParticipantID) error {
+	s.mu.Lock()
+	if s.offerBy != 0 && from != s.offerBy {
+		s.revertLocked()
+	}
+	s.mu.Unlock()
+	s.emitState()
+	return nil
+}
+
+// revertLocked restores the pre-move state stashed in prevSnap (1-level undo).
+// Every end reverts from its own identical stash, so no state rides the wire.
+func (s *Service) revertLocked() {
+	if s.prevSnap == nil {
+		return
+	}
+	snap, err := wire.Body[snapshot](s.prevSnap)
+	if err != nil {
+		return
+	}
+	s.board = snap.Board
+	s.table.Seats = game.Seats{P1: wire.ParticipantID(snap.P1), P2: wire.ParticipantID(snap.P2)}
+	s.turn = game.Side(snap.Turn)
+	s.ph = game.Phase(snap.Phase)
+	s.winner = snap.Winner
+	s.lastFrom = snap.LastFrom
+	s.lastTo = snap.LastTo
+	s.history = snap.History
+	s.prevSnap = snap.Prev
+	s.offerBy = 0
 }
 
 func (s *Service) handleMove(from wire.ParticipantID, m msg) error {
@@ -268,8 +375,11 @@ func (s *Service) handleMove(from wire.ParticipantID, m msg) error {
 		s.mu.Unlock()
 		return err
 	}
+	prev, _ := s.snapshotBlobLocked(nil) // pre-move state, committed only on a valid move
 	s.noteLocked(m.From, m.To)
 	s.board = Apply(s.board, m.From, m.To)
+	s.prevSnap = prev
+	s.offerBy = 0
 	s.lastFrom, s.lastTo = m.From, m.To
 	hash := s.applyAndHashLocked()
 	ok := bytes.Equal(hash, m.StateHash)
@@ -304,10 +414,17 @@ func (s *Service) Snapshot() ([]byte, error) {
 	if s.ph == game.Idle {
 		return nil, nil
 	}
+	return s.snapshotBlobLocked(s.prevSnap)
+}
+
+// snapshotBlobLocked serializes the current state. prev is embedded so a late
+// joiner inherits the pre-move stash and can take part in a takeback; it is nil
+// when stashing prevSnap itself, to avoid unbounded nesting.
+func (s *Service) snapshotBlobLocked(prev []byte) ([]byte, error) {
 	return wire.Marshal(snapshot{
 		Board: s.board, P1: uint32(s.table.Seats.P1), P2: uint32(s.table.Seats.P2),
 		Turn: uint8(s.turn), Phase: uint8(s.ph), Winner: s.winner,
-		LastFrom: s.lastFrom, LastTo: s.lastTo, History: s.history,
+		LastFrom: s.lastFrom, LastTo: s.lastTo, History: s.history, Prev: prev,
 	})
 }
 
@@ -330,6 +447,7 @@ func (s *Service) Restore(blob []byte) error {
 	s.lastFrom = snap.LastFrom
 	s.lastTo = snap.LastTo
 	s.history = snap.History
+	s.prevSnap = snap.Prev
 	s.mu.Unlock()
 	s.emitState()
 	return nil
@@ -421,5 +539,8 @@ func (s *Service) stateLocked() State {
 			st.Legal = LegalMoves(s.board, sideSign(s.turn))
 		}
 	}
+	side, seated := s.table.Seats.SideOf(s.ctx.Self)
+	st.CanTakeback = seated && s.ph == game.Playing && s.prevSnap != nil && s.turn != side && s.offerBy == 0
+	st.TakebackBy = s.offerBy
 	return st
 }

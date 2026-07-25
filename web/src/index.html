@@ -164,6 +164,12 @@
         <div id="game-pane" class="hidden">
           <button id="btn-back" class="ghost back">← All games</button>
           <div id="win-banner" class="win-banner"></div>
+          <!-- Shared takeback controls: app.js shows these for the active game
+               based on its canTakeback / takebackBy state (deterministic games). -->
+          <div id="takeback-bar" class="game-actions">
+            <button id="btn-takeback" class="ghost hidden">↶ Take back</button>
+            <button id="btn-accept-takeback" class="ghost hidden">Accept takeback</button>
+          </div>
 
           <div id="game-chess" class="hidden">
             <div id="status-line" class="status"></div>

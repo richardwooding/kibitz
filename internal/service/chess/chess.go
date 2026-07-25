@@ -22,12 +22,14 @@ import (
 const ID = "chess"
 
 const (
-	kindMove      uint8 = 1
-	kindResign    uint8 = 2
-	kindOfferDraw uint8 = 3
-	kindAgreeDraw uint8 = 4
-	kindNewGame   uint8 = 5
-	kindStartReq  uint8 = 6 // player → host: please start/rematch
+	kindMove           uint8 = 1
+	kindResign         uint8 = 2
+	kindOfferDraw      uint8 = 3
+	kindAgreeDraw      uint8 = 4
+	kindNewGame        uint8 = 5
+	kindStartReq       uint8 = 6 // player → host: please start/rematch
+	kindTakebackOffer  uint8 = 7
+	kindTakebackAccept uint8 = 8
 )
 
 type msg struct {
@@ -42,9 +44,13 @@ type msg struct {
 }
 
 type snapshot struct {
-	PGN     string `cbor:"1,keyasint"`
-	WhiteID uint32 `cbor:"2,keyasint"`
-	BlackID uint32 `cbor:"3,keyasint"`
+	PGN       string `cbor:"1,keyasint"`
+	WhiteID   uint32 `cbor:"2,keyasint"`
+	BlackID   uint32 `cbor:"3,keyasint"`
+	LastUCI   string `cbor:"4,keyasint,omitempty"`
+	DrawnFrom uint32 `cbor:"5,keyasint,omitempty"`
+	// Prev holds the pre-move state so a late joiner inherits the takeback stash.
+	Prev []byte `cbor:"6,keyasint,omitempty"`
 }
 
 // State is emitted after every game change; the UI renders it directly.
@@ -59,6 +65,10 @@ type State struct {
 	Playing bool     // a game exists (start conditions met)
 	History []string // SAN move list, derived from the engine's move tree
 	PGN     string   // full PGN, for one-click export
+	// CanTakeback: this end made the last move and may offer to undo it.
+	// TakebackBy: participant who has offered a takeback (0 = none).
+	CanTakeback bool
+	TakebackBy  wire.ParticipantID
 }
 
 // DrawOffered is emitted when the opponent offers a draw.
@@ -90,6 +100,9 @@ type Service struct {
 	blackID   wire.ParticipantID
 	lastUCI   string
 	drawnFrom wire.ParticipantID // pending draw offer
+
+	prevSnap []byte             // serialized pre-move state (1-level takeback)
+	offerBy  wire.ParticipantID // who offered a takeback (0 = none)
 }
 
 func New() *Service { return &Service{} }
@@ -145,6 +158,8 @@ func (s *Service) hostStart(from wire.ParticipantID) error {
 	s.blackID = seats.P2
 	s.lastUCI = ""
 	s.drawnFrom = 0
+	s.prevSnap = nil
+	s.offerBy = 0
 	s.mu.Unlock()
 
 	body, err := wire.Marshal(msg{Kind: kindNewGame, WhiteID: uint32(seats.P1), BlackID: uint32(seats.P2)})
@@ -198,6 +213,7 @@ func (s *Service) TryMove(uci string) error {
 		s.mu.Unlock()
 		return err
 	}
+	prev, _ := s.snapshotBlobLocked(nil) // pre-move state; committed only on a valid move
 	move, err := chesslib.UCINotation{}.Decode(s.game.Position(), uci)
 	if err != nil {
 		s.mu.Unlock()
@@ -207,6 +223,8 @@ func (s *Service) TryMove(uci string) error {
 		s.mu.Unlock()
 		return fmt.Errorf("chess: illegal move %q: %w", uci, err)
 	}
+	s.prevSnap = prev
+	s.offerBy = 0
 	s.lastUCI = uci
 	s.drawnFrom = 0
 	hash := positionHash(s.game)
@@ -352,6 +370,10 @@ func (s *Service) HandleFrame(from wire.ParticipantID, body []byte) error {
 		return s.handleOfferDraw(from)
 	case kindAgreeDraw:
 		return s.handleAgreeDraw(from)
+	case kindTakebackOffer:
+		return s.handleTakebackOffer(from)
+	case kindTakebackAccept:
+		return s.handleTakebackAccept(from)
 	}
 	return fmt.Errorf("chess: unknown message kind %d", m.Kind)
 }
@@ -368,6 +390,8 @@ func (s *Service) handleNewGame(from wire.ParticipantID, m msg) error {
 	s.table.Seats = game.Seats{P1: s.whiteID, P2: s.blackID}
 	s.lastUCI = ""
 	s.drawnFrom = 0
+	s.prevSnap = nil
+	s.offerBy = 0
 	s.mu.Unlock()
 	s.emitState()
 	return nil
@@ -384,6 +408,7 @@ func (s *Service) handleMove(from wire.ParticipantID, m msg) error {
 		s.ctx.Emit(Desync{From: from, Reason: "move out of turn"})
 		return err
 	}
+	prev, _ := s.snapshotBlobLocked(nil) // pre-move state; committed only on a valid move
 	move, err := chesslib.UCINotation{}.Decode(s.game.Position(), m.UCI)
 	if err == nil {
 		err = s.game.Move(move, nil)
@@ -393,6 +418,8 @@ func (s *Service) handleMove(from wire.ParticipantID, m msg) error {
 		s.ctx.Emit(Desync{From: from, Reason: fmt.Sprintf("illegal move %s", m.UCI)})
 		return fmt.Errorf("chess: peer sent illegal move %q: %w", m.UCI, err)
 	}
+	s.prevSnap = prev
+	s.offerBy = 0
 	s.lastUCI = m.UCI
 	s.drawnFrom = 0
 	hash := positionHash(s.game)
@@ -456,16 +483,127 @@ func (s *Service) handleAgreeDraw(from wire.ParticipantID) error {
 	return nil
 }
 
+// OfferTakeback asks the opponent to undo this end's last move. Valid only for
+// the last mover (it's the opponent's turn now) while a stashed move exists.
+func (s *Service) OfferTakeback() error {
+	s.mu.Lock()
+	if !s.canOfferLocked(s.ctx.Self) {
+		s.mu.Unlock()
+		return errors.New("chess: no takeback available")
+	}
+	s.offerBy = s.ctx.Self
+	s.mu.Unlock()
+	body, err := wire.Marshal(msg{Kind: kindTakebackOffer})
+	if err != nil {
+		return err
+	}
+	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+		return err
+	}
+	s.emitState()
+	return nil
+}
+
+// canOfferLocked reports whether who may offer a takeback: they made the last
+// move (so it's the opponent's turn), the game is still in progress ("*"), and
+// a pre-move stash exists.
+func (s *Service) canOfferLocked(who wire.ParticipantID) bool {
+	if s.game == nil || s.game.Outcome() != chesslib.NoOutcome || s.prevSnap == nil {
+		return false
+	}
+	color, err := s.colorOfLocked(who)
+	if err != nil {
+		return false
+	}
+	return s.game.Position().Turn() != color
+}
+
+func (s *Service) handleTakebackOffer(from wire.ParticipantID) error {
+	s.mu.Lock()
+	if s.canOfferLocked(from) {
+		s.offerBy = from
+	}
+	s.mu.Unlock()
+	s.emitState()
+	return nil
+}
+
+// AcceptTakeback accepts a pending offer from the opponent and reverts one move.
+func (s *Service) AcceptTakeback() error {
+	s.mu.Lock()
+	if s.offerBy == 0 || s.offerBy == s.ctx.Self || s.phaseLocked() != game.Playing {
+		s.mu.Unlock()
+		return errors.New("chess: no takeback to accept")
+	}
+	s.revertLocked()
+	s.mu.Unlock()
+	body, err := wire.Marshal(msg{Kind: kindTakebackAccept})
+	if err != nil {
+		return err
+	}
+	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+		return err
+	}
+	s.emitState()
+	return nil
+}
+
+func (s *Service) handleTakebackAccept(from wire.ParticipantID) error {
+	s.mu.Lock()
+	if s.offerBy != 0 && from != s.offerBy {
+		s.revertLocked()
+	}
+	s.mu.Unlock()
+	s.emitState()
+	return nil
+}
+
+// revertLocked restores the pre-move state stashed in prevSnap (1-level undo):
+// the corentings game is rebuilt from the pre-move PGN — rolling the move
+// history, position, turn and outcome back by one — and the draw-offer/lastUCI
+// are restored too. Every end reverts from its own identical stash.
+func (s *Service) revertLocked() {
+	if s.prevSnap == nil {
+		return
+	}
+	snap, err := wire.Body[snapshot](s.prevSnap)
+	if err != nil {
+		return
+	}
+	g := chesslib.NewGame()
+	if err := g.UnmarshalText([]byte(snap.PGN)); err != nil {
+		return
+	}
+	s.game = g
+	s.whiteID = wire.ParticipantID(snap.WhiteID)
+	s.blackID = wire.ParticipantID(snap.BlackID)
+	s.table.Seats = game.Seats{P1: s.whiteID, P2: s.blackID}
+	s.lastUCI = snap.LastUCI
+	s.drawnFrom = wire.ParticipantID(snap.DrawnFrom)
+	s.prevSnap = snap.Prev
+	s.offerBy = 0
+}
+
 func (s *Service) Snapshot() ([]byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.game == nil {
 		return nil, nil
 	}
+	return s.snapshotBlobLocked(s.prevSnap)
+}
+
+// snapshotBlobLocked serializes the current game state. prev is embedded so a
+// late joiner inherits the pre-move stash and can take part in a takeback; it is
+// nil when stashing prevSnap itself, to avoid unbounded nesting. Requires game != nil.
+func (s *Service) snapshotBlobLocked(prev []byte) ([]byte, error) {
 	return wire.Marshal(snapshot{
-		PGN:     s.game.String(),
-		WhiteID: uint32(s.whiteID),
-		BlackID: uint32(s.blackID),
+		PGN:       s.game.String(),
+		WhiteID:   uint32(s.whiteID),
+		BlackID:   uint32(s.blackID),
+		LastUCI:   s.lastUCI,
+		DrawnFrom: uint32(s.drawnFrom),
+		Prev:      prev,
 	})
 }
 
@@ -474,8 +612,8 @@ func (s *Service) Restore(blob []byte) error {
 	if err != nil {
 		return fmt.Errorf("chess: restore: %w", err)
 	}
-	game := chesslib.NewGame()
-	if err := game.UnmarshalText([]byte(snap.PGN)); err != nil {
+	g := chesslib.NewGame()
+	if err := g.UnmarshalText([]byte(snap.PGN)); err != nil {
 		return fmt.Errorf("chess: restore PGN: %w", err)
 	}
 	s.mu.Lock()
@@ -485,9 +623,12 @@ func (s *Service) Restore(blob []byte) error {
 		s.mu.Unlock()
 		return nil
 	}
-	s.game = game
+	s.game = g
 	s.whiteID = wire.ParticipantID(snap.WhiteID)
 	s.blackID = wire.ParticipantID(snap.BlackID)
+	s.lastUCI = snap.LastUCI
+	s.drawnFrom = wire.ParticipantID(snap.DrawnFrom)
+	s.prevSnap = snap.Prev
 	s.mu.Unlock()
 	s.emitState()
 	return nil
@@ -540,6 +681,8 @@ func (s *Service) stateLocked() State {
 			st.TurnID = s.blackID
 		}
 	}
+	st.CanTakeback = s.offerBy == 0 && s.canOfferLocked(s.ctx.Self)
+	st.TakebackBy = s.offerBy
 	return st
 }
 

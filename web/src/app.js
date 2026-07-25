@@ -141,6 +141,7 @@
       $(mod.paneId).classList.toggle("hidden", gid !== id);
       mod.setVisible(gid === id);
     }
+    updateTakebackBar(lastState[id]);
   }
 
   function closeGame() {
@@ -148,8 +149,28 @@
     $("game-pane").classList.add("hidden");
     $("game-picker").classList.remove("hidden");
     for (const mod of Object.values(games)) mod.setVisible(false);
+    updateTakebackBar(null);
     renderPicker();
   }
+
+  // ---- shared takeback bar --------------------------------------------------
+  // Every deterministic game's state carries canTakeback (this end may offer)
+  // and takebackBy (participant who has offered, 0 = none). One shared control
+  // drives them all, keyed off the active game's latest state.
+  const lastState = {}; // game id -> last "<id>.state" event
+  function updateTakebackBar(e) {
+    const tb = $("btn-takeback"), ab = $("btn-accept-takeback");
+    const canOffer = !!(e && e.canTakeback);
+    const canAccept = !!(e && e.takebackBy && e.takebackBy !== state.self);
+    tb.classList.toggle("hidden", !canOffer);
+    ab.classList.toggle("hidden", !canAccept);
+  }
+  $("btn-takeback").addEventListener("click", () => {
+    if (state.activeGame) send({ type: state.activeGame + ".offerTakeback" });
+  });
+  $("btn-accept-takeback").addEventListener("click", () => {
+    if (state.activeGame) send({ type: state.activeGame + ".acceptTakeback" });
+  });
 
   // Back-button controls funnel through history so in-app and OS Back agree.
   $("btn-back").addEventListener("click", () => history.back()); // game → picker
@@ -395,12 +416,17 @@
     // "<gameId>.xyz" events route to that game's module.
     const dot = e.type.indexOf(".");
     if (dot > 0) {
-      const mod = games[e.type.slice(0, dot)];
+      const gid = e.type.slice(0, dot);
+      const mod = games[gid];
       if (mod) {
         mod.onEvent(e.type, e);
         renderPicker();
         updateTurnCue();
-        if (e.type.endsWith(".state")) maybeNotifyTurn(e.type.slice(0, dot), e.turnId);
+        if (e.type.endsWith(".state")) {
+          lastState[gid] = e;
+          if (gid === state.activeGame) updateTakebackBar(e);
+          maybeNotifyTurn(gid, e.turnId);
+        }
       }
     }
   };

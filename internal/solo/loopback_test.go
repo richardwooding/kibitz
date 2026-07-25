@@ -85,7 +85,12 @@ func waitConverge(t *testing.T, a, b *connect4.Service) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		if reflect.DeepEqual(a.State(), b.State()) {
+		// CanTakeback is a per-end view (only the last mover may offer), so it
+		// legitimately differs between the two ends — normalise it out of the
+		// shared-state convergence check.
+		sa, sb := a.State(), b.State()
+		sa.CanTakeback, sb.CanTakeback = false, false
+		if reflect.DeepEqual(sa, sb) {
 			return
 		}
 		time.Sleep(2 * time.Millisecond)
