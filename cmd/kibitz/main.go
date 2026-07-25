@@ -15,10 +15,35 @@ import (
 	"strings"
 	"time"
 
+	"github.com/richardwooding/kibitz/internal/dashboard"
 	"github.com/richardwooding/kibitz/internal/pushfwd"
 	"github.com/richardwooding/kibitz/internal/relay"
 	"github.com/richardwooding/kibitz/web"
 )
+
+// dashboardConfigFromEnv reads the admin dashboard's config from environment
+// (Fly secrets). It returns ok=false when any required value is missing, so the
+// dashboard stays disabled unless fully configured — the repo and local builds
+// carry no secrets and expose nothing.
+func dashboardConfigFromEnv() (dashboard.Config, bool) {
+	id := os.Getenv("DASHBOARD_GITHUB_CLIENT_ID")
+	secret := os.Getenv("DASHBOARD_GITHUB_CLIENT_SECRET")
+	key := os.Getenv("DASHBOARD_COOKIE_KEY")
+	base := os.Getenv("DASHBOARD_BASE_URL")
+	var users []string
+	for _, u := range strings.Split(os.Getenv("DASHBOARD_ALLOW"), ",") {
+		if u = strings.TrimSpace(u); u != "" {
+			users = append(users, u)
+		}
+	}
+	if id == "" || secret == "" || len(key) < 16 || base == "" || len(users) == 0 {
+		return dashboard.Config{}, false
+	}
+	return dashboard.Config{
+		ClientID: id, ClientSecret: secret, CookieKey: []byte(key),
+		Allow: users, BaseURL: base,
+	}, true
+}
 
 // precompressed serves an embedded asset's brotli (.br) or gzip (.gz) sibling
 // when the client accepts it, else falls back to the raw FileServer. This keeps
@@ -129,6 +154,15 @@ func main() {
 	// (CORS forbids posting to push services directly) and this forwards it. It
 	// holds no keys and sees no game content — see internal/pushfwd.
 	mux.Handle("/push", pushfwd.New())
+
+	// Admin dashboard (GitHub-OAuth-gated) — only wired up when its Fly secrets
+	// are present, so it's dormant locally and in the public build.
+	if cfg, ok := dashboardConfigFromEnv(); ok {
+		dashboard.New(cfg, relaySrv).Register(mux)
+		log.Printf("admin dashboard enabled at /dashboard (%d allowed user(s))", len(cfg.Allow))
+	} else {
+		log.Print("admin dashboard disabled (set DASHBOARD_* env vars to enable)")
+	}
 
 	srv := &http.Server{
 		Addr:              *listen,

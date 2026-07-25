@@ -15,14 +15,19 @@ type registry struct {
 	maxCount int
 	maxAge   time.Duration
 	grace    time.Duration
+	metrics  *Metrics
 }
 
-func newRegistry(maxSessions int, maxAge, grace time.Duration) *registry {
+func newRegistry(maxSessions int, maxAge, grace time.Duration, m *Metrics) *registry {
+	if m == nil {
+		m = &Metrics{}
+	}
 	return &registry{
 		sessions: map[wire.SessionID]*hub{},
 		maxCount: maxSessions,
 		maxAge:   maxAge,
 		grace:    grace,
+		metrics:  m,
 	}
 }
 
@@ -37,8 +42,9 @@ func (r *registry) create(id wire.SessionID, maxParticipants int) (*hub, uint16,
 	if len(r.sessions) >= r.maxCount {
 		return nil, wire.ErrCodeRateLimited, "relay at session capacity"
 	}
-	h := newHub(id, maxParticipants, r.grace, func() { r.remove(id) })
+	h := newHub(id, maxParticipants, r.grace, r.metrics, func() { r.remove(id) })
 	r.sessions[id] = h
+	r.metrics.SessionsCreated.Add(1)
 	return h, 0, ""
 }
 
@@ -47,6 +53,19 @@ func (r *registry) get(id wire.SessionID) (*hub, bool) {
 	defer r.mu.Unlock()
 	h, ok := r.sessions[id]
 	return h, ok
+}
+
+// hubs returns a snapshot of the live hubs. Callers must query each hub's
+// run-owned state via hub.snapshot() AFTER this returns (i.e. without holding
+// r.mu) to avoid deadlocking against a hub shutting down through remove.
+func (r *registry) hubs() []*hub {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]*hub, 0, len(r.sessions))
+	for _, h := range r.sessions {
+		out = append(out, h)
+	}
+	return out
 }
 
 func (r *registry) remove(id wire.SessionID) {

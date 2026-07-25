@@ -66,15 +66,20 @@ type Server struct {
 	opts    Options
 	reg     *registry
 	limiter *ipLimiter
+	metrics *Metrics
+	started time.Time
 	stop    chan struct{}
 }
 
 func New(opts Options) *Server {
 	opts.defaults()
+	m := &Metrics{}
 	s := &Server{
 		opts:    opts,
-		reg:     newRegistry(opts.MaxSessions, opts.MaxAge, opts.Grace),
+		reg:     newRegistry(opts.MaxSessions, opts.MaxAge, opts.Grace, m),
 		limiter: newIPLimiter(opts.ConnRate, opts.ConnBurst),
+		metrics: m,
+		started: time.Now(),
 		stop:    make(chan struct{}),
 	}
 	go s.reg.sweepLoop(opts.SweepEvery, s.stop)

@@ -15,8 +15,9 @@ type hub struct {
 	max     int
 	grace   time.Duration // how long a dropped slot is held for reconnect (0 = never)
 	created time.Time
-	inbox   chan any // joinCmd | leaveCmd | resumeCmd | graceExpiredCmd | frameCmd | closeCmd
+	inbox   chan any // joinCmd | leaveCmd | resumeCmd | graceExpiredCmd | frameCmd | closeCmd | statsCmd
 	done    chan struct{}
+	metrics *Metrics // cumulative relay counters (atomic; shared with the Server)
 
 	// Owned by run() — never touched from outside.
 	clients map[wire.ParticipantID]*client
@@ -118,7 +119,10 @@ type claimHostCmd struct{ id wire.ParticipantID }
 
 const hostID wire.ParticipantID = 1
 
-func newHub(id wire.SessionID, maxParticipants int, grace time.Duration, onEmpty func()) *hub {
+func newHub(id wire.SessionID, maxParticipants int, grace time.Duration, metrics *Metrics, onEmpty func()) *hub {
+	if metrics == nil {
+		metrics = &Metrics{}
+	}
 	h := &hub{
 		id:      id,
 		max:     maxParticipants,
@@ -126,6 +130,7 @@ func newHub(id wire.SessionID, maxParticipants int, grace time.Duration, onEmpty
 		created: time.Now(),
 		inbox:   make(chan any, 16),
 		done:    make(chan struct{}),
+		metrics: metrics,
 		clients: map[wire.ParticipantID]*client{},
 		nextID:  hostID,
 		host:    hostID,
@@ -154,6 +159,8 @@ func (h *hub) run(onEmpty func()) {
 			h.handleClaimHost(cmd)
 		case frameCmd:
 			h.route(cmd)
+		case statsCmd:
+			h.handleStats(cmd)
 		case closeCmd:
 			h.handleClose(cmd)
 			return
@@ -193,6 +200,7 @@ func (h *hub) handleClose(cmd closeCmd) {
 
 func (h *hub) handleJoin(cmd joinCmd) {
 	if len(h.clients) >= h.max {
+		h.metrics.Errors.Add(1)
 		cmd.reply <- joinReply{errC: wire.ErrCodeSessionFull, errS: "session full"}
 		return
 	}
@@ -220,6 +228,7 @@ func (h *hub) handleJoin(cmd joinCmd) {
 	cmd.out <- frame // fresh buffered channel: never blocks
 
 	h.clients[id] = &client{id: id, out: cmd.out, kick: cmd.kick, token: token, gen: 1}
+	h.metrics.Joins.Add(1)
 	cmd.reply <- joinReply{ok: true, id: id, gen: 1}
 	h.broadcastFrame(wire.MsgParticipantJoined, wire.ParticipantJoined{ParticipantID: id}, id)
 }
@@ -293,6 +302,7 @@ func (h *hub) removeParticipant(id wire.ParticipantID) bool {
 func (h *hub) handleResume(cmd resumeCmd) {
 	c, ok := h.clients[cmd.id]
 	if !ok || subtle.ConstantTimeCompare(c.token, cmd.token) != 1 {
+		h.metrics.Errors.Add(1)
 		cmd.reply <- resumeReply{errC: wire.ErrCodeResumeRejected, errS: "cannot resume session"}
 		return
 	}
@@ -332,21 +342,26 @@ func (h *hub) handleResume(cmd resumeCmd) {
 		default: // extreme backlog: drop the overflow rather than block the hub
 		}
 	}
+	h.metrics.Resumes.Add(1)
 	cmd.reply <- resumeReply{ok: true, out: c.out, gen: c.gen}
 }
 
 // route forwards Direct/Broadcast frames, re-encoding with From stamped by
 // the relay so a client can never spoof its sender ID.
 func (h *hub) route(cmd frameCmd) {
+	h.metrics.FramesForwarded.Add(1)
+	h.metrics.BytesForwarded.Add(uint64(len(cmd.raw)))
 	switch cmd.typ {
 	case wire.MsgDirect:
 		d, err := wire.Body[wire.Direct](cmd.raw)
 		if err != nil {
+			h.metrics.Errors.Add(1)
 			h.sendTo(cmd.from, wire.MsgError, wire.Error{Code: wire.ErrCodeBadFrame, Msg: "bad direct frame"})
 			return
 		}
 		d.From = cmd.from
 		if _, ok := h.clients[d.To]; !ok {
+			h.metrics.Errors.Add(1)
 			h.sendTo(cmd.from, wire.MsgError, wire.Error{Code: wire.ErrCodeUnknownPeer, Msg: "unknown peer"})
 			return
 		}
@@ -354,6 +369,7 @@ func (h *hub) route(cmd frameCmd) {
 	case wire.MsgBroadcast:
 		b, err := wire.Body[wire.Broadcast](cmd.raw)
 		if err != nil {
+			h.metrics.Errors.Add(1)
 			h.sendTo(cmd.from, wire.MsgError, wire.Error{Code: wire.ErrCodeBadFrame, Msg: "bad broadcast frame"})
 			return
 		}

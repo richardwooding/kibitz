@@ -25,6 +25,14 @@ func newIPLimiter(limit rate.Limit, burst int) *ipLimiter {
 	return &ipLimiter{m: map[string]*rate.Limiter{}, limit: limit, burst: burst}
 }
 
+// count returns how many client IPs are currently tracked (for the dashboard;
+// the IPs themselves are never exposed).
+func (l *ipLimiter) count() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return len(l.m)
+}
+
 func (l *ipLimiter) allow(remoteAddr string) bool {
 	ip, _, err := net.SplitHostPort(remoteAddr)
 	if err != nil {
