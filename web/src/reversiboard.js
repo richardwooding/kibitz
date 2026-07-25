@@ -18,6 +18,14 @@
     const myTurn = () => g && (isHotseat() || g.turnId === ctx.self());
     const over = () => g && g.outcome !== "";
 
+    function statusText() {
+      const score = ` · ⚫${g.black} ⚪${g.white}`;
+      if (over()) return g.outcome + score;
+      if (isHotseat()) return `${g.turnId === g.p1Id ? "⚫" : "⚪"} to move` + score;
+      return (myTurn() ? "Your move" : ctx.name(g.turnId) + " to move") +
+        score + (isPlayer() ? ` · you are ${g.p1Id === ctx.self() ? "⚫" : "⚪"}` : "");
+    }
+
     function render() {
       if (!visible || !g) return;
       ctx.renderMoves($("reversi-moves"), g.history);
@@ -26,40 +34,37 @@
         statusEl.textContent = "Waiting for the game to start…";
         return;
       }
-      const score = ` · ⚫${g.black} ⚪${g.white}`;
-      if (over()) {
-        statusEl.textContent = g.outcome + score;
-      } else if (isHotseat()) {
-        statusEl.textContent = `${g.turnId === g.p1Id ? "⚫" : "⚪"} to move` + score;
-      } else {
-        statusEl.textContent = (myTurn() ? "Your move" : ctx.name(g.turnId) + " to move") +
-          score + (isPlayer() ? ` · you are ${g.p1Id === ctx.self() ? "⚫" : "⚪"}` : "");
-      }
+      statusEl.textContent = statusText();
       $("reversi-resign").classList.toggle("hidden", !isPlayer() || over());
+      renderBoard();
+    }
 
+    function renderBoard() {
       const el = $("reversi-board");
       el.classList.toggle("my-turn", myTurn() && !over());
       el.innerHTML = "";
       const legal = new Set(myTurn() ? (g.legal || []) : []);
-      for (let sq = 0; sq < 64; sq++) {
-        const cell = document.createElement("button");
-        cell.type = "button";
-        cell.className = "rv-cell";
-        const v = g.board[sq];
-        if (v !== 0) {
-          const disc = document.createElement("span");
-          disc.className = "rv-disc " + (v > 0 ? "black" : "white");
-          if (flips.has(sq)) disc.classList.add("flip");
-          cell.appendChild(disc);
-        }
-        if (sq === g.lastSq) cell.classList.add("last", "place-pop");
-        if (legal.has(sq)) {
-          cell.classList.add("legal");
-          cell.addEventListener("click", () => send({ type: "reversi.place", sq }));
-        }
-        el.appendChild(cell);
-      }
+      for (let sq = 0; sq < 64; sq++) el.appendChild(cellFor(sq, legal));
       flips = new Set();
+    }
+
+    function cellFor(sq, legal) {
+      const cell = document.createElement("button");
+      cell.type = "button";
+      cell.className = "rv-cell";
+      const v = g.board[sq];
+      if (v !== 0) {
+        const disc = document.createElement("span");
+        disc.className = "rv-disc " + (v > 0 ? "black" : "white");
+        if (flips.has(sq)) disc.classList.add("flip");
+        cell.appendChild(disc);
+      }
+      if (sq === g.lastSq) cell.classList.add("last", "place-pop");
+      if (legal.has(sq)) {
+        cell.classList.add("legal");
+        cell.addEventListener("click", () => send({ type: "reversi.place", sq }));
+      }
+      return cell;
     }
 
     $("reversi-resign").addEventListener("click", () => {
@@ -72,33 +77,44 @@
       return g.outcome.startsWith(iAmBlack ? "black wins" : "white wins");
     }
 
+    // Discs whose color flipped since last state get the flip animation.
+    function detectFlips(prev) {
+      flips = new Set();
+      if (!(prev && prev.board)) return;
+      let flipped = false;
+      for (let i = 0; i < 64; i++) {
+        if (prev.board[i] !== 0 && g.board[i] !== 0 && prev.board[i] !== g.board[i]) {
+          flips.add(i);
+          flipped = true;
+        }
+      }
+      const placed = prev.board[g.lastSq] === 0 && g.board[g.lastSq] !== 0;
+      if ((placed || flipped) && window.fx) window.fx.sound.move();
+    }
+
+    function announcePass() {
+      if (g.passed && !lastPassToasted) {
+        toast(myTurn() ? "Opponent had no move — you go again." : "No legal move — turn passed.");
+      }
+      lastPassToasted = g.passed;
+    }
+
+    function maybeCelebrate(prev) {
+      if (prev && prev.playing && prev.outcome === "" && over() && window.fx) {
+        window.fx.celebrate($("game-reversi"), outcomeWon(), window.fx.result(outcomeWon(),
+          { draw: g.outcome.startsWith("draw"), spectator: g.outcome, hotseat: isHotseat() }));
+      }
+    }
+
     return {
       onEvent(type, e) {
         if (type !== "reversi.state") return;
         const prev = g;
         g = e;
-        // Discs whose color flipped since last state get the flip animation.
-        flips = new Set();
-        if (prev && prev.board) {
-          let flipped = false;
-          for (let i = 0; i < 64; i++) {
-            if (prev.board[i] !== 0 && g.board[i] !== 0 && prev.board[i] !== g.board[i]) {
-              flips.add(i);
-              flipped = true;
-            }
-          }
-          const placed = prev.board[g.lastSq] === 0 && g.board[g.lastSq] !== 0;
-          if ((placed || flipped) && window.fx) window.fx.sound.move();
-        }
-        if (g.passed && !lastPassToasted) {
-          toast(myTurn() ? "Opponent had no move — you go again." : "No legal move — turn passed.");
-        }
-        lastPassToasted = g.passed;
+        detectFlips(prev);
+        announcePass();
         render();
-        if (prev && prev.playing && prev.outcome === "" && over() && window.fx) {
-          window.fx.celebrate($("game-reversi"), outcomeWon(), window.fx.result(outcomeWon(),
-            { draw: g.outcome.startsWith("draw"), spectator: g.outcome, hotseat: isHotseat() }));
-        }
+        maybeCelebrate(prev);
       },
       setVisible(v) { visible = v; if (v) render(); },
       card() {

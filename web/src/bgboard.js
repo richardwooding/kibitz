@@ -21,24 +21,24 @@
     let popPoints = new Set(); // global points whose checkers just changed
     let diceRolled = false;    // fresh dice this render → tumble animation
 
-    const isHotseat = () => ctx.hotseat && ctx.hotseat();
-    const isWhite = () => g && g.whiteId === ctx.self();            // self's colour
-    const moverIsWhite = () => g && g.turnId === g.whiteId;         // colour to move
+    function isHotseat() { return ctx.hotseat && ctx.hotseat(); }
+    function isWhite() { return g && g.whiteId === ctx.self(); }            // self's colour
+    function moverIsWhite() { return g && g.turnId === g.whiteId; }         // colour to move
     // Coordinate mapping / pending preview use the on-turn side's perspective.
     // Normally that's you (you only move on your turn); in solo you drive both,
     // so it follows the side to move.
-    const persWhite = () => (isHotseat() ? moverIsWhite() : isWhite());
-    const isPlayer = () => isHotseat() || (g && (g.whiteId === ctx.self() || g.blackId === ctx.self()));
-    const myTurn = () => g && (isHotseat() || g.turnId === ctx.self());
-    const bgWon = () => {
+    function persWhite() { return isHotseat() ? moverIsWhite() : isWhite(); }
+    function isPlayer() { return isHotseat() || (g && (g.whiteId === ctx.self() || g.blackId === ctx.self())); }
+    function myTurn() { return g && (isHotseat() || g.turnId === ctx.self()); }
+    function bgWon() {
       if (!isPlayer()) return null;
       if (g.outcome.startsWith("white")) return isWhite();
       if (g.outcome.startsWith("black")) return !isWhite();
       return null;
-    };
+    }
 
-    const relToGlobal = (rel) => (rel === 25 || rel === 0) ? rel : (persWhite() ? rel : 25 - rel);
-    const globalToRel = (p) => (p === 25 || p === 0) ? p : (persWhite() ? p : 25 - p);
+    function relToGlobal(rel) { return (rel === 25 || rel === 0) ? rel : (persWhite() ? rel : 25 - rel); }
+    function globalToRel(p) { return (p === 25 || p === 0) ? p : (persWhite() ? p : 25 - p); }
 
     function candidates() {
       return (g.legal || []).filter((turn) =>
@@ -62,17 +62,25 @@
       };
       const sign = persWhite() ? 1 : -1;
       for (const [f, to] of pending) {
-        if (f === 25) { if (persWhite()) st.barW--; else st.barB--; }
-        else st.points[relToGlobal(f)] -= sign;
-        if (to === 0) { if (persWhite()) st.offW++; else st.offB++; continue; }
-        const gp = relToGlobal(to);
-        if (st.points[gp] === -sign) { // lone opposing blot: hit
-          st.points[gp] = 0;
-          if (persWhite()) st.barB++; else st.barW++;
-        }
-        st.points[gp] += sign;
+        removeFrom(st, sign, f);
+        addTo(st, sign, to);
       }
       return st;
+    }
+
+    function removeFrom(st, sign, f) {
+      if (f === 25) { if (persWhite()) st.barW--; else st.barB--; }
+      else st.points[relToGlobal(f)] -= sign;
+    }
+
+    function addTo(st, sign, to) {
+      if (to === 0) { if (persWhite()) st.offW++; else st.offB++; return; }
+      const gp = relToGlobal(to);
+      if (st.points[gp] === -sign) { // lone opposing blot: hit
+        st.points[gp] = 0;
+        if (persWhite()) st.barB++; else st.barW++;
+      }
+      st.points[gp] += sign;
     }
 
     function onPoint(p) {
@@ -194,18 +202,37 @@
         $("bg-roll").classList.add("hidden");
         return;
       }
-      let status;
-      const moverIcon = moverIsWhite() ? "⚪" : "⚫";
-      if (g.phase === "over") status = g.outcome;
-      else if (g.phase === "rolling") status = isHotseat() ? `${moverIcon} to roll` : (myTurn() ? "Your roll" : "Waiting for opponent to roll");
-      else if (g.phase === "handshake") status = "Rolling…";
-      else if (isHotseat()) status = `${moverIcon} to move`;
-      else if (myTurn()) status = "Your move";
-      else if (isPlayer()) status = ctx.name(g.turnId) + " to move";
-      else status = "Kibitzing";
-      statusEl.textContent = `${status} · pips ⚪${g.pipsW} ⚫${g.pipsB}` +
-        (isPlayer() && !isHotseat() ? ` · you are ${isWhite() ? "⚪" : "⚫"}` : "");
+      statusEl.textContent = statusText();
+      updateDice();
+      updateControls();
+      const hi = computeHighlights();
+      render($("bg-board"), previewBoard(), hi);
+      popPoints = new Set();
+      diceRolled = false;
+    }
 
+    function rollStatus(moverIcon) {
+      if (isHotseat()) return `${moverIcon} to roll`;
+      return myTurn() ? "Your roll" : "Waiting for opponent to roll";
+    }
+
+    function statusWord() {
+      const moverIcon = moverIsWhite() ? "⚪" : "⚫";
+      if (g.phase === "over") return g.outcome;
+      if (g.phase === "rolling") return rollStatus(moverIcon);
+      if (g.phase === "handshake") return "Rolling…";
+      if (isHotseat()) return `${moverIcon} to move`;
+      if (myTurn()) return "Your move";
+      if (isPlayer()) return ctx.name(g.turnId) + " to move";
+      return "Kibitzing";
+    }
+
+    function statusText() {
+      const suffix = (isPlayer() && !isHotseat()) ? ` · you are ${isWhite() ? "⚪" : "⚫"}` : "";
+      return `${statusWord()} · pips ⚪${g.pipsW} ⚫${g.pipsB}${suffix}`;
+    }
+
+    function updateDice() {
       const faces = ["", "⚀", "⚁", "⚂", "⚃", "⚄", "⚅"];
       const diceEl = $("bg-dice");
       diceEl.textContent = g.phase === "moving"
@@ -216,12 +243,16 @@
         void diceEl.offsetWidth; // reflow so the animation re-triggers
         diceEl.classList.add("rolled");
       }
+    }
 
+    function updateControls() {
       $("bg-board").classList.toggle("my-turn", isPlayer() && myTurn() && g.phase !== "over" && g.phase !== "handshake");
       $("bg-roll").classList.toggle("hidden", !(g.phase === "rolling" && myTurn() && isPlayer()));
       $("bg-undo").classList.toggle("hidden", pending.length === 0);
       $("bg-resign").classList.toggle("hidden", !isPlayer() || g.phase === "over");
+    }
 
+    function computeHighlights() {
       const hi = { sources: new Set(), targets: new Set(), mover: persWhite() ? "w" : "b" };
       if (g.phase === "moving" && myTurn()) {
         for (const o of options()) {
@@ -234,9 +265,7 @@
           }
         }
       }
-      render($("bg-board"), previewBoard(), hi);
-      popPoints = new Set();
-      diceRolled = false;
+      return hi;
     }
 
     // one-time control wiring
@@ -250,36 +279,41 @@
       if (confirm("Resign the backgammon game?")) send({ type: "bg.resign" });
     });
 
+    function diffState(prev) {
+      for (let p = 1; p <= 24; p++) {
+        if (prev.points[p] !== g.points[p]) popPoints.add(p);
+      }
+      const diceNow = g.phase === "moving" && g.dice[0] >= 1;
+      const diceChanged = !prev.dice || prev.dice[0] !== g.dice[0] ||
+        prev.dice[1] !== g.dice[1] || prev.phase !== "moving";
+      diceRolled = diceNow && diceChanged;
+      if (window.fx) {
+        if (diceRolled) window.fx.sound.turn();
+        else if (popPoints.size) window.fx.sound.move();
+      }
+    }
+
+    function applyState(e) {
+      const prev = g;
+      g = e;
+      pending = [];
+      from = null;
+      popPoints = new Set();
+      diceRolled = false;
+      if (prev && prev.points) diffState(prev);
+      renderPane();
+      if (prev && prev.playing && prev.phase !== "over" && g.phase === "over" && window.fx) {
+        window.fx.celebrate($("game-bg"), bgWon(), window.fx.result(bgWon(),
+          { spectator: g.outcome, hotseat: isHotseat() }));
+      }
+    }
+
     return {
       onEvent(type, e) {
         switch (type) {
-          case "bg.state": {
-            const prev = g;
-            g = e;
-            pending = [];
-            from = null;
-            popPoints = new Set();
-            diceRolled = false;
-            if (prev && prev.points) {
-              for (let p = 1; p <= 24; p++) {
-                if (prev.points[p] !== g.points[p]) popPoints.add(p);
-              }
-              const diceNow = g.phase === "moving" && g.dice[0] >= 1;
-              const diceChanged = !prev.dice || prev.dice[0] !== g.dice[0] ||
-                prev.dice[1] !== g.dice[1] || prev.phase !== "moving";
-              diceRolled = diceNow && diceChanged;
-              if (window.fx) {
-                if (diceRolled) window.fx.sound.turn();
-                else if (popPoints.size) window.fx.sound.move();
-              }
-            }
-            renderPane();
-            if (prev && prev.playing && prev.phase !== "over" && g.phase === "over" && window.fx) {
-              window.fx.celebrate($("game-bg"), bgWon(), window.fx.result(bgWon(),
-                { spectator: g.outcome, hotseat: isHotseat() }));
-            }
+          case "bg.state":
+            applyState(e);
             break;
-          }
           case "bg.danced":
             toast(e.by === ctx.self() ? "No legal moves — turn passed." : "Opponent danced (no legal moves).");
             break;

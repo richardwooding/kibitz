@@ -19,6 +19,16 @@
     const myTurn = () => g && (isHotseat() || g.turnId === ctx.self());
     const over = () => g && g.outcome !== "";
 
+    function statusText() {
+      if (over()) return g.outcome;
+      const stone = g.turnId === g.p1Id ? "⚫" : "⚪";
+      if (isHotseat()) return `${stone} to move`;
+      const mine = g.turnId === ctx.self();
+      let s = mine ? `Your move ${stone}` : `${ctx.name(g.turnId)}'s move ${stone}`;
+      if (isPlayer()) s += ` · you are ${g.p1Id === ctx.self() ? "⚫" : "⚪"}`;
+      return s;
+    }
+
     function render() {
       if (!visible || !g) return;
       ctx.renderMoves($("gomoku-moves"), g.history);
@@ -27,46 +37,39 @@
         statusEl.textContent = "Waiting for the game to start…";
         return;
       }
-      if (over()) {
-        statusEl.textContent = g.outcome;
-      } else {
-        const stone = g.turnId === g.p1Id ? "⚫" : "⚪";
-        if (isHotseat()) {
-          statusEl.textContent = `${stone} to move`;
-        } else {
-          const mine = g.turnId === ctx.self();
-          statusEl.textContent = mine ? `Your move ${stone}` : `${ctx.name(g.turnId)}'s move ${stone}`;
-          if (isPlayer()) {
-            statusEl.textContent += ` · you are ${g.p1Id === ctx.self() ? "⚫" : "⚪"}`;
-          }
-        }
-      }
+      statusEl.textContent = statusText();
       $("gomoku-resign").classList.toggle("hidden", !isPlayer() || over());
+      renderBoard(myTurn() && !over());
+    }
 
+    function renderBoard(canPlay) {
       const el = $("gomoku-board");
-      el.classList.toggle("my-turn", myTurn() && !over());
+      el.classList.toggle("my-turn", canPlay);
       el.innerHTML = "";
       const win = new Set(g.winCells || []);
-      const canPlay = myTurn() && !over();
       for (let idx = 0; idx < SIZE * SIZE; idx++) {
-        const cell = document.createElement("button");
-        cell.type = "button";
-        cell.className = "gm-cell";
-        const v = g.board[idx];
-        if (v !== 0) {
-          const stone = document.createElement("span");
-          stone.className = "gm-stone " + (v === 1 ? "black" : "white");
-          cell.appendChild(stone);
-        }
-        if (win.has(idx)) cell.classList.add("win");
-        if (idx === g.last) cell.classList.add("last");
-        if (canPlay && v === 0) {
-          const row = Math.floor(idx / SIZE), col = idx % SIZE;
-          cell.classList.add("open");
-          cell.addEventListener("click", () => send({ type: "gomoku.place", row, col }));
-        }
-        el.appendChild(cell);
+        el.appendChild(cellFor(idx, win, canPlay));
       }
+    }
+
+    function cellFor(idx, win, canPlay) {
+      const cell = document.createElement("button");
+      cell.type = "button";
+      cell.className = "gm-cell";
+      const v = g.board[idx];
+      if (v !== 0) {
+        const stone = document.createElement("span");
+        stone.className = "gm-stone " + (v === 1 ? "black" : "white");
+        cell.appendChild(stone);
+      }
+      if (win.has(idx)) cell.classList.add("win");
+      if (idx === g.last) cell.classList.add("last");
+      if (canPlay && v === 0) {
+        const row = Math.floor(idx / SIZE), col = idx % SIZE;
+        cell.classList.add("open");
+        cell.addEventListener("click", () => send({ type: "gomoku.place", row, col }));
+      }
+      return cell;
     }
 
     $("gomoku-resign").addEventListener("click", () => {

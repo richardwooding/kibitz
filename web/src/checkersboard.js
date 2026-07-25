@@ -64,17 +64,20 @@
         statusEl.textContent = "Waiting for the game to start…";
         return;
       }
-      if (over()) {
-        statusEl.textContent = g.outcome;
-      } else if (isHotseat()) {
-        statusEl.textContent = `${g.turnId === g.p1Id ? "Dark" : "Light"} to move`;
-      } else {
-        statusEl.textContent = (myTurn() ? "Your move" : ctx.name(g.turnId) + " to move") +
-          (isPlayer() ? ` · you are ${g.p1Id === ctx.self() ? "dark" : "light"}` : "");
-      }
+      statusEl.textContent = statusText();
       $("checkers-resign").classList.toggle("hidden", !isPlayer() || over());
       $("checkers-draw").classList.toggle("hidden", !isPlayer() || over() || (ctx.vsBot && ctx.vsBot()));
+      renderBoard();
+    }
 
+    function statusText() {
+      if (over()) return g.outcome;
+      if (isHotseat()) return `${g.turnId === g.p1Id ? "Dark" : "Light"} to move`;
+      return (myTurn() ? "Your move" : ctx.name(g.turnId) + " to move") +
+        (isPlayer() ? ` · you are ${g.p1Id === ctx.self() ? "dark" : "light"}` : "");
+    }
+
+    function renderBoard() {
       const el = $("checkers-board");
       el.classList.toggle("my-turn", myTurn() && !over());
       el.innerHTML = "";
@@ -83,33 +86,46 @@
       const flip = g.p1Id === ctx.self();
       for (let vr = 0; vr < 8; vr++) {
         for (let vc = 0; vc < 8; vc++) {
-          const r = flip ? 7 - vr : vr;
-          const c = flip ? 7 - vc : vc;
-          const cell = document.createElement("button");
-          cell.type = "button";
-          const dark = (r + c) % 2 === 1;
-          cell.className = "ck-cell " + (dark ? "dark" : "light");
-          if (dark) {
-            const s = r % 2 === 0 ? r * 4 + (c - 1) / 2 : r * 4 + c / 2;
-            cell.dataset.sq = s;
-            const v = g.board[s];
-            if (v !== 0) {
-              const piece = document.createElement("span");
-              piece.className = "ck-piece " + (v > 0 ? "p1" : "p2");
-              piece.textContent = Math.abs(v) === 2 ? "♛" : "";
-              if (s === anim.crowned) piece.classList.add("crowned");
-              cell.appendChild(piece);
-            }
-            if (anim.captured.has(s)) cell.classList.add("captured");
-            if (path.includes(s)) cell.classList.add("selected");
-            if (hiNext.has(s)) cell.classList.add("target");
-            if (hiSrc.has(s)) cell.classList.add("source");
-            cell.addEventListener("click", () => onSquare(s));
-          }
-          el.appendChild(cell);
+          el.appendChild(cellFor(vr, vc, flip, hiNext, hiSrc));
         }
       }
-      // Slide the moved piece from its origin to its destination.
+      applySlide(el);
+      anim = { slide: null, captured: new Set(), crowned: -1 };
+    }
+
+    function cellFor(vr, vc, flip, hiNext, hiSrc) {
+      const r = flip ? 7 - vr : vr;
+      const c = flip ? 7 - vc : vc;
+      const cell = document.createElement("button");
+      cell.type = "button";
+      const dark = (r + c) % 2 === 1;
+      cell.className = "ck-cell " + (dark ? "dark" : "light");
+      if (dark) fillDark(cell, r, c, hiNext, hiSrc);
+      return cell;
+    }
+
+    function fillDark(cell, r, c, hiNext, hiSrc) {
+      const s = r % 2 === 0 ? r * 4 + (c - 1) / 2 : r * 4 + c / 2;
+      cell.dataset.sq = s;
+      const v = g.board[s];
+      if (v !== 0) cell.appendChild(pieceFor(v, s));
+      if (anim.captured.has(s)) cell.classList.add("captured");
+      if (path.includes(s)) cell.classList.add("selected");
+      if (hiNext.has(s)) cell.classList.add("target");
+      if (hiSrc.has(s)) cell.classList.add("source");
+      cell.addEventListener("click", () => onSquare(s));
+    }
+
+    function pieceFor(v, s) {
+      const piece = document.createElement("span");
+      piece.className = "ck-piece " + (v > 0 ? "p1" : "p2");
+      piece.textContent = Math.abs(v) === 2 ? "♛" : "";
+      if (s === anim.crowned) piece.classList.add("crowned");
+      return piece;
+    }
+
+    // Slide the moved piece from its origin to its destination.
+    function applySlide(el) {
       if (anim.slide && window.fx) {
         const fromCell = el.querySelector(`.ck-cell[data-sq="${anim.slide.from}"]`);
         const toPiece = el.querySelector(`.ck-cell[data-sq="${anim.slide.to}"] .ck-piece`);
@@ -119,7 +135,6 @@
           window.fx.slideFrom(toPiece, a.left - b.left, a.top - b.top);
         }
       }
-      anim = { slide: null, captured: new Set(), crowned: -1 };
     }
 
     $("checkers-resign").addEventListener("click", () => {

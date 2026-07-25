@@ -169,57 +169,83 @@
       el.appendChild(hint);
     }
     for (const [id, mod] of Object.entries(games)) {
-      const card = document.createElement("div");
-      card.className = "game-card";
-      const title = document.createElement("div");
-      title.className = "game-title";
-      // Split "🔴 Connect Four" into a big icon + the name so the glyph is legible.
-      const sp = mod.label.indexOf(" ");
-      const iconEl = document.createElement("span");
-      iconEl.className = "game-icon";
-      iconEl.textContent = sp > 0 ? mod.label.slice(0, sp) : mod.label;
-      const nameEl = document.createElement("span");
-      nameEl.textContent = sp > 0 ? mod.label.slice(sp + 1) : "";
-      title.append(iconEl, nameEl);
-      card.appendChild(title);
-
-      const info = mod.card();
-      const badge = document.createElement("div");
-      badge.className = "game-badge " + info.status;
-      if (info.status === "live") {
-        badge.textContent = info.myTurn ? "● your turn" : "○ in play";
-        card.classList.add("clickable");
-        card.addEventListener("click", () => openGame(id));
-      } else if (info.status === "over") {
-        badge.textContent = info.detail || "finished";
-        card.classList.add("clickable");
-        card.addEventListener("click", () => openGame(id));
-        if (canStart) card.appendChild(actionButton("Rematch", id));
-      } else if (state.solo && !state.vsBot && id === "battleship") {
-        // Battleship's simultaneous secret placement doesn't fit pass-and-play on
-        // one screen; vs the computer it's fully playable.
-        badge.textContent = "two players";
-        const note = document.createElement("div");
-        note.className = "game-matchup";
-        note.textContent = "Invite a friend to play";
-        card.appendChild(note);
-      } else {
-        badge.textContent = "not started";
-        if (canStart) card.appendChild(actionButton("+ Start", id));
-      }
-      card.appendChild(badge);
-      // Who's playing (live/finished games) — same pair across the table.
-      if (info.status === "live" || info.status === "over") {
-        const vs = matchupText();
-        if (vs) {
-          const m = document.createElement("div");
-          m.className = "game-matchup";
-          m.textContent = vs;
-          card.appendChild(m);
-        }
-      }
-      el.appendChild(card);
+      el.appendChild(buildGameCard(id, mod, canStart));
     }
+  }
+
+  // Split "🔴 Connect Four" into a big icon + the name so the glyph is legible.
+  function buildGameTitle(mod) {
+    const title = document.createElement("div");
+    title.className = "game-title";
+    const sp = mod.label.indexOf(" ");
+    const iconEl = document.createElement("span");
+    iconEl.className = "game-icon";
+    iconEl.textContent = sp > 0 ? mod.label.slice(0, sp) : mod.label;
+    const nameEl = document.createElement("span");
+    nameEl.textContent = sp > 0 ? mod.label.slice(sp + 1) : "";
+    title.append(iconEl, nameEl);
+    return title;
+  }
+
+  // Build the status badge and attach any per-status affordances (click-to-open,
+  // Rematch/Start buttons, matchup note). Returns the badge element to append.
+  function makeCardOpenGame(card, id) {
+    card.classList.add("clickable");
+    card.addEventListener("click", () => openGame(id));
+  }
+
+  // Not-yet-live statuses: battleship's two-player note, or the default
+  // "not started" card with its Start button.
+  function applyIdleBadge(id, badge, card, canStart) {
+    if (state.solo && !state.vsBot && id === "battleship") {
+      // Battleship's simultaneous secret placement doesn't fit pass-and-play on
+      // one screen; vs the computer it's fully playable.
+      badge.textContent = "two players";
+      const note = document.createElement("div");
+      note.className = "game-matchup";
+      note.textContent = "Invite a friend to play";
+      card.appendChild(note);
+    } else {
+      badge.textContent = "not started";
+      if (canStart) card.appendChild(actionButton("+ Start", id));
+    }
+  }
+
+  function applyBadgeAndActions(id, info, card, canStart) {
+    const badge = document.createElement("div");
+    badge.className = "game-badge " + info.status;
+    if (info.status === "live") {
+      badge.textContent = info.myTurn ? "● your turn" : "○ in play";
+      makeCardOpenGame(card, id);
+    } else if (info.status === "over") {
+      badge.textContent = info.detail || "finished";
+      makeCardOpenGame(card, id);
+      if (canStart) card.appendChild(actionButton("Rematch", id));
+    } else {
+      applyIdleBadge(id, badge, card, canStart);
+    }
+    return badge;
+  }
+
+  function buildGameCard(id, mod, canStart) {
+    const card = document.createElement("div");
+    card.className = "game-card";
+    card.appendChild(buildGameTitle(mod));
+
+    const info = mod.card();
+    const badge = applyBadgeAndActions(id, info, card, canStart);
+    card.appendChild(badge);
+    // Who's playing (live/finished games) — same pair across the table.
+    if (info.status === "live" || info.status === "over") {
+      const vs = matchupText();
+      if (vs) {
+        const m = document.createElement("div");
+        m.className = "game-matchup";
+        m.textContent = vs;
+        card.appendChild(m);
+      }
+    }
+    return card;
   }
 
   function actionButton(label, gameID) {
@@ -231,6 +257,17 @@
       send({ type: "game.start", game: gameID });
     });
     return b;
+  }
+
+  // Detect a host handoff (migration) to nudge the other survivors. Only the
+  // NEW host toasts itself (via session.promoted); here we toast the rest once
+  // the roster shows a different host than before.
+  function announceHostChange(e) {
+    const newHost = Number(Object.entries(e.members || {}).find(([, r]) => r === "host")?.[0] || 0);
+    if (prevHost && newHost && newHost !== prevHost && newHost !== state.self) {
+      toast(((e.names && e.names[newHost]) || ("#" + newHost)) + " is hosting now.");
+    }
+    if (newHost) prevHost = newHost;
   }
 
   // ---- core → UI ------------------------------------------------------------
@@ -311,14 +348,7 @@
       setTimeout(() => location.replace(location.pathname), 1500);
     },
     roster(e) {
-      // Detect a host handoff (migration) to nudge the other survivors. Only
-      // the NEW host toasts itself (via session.promoted); here we toast the
-      // rest once the roster shows a different host than before.
-      const newHost = Number(Object.entries(e.members || {}).find(([, r]) => r === "host")?.[0] || 0);
-      if (prevHost && newHost && newHost !== prevHost && newHost !== state.self) {
-        toast(((e.names && e.names[newHost]) || ("#" + newHost)) + " is hosting now.");
-      }
-      if (newHost) prevHost = newHost;
+      announceHostChange(e);
       state.members = e.members;
       state.names = {};
       for (const [id, n] of Object.entries(e.names || {})) state.names[Number(id)] = n;

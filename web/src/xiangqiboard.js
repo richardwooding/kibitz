@@ -82,6 +82,19 @@
       return cell;
     }
 
+    // Build one cell for viewport coords (vr,vc), mapping through the board
+    // flip and applying source/target highlights.
+    function buildCell(vr, vc, flip, hiSrc, hiTgt) {
+      const rank = flip ? vr : RANKS - 1 - vr;
+      const file = flip ? FILES - 1 - vc : vc;
+      const sq = rank * FILES + file;
+      const cell = cellFor(rank, file);
+      if (hiSrc.has(sq)) cell.classList.add("source");
+      if (hiTgt.has(sq)) cell.classList.add("target");
+      cell.addEventListener("click", () => onSquare(sq));
+      return cell;
+    }
+
     function render() {
       if (!visible || !g) return;
       ctx.renderMoves($("xiangqi-moves"), g.history);
@@ -102,14 +115,7 @@
       const hiTgt = targets();
       for (let vr = 0; vr < RANKS; vr++) {
         for (let vc = 0; vc < FILES; vc++) {
-          const rank = flip ? vr : RANKS - 1 - vr;
-          const file = flip ? FILES - 1 - vc : vc;
-          const sq = rank * FILES + file;
-          const cell = cellFor(rank, file);
-          if (hiSrc.has(sq)) cell.classList.add("source");
-          if (hiTgt.has(sq)) cell.classList.add("target");
-          cell.addEventListener("click", () => onSquare(sq));
-          el.appendChild(cell);
+          el.appendChild(buildCell(vr, vc, flip, hiSrc, hiTgt));
         }
       }
     }

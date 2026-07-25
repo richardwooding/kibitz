@@ -28,49 +28,51 @@
         statusEl.textContent = "Waiting for the game to start…";
         return;
       }
-      if (over()) {
-        statusEl.textContent = g.outcome;
-      } else {
-        const color = g.turnId === g.p1Id ? "🔴" : "🟡";
-        if (isHotseat()) {
-          statusEl.textContent = `${color} to move`;
-        } else {
-          const mine = g.turnId === ctx.self();
-          statusEl.textContent = mine ? `Your move ${color}` : `${ctx.name(g.turnId)}'s move ${color}`;
-          if (isPlayer()) {
-            statusEl.textContent += ` · you are ${g.p1Id === ctx.self() ? "🔴" : "🟡"}`;
-          }
-        }
-      }
+      statusEl.textContent = statusText();
       $("c4-resign").classList.toggle("hidden", !isPlayer() || over());
+      renderBoard(myTurn() && !over());
+      dropCell = -1;
+    }
 
+    function statusText() {
+      if (over()) return g.outcome;
+      const color = g.turnId === g.p1Id ? "🔴" : "🟡";
+      if (isHotseat()) return `${color} to move`;
+      const mine = g.turnId === ctx.self();
+      let s = mine ? `Your move ${color}` : `${ctx.name(g.turnId)}'s move ${color}`;
+      if (isPlayer()) s += ` · you are ${g.p1Id === ctx.self() ? "🔴" : "🟡"}`;
+      return s;
+    }
+
+    function renderBoard(canPlay) {
       const el = $("c4-board");
       el.classList.toggle("my-turn", myTurn() && !over());
       el.innerHTML = "";
       const win = new Set(g.winCells || []);
-      const canPlay = myTurn() && !over();
       // Draw top row first: row = ROWS-1 down to 0.
       for (let row = ROWS - 1; row >= 0; row--) {
         for (let col = 0; col < COLS; col++) {
-          const idx = col * ROWS + row;
-          const cell = document.createElement("button");
-          cell.type = "button";
-          cell.className = "c4-cell";
-          cell.dataset.col = col;
-          const v = g.board[idx];
-          if (v === 1) cell.classList.add("red");
-          if (v === 2) cell.classList.add("yellow");
-          if (win.has(idx)) cell.classList.add("win");
-          if (idx === dropCell) cell.classList.add("dropping");
-          if (canPlay) {
-            cell.addEventListener("click", () => send({ type: "c4.drop", col }));
-            cell.addEventListener("mouseenter", () => showGhost(el, col));
-          }
-          el.appendChild(cell);
+          el.appendChild(cellFor(col * ROWS + row, col, win, canPlay, el));
         }
       }
       if (canPlay) el.addEventListener("mouseleave", () => clearGhost(el), { once: true });
-      dropCell = -1;
+    }
+
+    function cellFor(idx, col, win, canPlay, el) {
+      const cell = document.createElement("button");
+      cell.type = "button";
+      cell.className = "c4-cell";
+      cell.dataset.col = col;
+      const v = g.board[idx];
+      if (v === 1) cell.classList.add("red");
+      if (v === 2) cell.classList.add("yellow");
+      if (win.has(idx)) cell.classList.add("win");
+      if (idx === dropCell) cell.classList.add("dropping");
+      if (canPlay) {
+        cell.addEventListener("click", () => send({ type: "c4.drop", col }));
+        cell.addEventListener("mouseenter", () => showGhost(el, col));
+      }
+      return cell;
     }
 
     // showGhost previews a translucent disc in the landing slot of a column.

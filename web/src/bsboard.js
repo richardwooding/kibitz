@@ -152,18 +152,30 @@
       placingPane.classList.add("hidden");
       playPane.classList.remove("hidden");
 
-      if (g.phase === "placing") {
-        statusEl.textContent = isPlayer() ? "Fleet locked in — waiting for your opponent…"
-          : "Players are placing their fleets…";
-      } else if (g.phase === "shooting") {
-        statusEl.textContent = myTurn() ? "Your shot — click their waters"
-          : (isPlayer() ? "Incoming…" : "Kibitzing");
-      } else {
-        statusEl.textContent = outcomeLabel();
-        if (g.cheatBy) statusEl.textContent += ` (participant ${g.cheatBy})`;
-      }
+      statusEl.textContent = playStatusText(side);
       $("bs-resign").classList.toggle("hidden", !isPlayer() || g.phase === "over" || g.phase === "validating");
+      renderBoards(side);
+    }
 
+    // playStatusText is the perspective-aware status line for the play view
+    // (placing-done / shooting / over), matching the phase-based branches.
+    function playStatusText(side) {
+      if (g.phase === "placing") {
+        return isPlayer() ? "Fleet locked in — waiting for your opponent…"
+          : "Players are placing their fleets…";
+      }
+      if (g.phase === "shooting") {
+        return myTurn() ? "Your shot — click their waters"
+          : (isPlayer() ? "Incoming…" : "Kibitzing");
+      }
+      let s = outcomeLabel();
+      if (g.cheatBy) s += ` (participant ${g.cheatBy})`;
+      return s;
+    }
+
+    // renderBoards draws the two play grids (their waters / your fleet), their
+    // labels, and the sunk-ships summary for the given seat.
+    function renderBoards(side) {
       const oppSide = side >= 0 ? 1 - side : 1;
       const ownSide = side >= 0 ? side : 0;
       const oppId = side >= 0 ? (side === 0 ? g.p2Id : g.p1Id) : g.p2Id;
@@ -175,36 +187,43 @@
 
       const theirEl = $("bs-their");
       theirEl.classList.toggle("my-turn", canShoot);
-      grid(theirEl, (cell) => {
-        const v = g.reveals[oppSide][cell];
-        let cls;
-        if (v === -1) cls = canShoot ? "unknown shootable" : "unknown";
-        else if (v === 0) cls = "miss";
-        else cls = "hit" + (sunkTheirs.includes(v) ? " sunk" : "");
-        if (justTheir.has(cell)) cls += " just";
-        return cls;
-      }, (cell) => {
+      grid(theirEl, (cell) => theirCellClass(cell, oppSide, canShoot, sunkTheirs), (cell) => {
         if (canShoot && g.reveals[oppSide][cell] === -1) send({ type: "bs.shot", cell });
       });
 
-      grid($("bs-own"), (cell) => {
-        const shot = g.reveals[ownSide][cell];
-        const ship = side >= 0 ? g.myFleet[cell] : Math.max(0, shot);
-        let cls = ship > 0 ? "ship" : "unknown";
-        if (shot === 0) cls = "miss";
-        if (shot > 0) cls = "hit ship" + (sunkMine.includes(shot) ? " sunk" : "");
-        if (justOwn.has(cell)) cls += " just";
-        return cls;
-      }, null);
+      grid($("bs-own"), (cell) => ownCellClass(cell, ownSide, side, sunkMine), null);
 
+      renderSunk(sunkTheirs, sunkMine);
+      justTheir = new Set();
+      justOwn = new Set();
+    }
+
+    function theirCellClass(cell, oppSide, canShoot, sunkTheirs) {
+      const v = g.reveals[oppSide][cell];
+      let cls;
+      if (v === -1) cls = canShoot ? "unknown shootable" : "unknown";
+      else if (v === 0) cls = "miss";
+      else cls = "hit" + (sunkTheirs.includes(v) ? " sunk" : "");
+      if (justTheir.has(cell)) cls += " just";
+      return cls;
+    }
+
+    function ownCellClass(cell, ownSide, side, sunkMine) {
+      const shot = g.reveals[ownSide][cell];
+      const ship = side >= 0 ? g.myFleet[cell] : Math.max(0, shot);
+      let cls = ship > 0 ? "ship" : "unknown";
+      if (shot === 0) cls = "miss";
+      if (shot > 0) cls = "hit ship" + (sunkMine.includes(shot) ? " sunk" : "");
+      if (justOwn.has(cell)) cls += " just";
+      return cls;
+    }
+
+    function renderSunk(sunkTheirs, sunkMine) {
       const mineSunk = sunkMine.map((id) => SHIPS.find((s) => s.id === id).name);
       const theirsSunk = sunkTheirs.map((id) => SHIPS.find((s) => s.id === id).name);
       $("bs-sunk").textContent =
         (theirsSunk.length ? `You sank: ${theirsSunk.join(", ")}. ` : "") +
         (mineSunk.length ? `Lost: ${mineSunk.join(", ")}.` : "");
-
-      justTheir = new Set();
-      justOwn = new Set();
     }
 
     function renderPlacement() {
@@ -297,24 +316,34 @@
       const side = mySide();
       const oppSide = side >= 0 ? 1 - side : 1;
       const ownSide = side >= 0 ? side : 0;
-      let hitSound = false, missSound = false;
-      const diff = (which, into) => {
-        const a = prev.reveals[which], b = g.reveals[which];
-        if (!a || !b) return;
-        for (let c = 0; c < 100; c++) {
-          if (a[c] === -1 && b[c] !== -1) {
-            into.add(c);
-            if (b[c] > 0) hitSound = true; else missSound = true;
-          }
-        }
-      };
-      diff(oppSide, justTheir);
-      diff(ownSide, justOwn);
+      const t = diffReveals(prev, oppSide, justTheir);
+      const o = diffReveals(prev, ownSide, justOwn);
       if (!window.fx) return;
-      const newlySunk = ((g.sunk && g.sunk[oppSide]) || []).length >
-        ((prev.sunk && prev.sunk[oppSide]) || []).length ||
-        ((g.sunk && g.sunk[ownSide]) || []).length >
-        ((prev.sunk && prev.sunk[ownSide]) || []).length;
+      playShotSound(prev, oppSide, ownSide, t.hit || o.hit, t.miss || o.miss);
+    }
+
+    // diffReveals records cells newly revealed since `prev` on the `which` board
+    // into `into`, and reports whether any of them were a hit / a miss.
+    function diffReveals(prev, which, into) {
+      const a = prev.reveals[which], b = g.reveals[which];
+      let hit = false, miss = false;
+      if (!a || !b) return { hit, miss };
+      for (let c = 0; c < 100; c++) {
+        if (a[c] === -1 && b[c] !== -1) {
+          into.add(c);
+          if (b[c] > 0) hit = true; else miss = true;
+        }
+      }
+      return { hit, miss };
+    }
+
+    function sunkGrew(prev, which) {
+      return ((g.sunk && g.sunk[which]) || []).length >
+        ((prev.sunk && prev.sunk[which]) || []).length;
+    }
+
+    function playShotSound(prev, oppSide, ownSide, hitSound, missSound) {
+      const newlySunk = sunkGrew(prev, oppSide) || sunkGrew(prev, ownSide);
       if (newlySunk) window.fx.sound.sunk();
       else if (hitSound) window.fx.sound.hit();
       else if (missSound) window.fx.sound.splash();

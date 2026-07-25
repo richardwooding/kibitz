@@ -64,32 +64,44 @@
       el.innerHTML = "";
       for (let row = 0; row < 8; row++) {
         for (let col = 0; col < 8; col++) {
-          const rankIdx = o.flipped ? row : 7 - row;
-          const fileIdx = o.flipped ? 7 - col : col;
-          const sq = squareName(fileIdx, rankIdx);
-          const cell = document.createElement("button");
-          cell.type = "button";
-          cell.className = "sq " + ((fileIdx + rankIdx) % 2 ? "light" : "dark");
-          cell.dataset.sq = sq;
-          const piece = pieces[sq];
-          if (piece) {
-            const gl = document.createElement("span");
-            gl.className = "slide-piece";
-            gl.textContent = GLYPHS[piece];
-            cell.appendChild(gl);
-            cell.classList.add(piece === piece.toUpperCase() ? "white-piece" : "black-piece");
-          }
-          // Coordinate labels along the bottom rank and left file (Lichess-style).
-          if (row === 7) cell.appendChild(coord("file", FILES[fileIdx]));
-          if (col === 0) cell.appendChild(coord("rank", String(rankIdx + 1)));
-          if (sq === selected) cell.classList.add("selected");
-          if (targets && targets.includes(sq)) cell.classList.add("target");
-          if (o.lastMove && (sq === o.lastMove.slice(0, 2) || sq === o.lastMove.slice(2, 4))) {
-            cell.classList.add("last-move");
-          }
-          cell.addEventListener("click", () => onSquare(sq, piece || null));
-          el.appendChild(cell);
+          el.appendChild(squareFor(row, col, o, pieces, targets));
         }
+      }
+    }
+
+    // squareFor builds one board button: colour, piece glyph, coord labels,
+    // selection/target/last-move state, and the click handler.
+    function squareFor(row, col, o, pieces, targets) {
+      const rankIdx = o.flipped ? row : 7 - row;
+      const fileIdx = o.flipped ? 7 - col : col;
+      const sq = squareName(fileIdx, rankIdx);
+      const cell = document.createElement("button");
+      cell.type = "button";
+      cell.className = "sq " + ((fileIdx + rankIdx) % 2 ? "light" : "dark");
+      cell.dataset.sq = sq;
+      const piece = pieces[sq];
+      if (piece) placePiece(cell, piece);
+      // Coordinate labels along the bottom rank and left file (Lichess-style).
+      if (row === 7) cell.appendChild(coord("file", FILES[fileIdx]));
+      if (col === 0) cell.appendChild(coord("rank", String(rankIdx + 1)));
+      markSquareState(cell, sq, o, targets);
+      cell.addEventListener("click", () => onSquare(sq, piece || null));
+      return cell;
+    }
+
+    function placePiece(cell, piece) {
+      const gl = document.createElement("span");
+      gl.className = "slide-piece";
+      gl.textContent = GLYPHS[piece];
+      cell.appendChild(gl);
+      cell.classList.add(piece === piece.toUpperCase() ? "white-piece" : "black-piece");
+    }
+
+    function markSquareState(cell, sq, o, targets) {
+      if (sq === selected) cell.classList.add("selected");
+      if (targets && targets.includes(sq)) cell.classList.add("target");
+      if (o.lastMove && (sq === o.lastMove.slice(0, 2) || sq === o.lastMove.slice(2, 4))) {
+        cell.classList.add("last-move");
       }
     }
 
@@ -115,20 +127,7 @@
 
     function onSquare(sq, piece) {
       if (!g || !g.playing || over() || !isPlayer()) return;
-      if (selected && selected !== sq) {
-        const wasTarget = [...document.querySelectorAll("#board .sq.target")]
-          .some((c) => c.dataset.sq === sq);
-        if (wasTarget) {
-          if (!myTurn()) { toast("Not your turn."); return; }
-          const promo = (selectedPiece === "P" && sq[1] === "8") ||
-                        (selectedPiece === "p" && sq[1] === "1") ? "q" : "";
-          send({ type: "chess.move", uci: selected + sq + promo });
-          selected = null;
-          selectedPiece = null;
-          render($("board"), g.fen, opts(), []);
-          return;
-        }
-      }
+      if (selected && selected !== sq && isTargetSquare(sq)) { commitMove(sq); return; }
       // Which colour may be picked up: your own normally; in solo, whichever
       // side is to move (you drive both).
       const pickWhite = isHotseat() ? (g.turnId === g.whiteId) : (g.whiteId === ctx.self());
@@ -137,10 +136,30 @@
         selectedPiece = piece;
         send({ type: "chess.targets", from: sq, id: Date.now() });
       } else {
-        selected = null;
-        selectedPiece = null;
-        render($("board"), g.fen, opts(), []);
+        clearSelection();
       }
+    }
+
+    function isTargetSquare(sq) {
+      return [...document.querySelectorAll("#board .sq.target")]
+        .some((c) => c.dataset.sq === sq);
+    }
+
+    function promotionFor(sq) {
+      return (selectedPiece === "P" && sq[1] === "8") ||
+             (selectedPiece === "p" && sq[1] === "1") ? "q" : "";
+    }
+
+    function commitMove(sq) {
+      if (!myTurn()) { toast("Not your turn."); return; }
+      send({ type: "chess.move", uci: selected + sq + promotionFor(sq) });
+      clearSelection();
+    }
+
+    function clearSelection() {
+      selected = null;
+      selectedPiece = null;
+      render($("board"), g.fen, opts(), []);
     }
 
     function renderPane() {
@@ -152,22 +171,26 @@
         el.textContent = "Waiting for the game to start…";
         return;
       }
-      if (over()) {
-        const result = g.outcome === "1/2-1/2" ? "Draw" :
-          (g.outcome === "1-0" ? "White wins" : "Black wins");
-        el.textContent = `${result} — ${g.method}`;
-      } else if (isHotseat()) {
-        el.textContent = (g.turnId === g.whiteId ? "White" : "Black") + " to move";
-      } else {
-        el.textContent = (g.turnId === ctx.self() ? "Your move" :
-          ctx.name(g.turnId) + " to move") +
-          (isPlayer() ? "" : " (you're kibitzing)");
-      }
+      el.textContent = statusText();
       $("btn-resign").classList.toggle("hidden", !isPlayer() || over());
       $("btn-draw").classList.toggle("hidden", !isPlayer() || over() || (ctx.vsBot && ctx.vsBot()));
-      selected = null;
-      selectedPiece = null;
-      render($("board"), g.fen, opts(), []);
+      clearSelection();
+    }
+
+    // statusText is the status-line string for a playing game (not started is
+    // handled by the caller).
+    function statusText() {
+      if (over()) return `${resultText()} — ${g.method}`;
+      if (isHotseat()) return (g.turnId === g.whiteId ? "White" : "Black") + " to move";
+      return (g.turnId === ctx.self() ? "Your move" :
+        ctx.name(g.turnId) + " to move") +
+        (isPlayer() ? "" : " (you're kibitzing)");
+    }
+
+    // resultText renders g.outcome as a human phrase (shared by status + celebrate).
+    function resultText() {
+      return g.outcome === "1/2-1/2" ? "Draw" :
+        (g.outcome === "1-0" ? "White wins" : "Black wins");
     }
 
     // one-time control wiring
@@ -191,44 +214,55 @@
       return g.outcome === (g.whiteId === ctx.self() ? "1-0" : "0-1");
     }
 
+    function onState(e) {
+      const prev = g;
+      g = e;
+      $("btn-agree-draw").classList.add("hidden");
+      playMoveSound(prev);
+      renderPane();
+      if (visible && g.lastUci && g.lastUci !== animatedUci) {
+        slideLastMove($("board"), g.lastUci);
+      }
+      animatedUci = g.lastUci;
+      if (prev && prev.playing && prev.outcome === "*" && over() && window.fx) {
+        celebrateOutcome();
+      }
+    }
+
+    // Move/capture sound when a new move landed.
+    function playMoveSound(prev) {
+      if (!(window.fx && g.lastUci && g.lastUci !== animatedUci && prev && prev.fen)) return;
+      const captured = pieceCount(g.fen) < pieceCount(prev.fen);
+      captured ? window.fx.sound.capture() : window.fx.sound.move();
+    }
+
+    function celebrateOutcome() {
+      const factual = resultText();
+      window.fx.celebrate($("game-chess"), outcomeWon(), window.fx.result(outcomeWon(),
+        { draw: g.outcome === "1/2-1/2", spectator: factual, detail: g.method, hotseat: isHotseat() }));
+    }
+
+    function onTargets(e) {
+      if (visible && e.from === selected) {
+        render($("board"), g.fen, opts(), e.targets);
+      }
+    }
+
+    function onDrawOffered() {
+      if (isPlayer()) {
+        $("btn-agree-draw").classList.remove("hidden");
+        toast("Draw offered — accept?");
+      } else {
+        toast("A draw was offered.");
+      }
+    }
+
     return {
       onEvent(type, e) {
         switch (type) {
-          case "chess.state": {
-            const prev = g;
-            g = e;
-            $("btn-agree-draw").classList.add("hidden");
-            // Move/capture sound + slide when a new move landed.
-            if (window.fx && g.lastUci && g.lastUci !== animatedUci && prev && prev.fen) {
-              const captured = pieceCount(g.fen) < pieceCount(prev.fen);
-              captured ? window.fx.sound.capture() : window.fx.sound.move();
-            }
-            renderPane();
-            if (visible && g.lastUci && g.lastUci !== animatedUci) {
-              slideLastMove($("board"), g.lastUci);
-            }
-            animatedUci = g.lastUci;
-            if (prev && prev.playing && prev.outcome === "*" && over() && window.fx) {
-              const factual = g.outcome === "1/2-1/2" ? "Draw" :
-                (g.outcome === "1-0" ? "White wins" : "Black wins");
-              window.fx.celebrate($("game-chess"), outcomeWon(), window.fx.result(outcomeWon(),
-                { draw: g.outcome === "1/2-1/2", spectator: factual, detail: g.method, hotseat: isHotseat() }));
-            }
-            break;
-          }
-          case "chess.targets":
-            if (visible && e.from === selected) {
-              render($("board"), g.fen, opts(), e.targets);
-            }
-            break;
-          case "chess.drawOffered":
-            if (isPlayer()) {
-              $("btn-agree-draw").classList.remove("hidden");
-              toast("Draw offered — accept?");
-            } else {
-              toast("A draw was offered.");
-            }
-            break;
+          case "chess.state": onState(e); break;
+          case "chess.targets": onTargets(e); break;
+          case "chess.drawOffered": onDrawOffered(); break;
         }
       },
       setVisible(v) { visible = v; if (v) renderPane(); },
