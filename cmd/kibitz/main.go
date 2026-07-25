@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path"
 	"strings"
 	"time"
 
@@ -18,6 +19,62 @@ import (
 	"github.com/richardwooding/kibitz/internal/relay"
 	"github.com/richardwooding/kibitz/web"
 )
+
+// precompressed serves an embedded asset's brotli (.br) or gzip (.gz) sibling
+// when the client accepts it, else falls back to the raw FileServer. This keeps
+// the relay a dumb static server while shipping the smallest bytes; the wasm
+// core and the whole JS/CSS/HTML shell are precompressed at build time.
+func precompressed(dist fs.FS, raw http.Handler) http.HandlerFunc {
+	encs := []struct{ token, ext string }{{"br", ".br"}, {"gzip", ".gz"}}
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			raw.ServeHTTP(w, r)
+			return
+		}
+		p := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
+		if p == "" {
+			p = "index.html"
+		}
+		ae := r.Header.Get("Accept-Encoding")
+		for _, e := range encs {
+			if !strings.Contains(ae, e.token) {
+				continue
+			}
+			b, err := fs.ReadFile(dist, p+e.ext)
+			if err != nil {
+				continue
+			}
+			h := w.Header()
+			h.Set("Content-Encoding", e.token)
+			h.Add("Vary", "Accept-Encoding")
+			h.Set("Content-Type", contentType(p))
+			_, _ = w.Write(b)
+			return
+		}
+		raw.ServeHTTP(w, r)
+	}
+}
+
+// contentType maps a served path to its media type (the precompressed sibling
+// hides the real extension from net/http's sniffer, so we set it explicitly).
+func contentType(p string) string {
+	switch strings.ToLower(path.Ext(p)) {
+	case ".wasm":
+		return "application/wasm"
+	case ".js":
+		return "text/javascript; charset=utf-8"
+	case ".css":
+		return "text/css; charset=utf-8"
+	case ".html":
+		return "text/html; charset=utf-8"
+	case ".json", ".webmanifest":
+		return "application/json"
+	case ".svg":
+		return "image/svg+xml"
+	default:
+		return "application/octet-stream"
+	}
+}
 
 // version is stamped by goreleaser via -ldflags "-X main.version=...".
 var version = "dev"
@@ -50,21 +107,11 @@ func main() {
 
 	mux := http.NewServeMux()
 	files := http.FileServerFS(dist)
-	mux.Handle("/", files)
-	// The WASM core is the one heavy asset (~8.6MB); serve the precompressed
-	// gzip (~2.5MB) when the client accepts it. instantiateStreaming needs
-	// the application/wasm content type either way.
-	mux.HandleFunc("/kibitz.wasm", func(w http.ResponseWriter, r *http.Request) {
-		if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
-			if gz, err := web.Dist.ReadFile("dist/kibitz.wasm.gz"); err == nil {
-				w.Header().Set("Content-Encoding", "gzip")
-				w.Header().Set("Content-Type", "application/wasm")
-				_, _ = w.Write(gz)
-				return
-			}
-		}
-		files.ServeHTTP(w, r)
-	})
+	// Serve the smallest precompressed encoding each client accepts (brotli, then
+	// gzip), falling back to the raw file. `make wasm` precompresses every
+	// servable asset — the ~9MB wasm core AND the JS/CSS/HTML shell — so a first
+	// mobile load ships ~2MB (brotli) instead of ~2.6MB.
+	mux.Handle("/", precompressed(dist, files))
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = fmt.Fprintln(w, "ok")

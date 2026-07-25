@@ -3,6 +3,7 @@ module github.com/richardwooding/kibitz
 go 1.26.2
 
 require (
+	github.com/andybalholm/brotli v1.2.2
 	github.com/coder/websocket v1.8.15
 	github.com/corentings/chess/v2 v2.5.1
 	github.com/fxamacker/cbor/v2 v2.9.2

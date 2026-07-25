@@ -11,10 +11,13 @@ web:
 	cp web/src/* web/dist/
 	cp "$(GOROOT)/lib/wasm/wasm_exec.js" web/dist/
 
-## wasm: build the browser core into web/dist (implies web)
+## wasm: build the browser core into web/dist (implies web), then precompress
+## every servable asset (wasm + JS/CSS/HTML) to .br (brotli) and .gz (gzip) so
+## the relay serves the smallest encoding each client accepts. Pure-Go
+## compressor — no external gzip/brotli binary needed in CI.
 wasm: web
 	GOOS=js GOARCH=wasm go build -trimpath -ldflags="-s -w" -o web/dist/kibitz.wasm ./cmd/kibitz-wasm
-	gzip -9 -kf web/dist/kibitz.wasm
+	go run ./cmd/compress-assets web/dist
 
 ## serve: dev loop — build everything and run the relay on :8080
 serve: wasm
