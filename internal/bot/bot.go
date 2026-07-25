@@ -85,22 +85,7 @@ func Drive(events <-chan any, s Services, delay time.Duration, level Level) {
 	for ev := range events {
 		switch e := ev.(type) {
 		case connect4.State:
-			if e.Playing && e.Outcome == "" && e.TurnID == s.Self {
-				disc := int8(1)
-				if e.P2ID == s.Self {
-					disc = 2
-				}
-				col, ok := int8(-1), false
-				if resolveLevel(level, rand.Float64()) == Hard {
-					col, ok = c4Hard(e.Board, disc)
-				} else {
-					col, ok = c4Random(e.Board)
-				}
-				if ok {
-					pause()
-					_ = s.C4.Drop(col)
-				}
-			}
+			driveConnect4(s, e, level, pause)
 		case gomoku.State:
 			driveGomoku(s, e, level, pause)
 		case hex.State:
@@ -112,84 +97,149 @@ func Drive(events <-chan any, s Services, delay time.Duration, level Level) {
 		case xiangqi.State:
 			driveXiangqi(s, e, pause)
 		case reversi.State:
-			if e.Playing && e.Outcome == "" && e.TurnID == s.Self && len(e.Legal) > 0 {
-				side := int8(1) // black = P1
-				if e.P2ID == s.Self {
-					side = -1
-				}
-				pause()
-				_ = s.RV.PlaceDisc(rvPick(resolveLevel(level, rand.Float64()), e.Board, e.Legal, side))
-			}
+			driveReversi(s, e, level, pause)
 		case checkers.State:
-			if e.Playing && e.Outcome == "" && e.TurnID == s.Self && len(e.Legal) > 0 {
-				side := checkers.Black
-				if e.P2ID == s.Self {
-					side = checkers.White
-				}
-				pause()
-				_ = s.CK.TryMove([]int8(ckPick(resolveLevel(level, rand.Float64()), e.Board, e.Legal, side)))
-			}
+			driveCheckers(s, e, level, pause)
 		case chess.State:
-			if e.Playing && e.Outcome == "*" && e.TurnID == s.Self {
-				uci := ""
-				if resolveLevel(level, rand.Float64()) == Hard {
-					uci = s.Chess.HardMove() // alpha-beta material minimax
-				} else if mv := s.Chess.LegalMoves(); len(mv) > 0 {
-					uci = mv[rand.Intn(len(mv))]
-				}
-				if uci != "" {
-					pause()
-					_ = s.Chess.TryMove(uci)
-				}
-			}
+			driveChess(s, e, level, pause)
 		case backgammon.State:
-			if e.Playing && e.Outcome == "" && e.TurnID == s.Self {
-				switch e.Phase {
-				case "rolling":
-					pause()
-					_ = s.BG.Roll()
-				case "moving":
-					if len(e.Legal) > 0 {
-						color := backgammon.White
-						if e.BlackID == s.Self {
-							color = backgammon.Black
-						}
-						pause()
-						_ = s.BG.Move(bgPick(resolveLevel(level, rand.Float64()), e.Board, e.Legal, color))
-					}
-				}
-			}
+			driveBackgammon(s, e, level, pause)
 		case battleship.State:
-			if !e.Playing {
-				break
-			}
-			mySide := -1
-			if e.P1ID == s.Self {
-				mySide = 0
-			} else if e.P2ID == s.Self {
-				mySide = 1
-			}
-			if mySide < 0 {
-				break // spectator
-			}
-			switch e.Phase {
-			case "placing":
-				if !e.Committed[mySide] {
-					if fleet, err := shipcommit.RandomPlacement(); err == nil {
-						pause()
-						_ = s.BS.Commit(fleet)
-					}
-				}
-			case "shooting":
-				// TurnID is 0 while a shot awaits its reveal, so this waits.
-				if e.TurnID == s.Self {
-					if cell, ok := bsTarget(e.Reveals[1-mySide], e.Sunk[1-mySide], resolveLevel(level, rand.Float64())); ok {
-						pause()
-						_ = s.BS.Shoot(cell)
-					}
-				}
-			}
+			driveBattleship(s, e, level, pause)
 		}
+	}
+}
+
+// Each drive<Game> plays the bot's move for one state event when it is the bot's
+// turn. Extracted from Drive so that switch stays a thin dispatcher (its cognitive
+// complexity was a hotspot) and each game's logic is testable in isolation.
+
+func driveConnect4(s Services, e connect4.State, level Level, pause func()) {
+	if !e.Playing || e.Outcome != "" || e.TurnID != s.Self {
+		return
+	}
+	disc := int8(1)
+	if e.P2ID == s.Self {
+		disc = 2
+	}
+	var col int8
+	var ok bool
+	if resolveLevel(level, rand.Float64()) == Hard {
+		col, ok = c4Hard(e.Board, disc)
+	} else {
+		col, ok = c4Random(e.Board)
+	}
+	if ok {
+		pause()
+		_ = s.C4.Drop(col)
+	}
+}
+
+func driveReversi(s Services, e reversi.State, level Level, pause func()) {
+	if !e.Playing || e.Outcome != "" || e.TurnID != s.Self || len(e.Legal) == 0 {
+		return
+	}
+	side := int8(1) // black = P1
+	if e.P2ID == s.Self {
+		side = -1
+	}
+	pause()
+	_ = s.RV.PlaceDisc(rvPick(resolveLevel(level, rand.Float64()), e.Board, e.Legal, side))
+}
+
+func driveCheckers(s Services, e checkers.State, level Level, pause func()) {
+	if !e.Playing || e.Outcome != "" || e.TurnID != s.Self || len(e.Legal) == 0 {
+		return
+	}
+	side := checkers.Black
+	if e.P2ID == s.Self {
+		side = checkers.White
+	}
+	pause()
+	_ = s.CK.TryMove([]int8(ckPick(resolveLevel(level, rand.Float64()), e.Board, e.Legal, side)))
+}
+
+func driveChess(s Services, e chess.State, level Level, pause func()) {
+	if !e.Playing || e.Outcome != "*" || e.TurnID != s.Self {
+		return
+	}
+	uci := ""
+	if resolveLevel(level, rand.Float64()) == Hard {
+		uci = s.Chess.HardMove() // alpha-beta material minimax
+	} else if mv := s.Chess.LegalMoves(); len(mv) > 0 {
+		uci = mv[rand.Intn(len(mv))]
+	}
+	if uci != "" {
+		pause()
+		_ = s.Chess.TryMove(uci)
+	}
+}
+
+func driveBackgammon(s Services, e backgammon.State, level Level, pause func()) {
+	if !e.Playing || e.Outcome != "" || e.TurnID != s.Self {
+		return
+	}
+	switch e.Phase {
+	case "rolling":
+		pause()
+		_ = s.BG.Roll()
+	case "moving":
+		if len(e.Legal) == 0 {
+			return
+		}
+		color := backgammon.White
+		if e.BlackID == s.Self {
+			color = backgammon.Black
+		}
+		pause()
+		_ = s.BG.Move(bgPick(resolveLevel(level, rand.Float64()), e.Board, e.Legal, color))
+	}
+}
+
+func driveBattleship(s Services, e battleship.State, level Level, pause func()) {
+	if !e.Playing {
+		return
+	}
+	mySide := bsSide(e, s.Self)
+	if mySide < 0 {
+		return // spectator
+	}
+	switch e.Phase {
+	case "placing":
+		bsPlace(s, e, mySide, pause)
+	case "shooting":
+		// TurnID is 0 while a shot awaits its reveal, so this waits.
+		bsShoot(s, e, mySide, level, pause)
+	}
+}
+
+func bsSide(e battleship.State, self wire.ParticipantID) int {
+	if e.P1ID == self {
+		return 0
+	}
+	if e.P2ID == self {
+		return 1
+	}
+	return -1
+}
+
+func bsPlace(s Services, e battleship.State, mySide int, pause func()) {
+	if e.Committed[mySide] {
+		return
+	}
+	if fleet, err := shipcommit.RandomPlacement(); err == nil {
+		pause()
+		_ = s.BS.Commit(fleet)
+	}
+}
+
+func bsShoot(s Services, e battleship.State, mySide int, level Level, pause func()) {
+	if e.TurnID != s.Self {
+		return
+	}
+	if cell, ok := bsTarget(e.Reveals[1-mySide], e.Sunk[1-mySide], resolveLevel(level, rand.Float64())); ok {
+		pause()
+		_ = s.BS.Shoot(cell)
 	}
 }
 
@@ -521,9 +571,10 @@ func rvPick(level Level, board reversi.Board, legal []int8, side int8) int8 {
 		}
 		s := 0
 		for i, v := range nb {
-			if v == side {
+			switch v {
+			case side:
 				s += rvWeights[i]
-			} else if v == -side {
+			case -side:
 				s -= rvWeights[i]
 			}
 		}
@@ -626,6 +677,18 @@ func bsTarget(shots [100]int8, sunk []uint8, level Level) (uint8, bool) {
 	if level != Hard {
 		return bsRandom(shots, func(int) bool { return true })
 	}
+	if targets := bsHuntTargets(shots, sunk); len(targets) > 0 {
+		return uint8(targets[rand.Intn(len(targets))]), true
+	}
+	if cell, ok := bsRandom(shots, func(c int) bool { return (c%10+c/10)%2 == 0 }); ok {
+		return cell, true // hunt on parity
+	}
+	return bsRandom(shots, func(int) bool { return true })
+}
+
+// bsHuntTargets lists un-shot cells orthogonally adjacent to a struck but
+// not-yet-sunk ship — the "target" phase after a hunt lands a hit.
+func bsHuntTargets(shots [100]int8, sunk []uint8) []int {
 	isSunk := func(id int8) bool {
 		for _, s := range sunk {
 			if int8(s) == id {
@@ -646,13 +709,7 @@ func bsTarget(shots [100]int8, sunk []uint8, level Level) (uint8, bool) {
 			}
 		}
 	}
-	if len(targets) > 0 {
-		return uint8(targets[rand.Intn(len(targets))]), true
-	}
-	if cell, ok := bsRandom(shots, func(c int) bool { return (c%10+c/10)%2 == 0 }); ok {
-		return cell, true // hunt on parity
-	}
-	return bsRandom(shots, func(int) bool { return true })
+	return targets
 }
 
 // neighbours returns the on-board orthogonal neighbour cells of (x,y).

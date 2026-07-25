@@ -41,6 +41,22 @@ func (b *Board) Full() bool {
 	return true
 }
 
+// run returns the four cell indices of a same-side line starting at (col,row)
+// in direction (dcol,drow), or nil if there aren't four in a row from there.
+func (b *Board) run(col, row, dcol, drow, side int8) []int8 {
+	cells := []int8{col*Rows + row}
+	c, r := col, row
+	for i := 0; i < 3; i++ {
+		c += dcol
+		r += drow
+		if c < 0 || c >= Cols || r < 0 || r >= Rows || b[c*Rows+r] != side {
+			return nil
+		}
+		cells = append(cells, c*Rows+r)
+	}
+	return cells
+}
+
 // Winner returns the winning side (1/2) and its four cell indices, or 0.
 func (b *Board) Winner() (int8, []int8) {
 	dirs := [4][2]int8{{1, 0}, {0, 1}, {1, 1}, {1, -1}} // (dcol, drow)
@@ -51,18 +67,7 @@ func (b *Board) Winner() (int8, []int8) {
 				continue
 			}
 			for _, d := range dirs {
-				cells := []int8{col*Rows + row}
-				c, r := col, row
-				for i := 0; i < 3; i++ {
-					c += d[0]
-					r += d[1]
-					if c < 0 || c >= Cols || r < 0 || r >= Rows || b[c*Rows+r] != side {
-						cells = nil
-						break
-					}
-					cells = append(cells, c*Rows+r)
-				}
-				if len(cells) == 4 {
+				if cells := b.run(col, row, d[0], d[1], side); cells != nil {
 					return side, cells
 				}
 			}
