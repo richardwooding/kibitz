@@ -50,6 +50,8 @@ const (
 	kindKnock
 	kindReveal
 	kindResign
+	kindUpcardTake
+	kindUpcardPass
 )
 
 type msg struct {
@@ -64,6 +66,8 @@ type msg struct {
 	Val      []byte   `cbor:"9,keyasint,omitempty"`
 	Hand     []int8   `cbor:"10,keyasint,omitempty"`
 	Exp      []byte   `cbor:"11,keyasint,omitempty"`
+	Dealer   int8     `cbor:"12,keyasint,omitempty"` // whose deal this hand (shuffle1)
+	NewMatch bool     `cbor:"13,keyasint,omitempty"` // reset match scores (shuffle1)
 }
 
 // phase is the public game phase.
@@ -72,30 +76,42 @@ type phase uint8
 const (
 	phIdle phase = iota
 	phShuffle
-	phDraw     // current player must draw (stock or discard)
-	phDiscard  // current player drew, must discard (or knock)
-	phShowdown // someone knocked; awaiting reveals
+	phUpcardOffer // opening: non-dealer then dealer may take the upcard or pass
+	phDraw        // current player must draw (stock or discard)
+	phDiscard     // current player drew, must discard (or knock)
+	phShowdown    // someone knocked; awaiting reveals
 	phOver
+)
+
+// Match scoring: first to matchTarget wins; each hand won is a "box".
+const (
+	matchTarget = 100
+	boxBonus    = 25
+	gameBonus   = 100
 )
 
 // State is the public, blind-safe view emitted to the UI. Hand holds THIS end's
 // own cards (secret to it); everyone else sees only counts.
 type State struct {
-	Playing    bool
-	Phase      string // "shuffling" | "draw" | "discard" | "over"
-	P1ID       wire.ParticipantID
-	P2ID       wire.ParticipantID
-	TurnID     wire.ParticipantID
-	Hand       []int8 // this end's cards (empty for spectators)
-	HandCounts [2]int // [p1, p2] card counts
-	Discard    []int8 // discard pile, top last
-	StockCount int
-	Deadwood   int  // this end's current deadwood (if a player)
-	CanKnock   bool // this end may knock now (in discard phase, deadwood<=10)
-	Scores     [2]int
-	Outcome    string // e.g. "you win the hand +18", set when over
-	Verified   bool   // showdown key-check passed (fair shuffle proven)
-	OppHand    []int8 // revealed opponent hand at showdown
+	Playing     bool
+	Phase       string // "shuffling" | "draw" | "discard" | "over"
+	P1ID        wire.ParticipantID
+	P2ID        wire.ParticipantID
+	TurnID      wire.ParticipantID
+	Hand        []int8 // this end's cards (empty for spectators)
+	HandCounts  [2]int // [p1, p2] card counts
+	Discard     []int8 // discard pile, top last
+	StockCount  int
+	Deadwood    int  // this end's current deadwood (if a player)
+	CanKnock    bool // this end may knock now (in discard phase, deadwood<=10)
+	Scores      [2]int
+	Outcome     string             // e.g. "you win the hand +18", set when over
+	Verified    bool               // showdown key-check passed (fair shuffle proven)
+	OppHand     []int8             // revealed opponent hand at showdown
+	DealerID    wire.ParticipantID // whose deal this hand
+	HandsWon    [2]int             // hands won per seat (boxes)
+	MatchTarget int                // points to win the match
+	MatchOver   bool               // the whole match is decided
 }
 
 var errNotYourTurn = errors.New("gin: not your turn")
@@ -114,10 +130,16 @@ type Service struct {
 	discard    []int8
 	stockNext  int
 	handCounts [2]int
-	scores     [2]int
+	scores     [2]int // running match (line) scores
 	outcome    string
 	verified   bool
 	oppHand    []int8
+
+	// match play
+	dealer      game.Side // whose deal this hand; non-dealer plays first, alternates
+	handsWon    [2]int    // hands won per seat (box bonus)
+	matchOver   bool      // a player reached matchTarget; the match is finished
+	offerPasses int       // upcard-offer passes so far (0..2)
 
 	// showdown bookkeeping
 	knockSeat   game.Side
@@ -205,21 +227,35 @@ func (s *Service) hostStart(from wire.ParticipantID) error {
 		s.mu.Unlock()
 		return err
 	}
-	seats := s.table.NextSeats(s.ctx.Self)
 	key, err := mentalpoker.NewKey()
 	if err != nil {
 		s.mu.Unlock()
 		return err
 	}
-	s.resetLocked(seats, key)
+	// A fresh match starts from idle or after a finished match; otherwise this is
+	// the next hand of the running match, so scores carry over and the deal alternates.
+	newMatch := s.ph == phIdle || s.matchOver
+	var seats game.Seats
+	if newMatch {
+		seats = s.table.NextSeats(s.ctx.Self)
+		s.scores = [2]int{}
+		s.handsWon = [2]int{}
+		s.matchOver = false
+		s.dealer = game.P1
+	} else {
+		seats = s.table.Seats
+		s.dealer = s.dealer.Opponent()
+	}
+	s.resetHandLocked(seats, key)
 	deck1 := mentalpoker.EncryptAll(key, mentalpoker.FreshDeck())
 	if err := mentalpoker.Shuffle(deck1); err != nil {
 		s.mu.Unlock()
 		return err
 	}
+	dealer := s.dealer
 	s.mu.Unlock()
 
-	body, err := wire.Marshal(msg{Kind: kindShuffle1, P1: uint32(seats.P1), P2: uint32(seats.P2), Deck: mentalpoker.Marshal(deck1)})
+	body, err := wire.Marshal(msg{Kind: kindShuffle1, P1: uint32(seats.P1), P2: uint32(seats.P2), Deck: mentalpoker.Marshal(deck1), Dealer: int8(dealer), NewMatch: newMatch})
 	if err != nil {
 		return err
 	}
@@ -230,10 +266,12 @@ func (s *Service) hostStart(from wire.ParticipantID) error {
 	return nil
 }
 
-func (s *Service) resetLocked(seats game.Seats, key mentalpoker.Key) {
+// resetHandLocked clears per-hand deal state for a new hand. It does NOT touch
+// match-level state (scores, handsWon, matchOver, dealer) — the caller sets those.
+func (s *Service) resetHandLocked(seats game.Seats, key mentalpoker.Key) {
 	s.table.Seats = seats
 	s.ph = phShuffle
-	s.turn = game.P2 // joiner acts first
+	s.turn = s.dealer.Opponent() // non-dealer plays first
 	s.deck2 = nil
 	s.discard = nil
 	s.stockNext = stockStart
@@ -241,6 +279,7 @@ func (s *Service) resetLocked(seats game.Seats, key mentalpoker.Key) {
 	s.outcome = ""
 	s.verified = false
 	s.oppHand = nil
+	s.offerPasses = 0
 	s.key = key
 	s.haveKey = true
 	s.hand = nil
@@ -291,6 +330,10 @@ func (s *Service) HandleFrame(from wire.ParticipantID, body []byte) error {
 		return s.handleReveal(from, m)
 	case kindResign:
 		return s.handleResign(from)
+	case kindUpcardTake:
+		return s.handleUpcardTake(from)
+	case kindUpcardPass:
+		return s.handleUpcardPass(from)
 	}
 	return fmt.Errorf("gin: unknown kind %d", m.Kind)
 }

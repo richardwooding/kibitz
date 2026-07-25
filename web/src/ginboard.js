@@ -1,8 +1,10 @@
-// ginboard.js — the Gin Rummy module: draw a card (stock or upcard), then
-// discard; knock when your deadwood is low enough. All rules/scoring/crypto
-// live in the core; this file draws the table and forwards intents. Hidden
-// information (each hand) is only ever revealed to its owner, and both hands
-// are shown at showdown/over so a verified shuffle can be trusted.
+// ginboard.js — the Gin Rummy module: at the opening the non-dealer (then the
+// dealer) may take the upcard or pass; then draw a card (stock or upcard) and
+// discard; knock when your deadwood is low enough. Hands accumulate into a match
+// to 100 with dealer alternation, box bonuses, and a game bonus. All rules/
+// scoring/crypto live in the core; this file draws the table and forwards
+// intents. Hidden information (each hand) is only ever revealed to its owner,
+// and both hands are shown at showdown/over so a verified shuffle can be trusted.
 (() => {
   "use strict";
 
@@ -74,6 +76,7 @@
     const canDraw = () => myTurn() && g.phase === "draw" && g.stockCount > 0;
     const canTake = () => myTurn() && g.phase === "draw" && g.discard.length > 0;
     const canDiscard = () => myTurn() && g.phase === "discard";
+    const canOffer = () => myTurn() && g.phase === "upcard-offer" && g.discard.length > 0;
 
     // ---- section builders ---------------------------------------------------
 
@@ -82,6 +85,9 @@
       if (g.phase === "shuffling") return "Shuffling the deck…";
       if (g.phase === "showdown") return "Showdown…";
       if (!isPlayer()) return "Kibitzing…";
+      if (g.phase === "upcard-offer") {
+        return myTurn() ? "Your turn — take the upcard or pass" : "Opponent deciding on the opening upcard…";
+      }
       if (myTurn() && g.phase === "draw") return "Your turn — draw a card";
       if (myTurn() && g.phase === "discard") return `Your turn — discard (deadwood ${g.deadwood})`;
       return "Waiting for opponent…";
@@ -90,6 +96,38 @@
     function renderScores() {
       const el = $("gin-scores");
       if (el) el.textContent = `${ctx.name(g.p1Id)} ${g.scores[0]} — ${g.scores[1]} ${ctx.name(g.p2Id)}`;
+    }
+
+    function dealerLabel() {
+      if (!g.dealerId) return "";
+      if (mySeat() < 0) return `${ctx.name(g.dealerId)} deals`;
+      return g.dealerId === ctx.self() ? "your deal" : `${oppName()}'s deal`;
+    }
+
+    function matchNote() {
+      const parts = [`first to ${g.matchTarget || 100}`];
+      const hw = g.handsWon || [0, 0];
+      if (hw[0] || hw[1]) {
+        const me = mySeat() < 0 ? 0 : mySeat();
+        parts.push(`boxes ${hw[me]}–${hw[1 - me]}`);
+      }
+      const d = dealerLabel();
+      if (d) parts.push(d);
+      return note(parts.join(" · "));
+    }
+
+    function offerRow() {
+      const row = div("gin-piles");
+      const wrap = div("gin-pile");
+      wrap.appendChild(label("Upcard"));
+      const top = g.discard.length ? g.discard[g.discard.length - 1] : -1;
+      wrap.appendChild(top >= 0 ? cardNode(top, {}) : note("(empty)"));
+      if (canOffer()) {
+        wrap.appendChild(button(`Take ${cardLabel(top)}`, () => send({ type: "gin.takeUpcardOffer" })));
+        wrap.appendChild(button("Pass", () => send({ type: "gin.passUpcard" })));
+      }
+      row.appendChild(wrap);
+      return row;
     }
 
     function oppRow() {
@@ -200,7 +238,11 @@
       if (over()) { renderOver(board); return; }
       if (g.phase === "shuffling") { board.appendChild(note("Shuffling the deck…")); return; }
       if (g.phase === "showdown") { board.appendChild(note("Showdown…")); return; }
-      board.append(oppRow(), pilesRow(), handSection("Your hand", g.hand, canDiscard()), controlsRow());
+      if (g.phase === "upcard-offer") {
+        board.append(oppRow(), matchNote(), offerRow(), handSection("Your hand", g.hand, false));
+        return;
+      }
+      board.append(oppRow(), matchNote(), pilesRow(), handSection("Your hand", g.hand, canDiscard()), controlsRow());
     }
 
     function renderOver(board) {
@@ -209,6 +251,7 @@
         handSection(`${oppName()}'s hand`, g.oppHand, false),
         verifiedBadge(),
       );
+      board.appendChild(note(g.matchOver ? "Match over — rematch to start a new match." : "Hand over — rematch to deal the next hand."));
     }
 
     // ---- fx -----------------------------------------------------------------
@@ -216,8 +259,8 @@
     function won() {
       if (!isPlayer()) return null;
       const o = (g.outcome || "").toLowerCase();
-      if (o.includes("player 1")) return mySeat() === 0;
-      if (o.includes("player 2")) return mySeat() === 1;
+      if (o.includes("you win")) return true;
+      if (o.includes("you lose")) return false;
       return null;
     }
 
@@ -227,7 +270,8 @@
     }
 
     function maybeCelebrate(prev) {
-      if (!prev || !prev.playing || prev.phase === "over" || !over() || !window.fx) return;
+      // Celebrate only when the whole match is decided, not after every hand.
+      if (!prev || !prev.playing || prev.phase === "over" || !over() || !g.matchOver || !window.fx) return;
       window.fx.celebrate($("game-gin"), won(),
         window.fx.result(won(), { spectator: g.outcome, hotseat: isHotseat() }));
     }

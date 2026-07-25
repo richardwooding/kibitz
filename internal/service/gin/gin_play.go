@@ -6,6 +6,7 @@ import (
 
 	"github.com/richardwooding/kibitz/internal/ginrummy"
 	"github.com/richardwooding/kibitz/internal/mentalpoker"
+	"github.com/richardwooding/kibitz/internal/service/game"
 	"github.com/richardwooding/kibitz/internal/wire"
 )
 
@@ -40,7 +41,13 @@ func (s *Service) handleShuffle1(from wire.ParticipantID, m msg) error {
 		return err
 	}
 	s.mu.Lock()
-	s.resetLocked(gameSeats(m), key)
+	if m.NewMatch {
+		s.scores = [2]int{}
+		s.handsWon = [2]int{}
+		s.matchOver = false
+	}
+	s.dealer = game.Side(m.Dealer)
+	s.resetHandLocked(gameSeats(m), key)
 	deck2 := mentalpoker.EncryptAll(key, mentalpoker.Unmarshal(m.Deck))
 	if err := mentalpoker.Shuffle(deck2); err != nil {
 		s.mu.Unlock()
@@ -80,7 +87,7 @@ func (s *Service) handleShuffle2(from wire.ParticipantID, m msg) error {
 		partials = append(partials, s.key.Decrypt(s.deck2[j]).Bytes())
 	}
 	s.handCounts = [2]int{handSize, handSize}
-	s.ph = phDraw
+	s.ph = phUpcardOffer // non-dealer decides on the upcard first
 	up := s.upcard
 	s.mu.Unlock()
 
@@ -108,7 +115,103 @@ func (s *Service) handleDeal(from wire.ParticipantID, m msg) error {
 	s.upcard = m.Card
 	s.discard = []int8{m.Card}
 	s.handCounts = [2]int{handSize, handSize}
-	s.ph = phDraw
+	s.ph = phUpcardOffer // non-dealer decides on the upcard first
+	s.mu.Unlock()
+	s.emitState()
+	return nil
+}
+
+// --- opening upcard offer ---------------------------------------------------
+//
+// After the deal, the non-dealer may take the initial upcard or pass; if it
+// passes, the dealer gets the same choice. If both pass, the non-dealer draws
+// from stock to open play (for simplicity it may also re-take the upcard then).
+
+// advanceOfferLocked records a pass and moves the offer along; after the second
+// pass the opening is over and the non-dealer is on to draw.
+func (s *Service) advanceOfferLocked() {
+	s.offerPasses++
+	if s.offerPasses >= 2 {
+		s.ph = phDraw
+		s.turn = s.dealer.Opponent() // non-dealer opens play
+		return
+	}
+	s.turn = s.turn.Opponent() // offer passes to the dealer
+}
+
+// TakeUpcardOffer accepts the opening upcard (equivalent to a first-turn take).
+func (s *Service) TakeUpcardOffer() error {
+	s.mu.Lock()
+	side, ok := s.mySeat()
+	if !ok || s.ph != phUpcardOffer || s.turn != side {
+		s.mu.Unlock()
+		return errNotYourTurn
+	}
+	if len(s.discard) == 0 {
+		s.mu.Unlock()
+		return errors.New("gin: empty discard")
+	}
+	card := s.discard[len(s.discard)-1]
+	s.discard = s.discard[:len(s.discard)-1]
+	s.hand = append(s.hand, card)
+	s.handCounts[side]++
+	s.ph = phDiscard
+	s.mu.Unlock()
+	body, err := wire.Marshal(msg{Kind: kindUpcardTake})
+	if err != nil {
+		return err
+	}
+	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+		return err
+	}
+	s.emitState()
+	return nil
+}
+
+// PassUpcard declines the opening upcard.
+func (s *Service) PassUpcard() error {
+	s.mu.Lock()
+	side, ok := s.mySeat()
+	if !ok || s.ph != phUpcardOffer || s.turn != side {
+		s.mu.Unlock()
+		return errNotYourTurn
+	}
+	s.advanceOfferLocked()
+	s.mu.Unlock()
+	body, err := wire.Marshal(msg{Kind: kindUpcardPass})
+	if err != nil {
+		return err
+	}
+	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+		return err
+	}
+	s.emitState()
+	return nil
+}
+
+func (s *Service) handleUpcardTake(from wire.ParticipantID) error {
+	s.mu.Lock()
+	side, ok := s.table.Seats.SideOf(from)
+	if !ok || s.ph != phUpcardOffer || s.turn != side || len(s.discard) == 0 {
+		s.mu.Unlock()
+		return nil
+	}
+	s.discard = s.discard[:len(s.discard)-1]
+	s.handCounts[side]++
+	s.ph = phDiscard
+	s.mu.Unlock()
+	s.emitState()
+	return nil
+}
+
+func (s *Service) handleUpcardPass(from wire.ParticipantID) error {
+	s.mu.Lock()
+	side, ok := s.table.Seats.SideOf(from)
+	if !ok || s.ph != phUpcardOffer || s.turn != side {
+		s.mu.Unlock()
+		return nil
+	}
+	s.advanceOfferLocked()
 	s.mu.Unlock()
 	s.emitState()
 	return nil

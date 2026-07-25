@@ -191,11 +191,13 @@ var commands = map[string]func(command){
 	"xiangqi.move":   func(c command) { moveXiangqi(func(s *xiangqi.Service) error { return s.Move(c.Frm, c.To) }) },
 	"xiangqi.resign": func(command) { withXiangqi((*xiangqi.Service).Resign) },
 
-	"gin.drawStock":  func(command) { withGin((*gin.Service).DrawStock) },
-	"gin.takeUpcard": func(command) { withGin((*gin.Service).TakeUpcard) },
-	"gin.discard":    func(c command) { withGin(func(s *gin.Service) error { return s.Discard(c.GinCard) }) },
-	"gin.knock":      func(c command) { withGin(func(s *gin.Service) error { return s.Knock(c.GinCard) }) },
-	"gin.resign":     func(command) { withGin((*gin.Service).Resign) },
+	"gin.drawStock":       func(command) { withGin((*gin.Service).DrawStock) },
+	"gin.takeUpcard":      func(command) { withGin((*gin.Service).TakeUpcard) },
+	"gin.takeUpcardOffer": func(command) { withGin((*gin.Service).TakeUpcardOffer) },
+	"gin.passUpcard":      func(command) { withGin((*gin.Service).PassUpcard) },
+	"gin.discard":         func(c command) { withGin(func(s *gin.Service) error { return s.Discard(c.GinCard) }) },
+	"gin.knock":           func(c command) { withGin(func(s *gin.Service) error { return s.Knock(c.GinCard) }) },
+	"gin.resign":          func(command) { withGin((*gin.Service).Resign) },
 
 	// Takeback (1-level undo of the last move) for every deterministic game.
 	"connect4.offerTakeback":  func(command) { withC4((*connect4.Service).OfferTakeback) },
@@ -875,7 +877,8 @@ func emitGinState(e gin.State) {
 		"hand": e.Hand, "handCounts": e.HandCounts[:], "discard": e.Discard,
 		"stockCount": e.StockCount, "deadwood": e.Deadwood, "canKnock": e.CanKnock,
 		"scores": e.Scores[:], "outcome": e.Outcome, "verified": e.Verified,
-		"oppHand": e.OppHand,
+		"oppHand": e.OppHand, "dealerId": uint32(e.DealerID), "handsWon": e.HandsWon[:],
+		"matchTarget": e.MatchTarget, "matchOver": e.MatchOver,
 	})
 }
 

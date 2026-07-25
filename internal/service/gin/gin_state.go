@@ -21,6 +21,9 @@ type snapshot struct {
 	StockNext  int    `cbor:"7,keyasint"`
 	Scores     [2]int `cbor:"8,keyasint"`
 	Outcome    string `cbor:"9,keyasint,omitempty"`
+	Dealer     uint8  `cbor:"10,keyasint"`
+	HandsWon   [2]int `cbor:"11,keyasint"`
+	MatchOver  bool   `cbor:"12,keyasint,omitempty"`
 }
 
 func (s *Service) Snapshot() ([]byte, error) {
@@ -33,7 +36,7 @@ func (s *Service) Snapshot() ([]byte, error) {
 		P1: uint32(s.table.Seats.P1), P2: uint32(s.table.Seats.P2),
 		Phase: uint8(s.ph), Turn: uint8(s.turn), Discard: s.discard,
 		HandCounts: s.handCounts, StockNext: s.stockNext, Scores: s.scores,
-		Outcome: s.outcome,
+		Outcome: s.outcome, Dealer: uint8(s.dealer), HandsWon: s.handsWon, MatchOver: s.matchOver,
 	})
 }
 
@@ -55,6 +58,9 @@ func (s *Service) Restore(blob []byte) error {
 	s.stockNext = snap.StockNext
 	s.scores = snap.Scores
 	s.outcome = snap.Outcome
+	s.dealer = game.Side(snap.Dealer)
+	s.handsWon = snap.HandsWon
+	s.matchOver = snap.MatchOver
 	s.mu.Unlock()
 	s.emitState()
 	return nil
@@ -74,8 +80,8 @@ func (s *Service) emitState() {
 }
 
 var phaseNames = map[phase]string{
-	phShuffle: "shuffling", phDraw: "draw", phDiscard: "discard",
-	phShowdown: "showdown", phOver: "over",
+	phShuffle: "shuffling", phUpcardOffer: "upcard-offer", phDraw: "draw",
+	phDiscard: "discard", phShowdown: "showdown", phOver: "over",
 }
 
 func (s *Service) stateLocked() State {
@@ -84,16 +90,20 @@ func (s *Service) stateLocked() State {
 	}
 	side, seated := s.mySeat()
 	st := State{
-		Playing:    true,
-		Phase:      phaseNames[s.ph],
-		P1ID:       s.table.Seats.P1,
-		P2ID:       s.table.Seats.P2,
-		Discard:    append([]int8(nil), s.discard...),
-		HandCounts: s.handCounts,
-		StockCount: stockRemaining(s.stockNext),
-		Scores:     s.scores,
-		Outcome:    s.outcome,
-		Verified:   s.verified,
+		Playing:     true,
+		Phase:       phaseNames[s.ph],
+		P1ID:        s.table.Seats.P1,
+		P2ID:        s.table.Seats.P2,
+		Discard:     append([]int8(nil), s.discard...),
+		HandCounts:  s.handCounts,
+		StockCount:  stockRemaining(s.stockNext),
+		Scores:      s.scores,
+		Outcome:     s.outcome,
+		Verified:    s.verified,
+		DealerID:    s.table.Seats.IDOf(s.dealer),
+		HandsWon:    s.handsWon,
+		MatchTarget: matchTarget,
+		MatchOver:   s.matchOver,
 	}
 	if s.ph != phOver && s.ph != phShowdown {
 		st.TurnID = s.table.Seats.IDOf(s.turn)
@@ -149,9 +159,30 @@ func (s *Service) finalizeShowdownLocked() {
 	kp, op := ginrummy.Score(toInts(s.revealHands[k]), toInts(s.revealHands[o]), gin)
 	s.scores[k] += kp
 	s.scores[o] += op
+	winner := k
+	if op > kp {
+		winner = o
+	}
+	s.handsWon[winner]++
+	if s.scores[game.P1] >= matchTarget || s.scores[game.P2] >= matchTarget {
+		s.applyMatchBonusesLocked()
+		s.matchOver = true
+	}
 	s.verified = s.verifyLocked()
 	s.outcome = s.outcomeTextLocked(k, kp, op, gin)
 	s.ph = phOver
+}
+
+// applyMatchBonusesLocked adds the game bonus to the match winner (first to the
+// target) and each side's box bonus (25 per hand won) once the match ends.
+func (s *Service) applyMatchBonusesLocked() {
+	winner := game.P1
+	if s.scores[game.P2] > s.scores[game.P1] {
+		winner = game.P2
+	}
+	s.scores[winner] += gameBonus
+	s.scores[game.P1] += boxBonus * s.handsWon[game.P1]
+	s.scores[game.P2] += boxBonus * s.handsWon[game.P2]
 }
 
 // verifyLocked re-derives both keys from the revealed exponents and checks the
@@ -170,6 +201,26 @@ func (s *Service) verifyLocked() bool {
 }
 
 func (s *Service) outcomeTextLocked(knocker game.Side, kp, op int, gin bool) string {
+	base := s.handOutcomeLocked(knocker, kp, op, gin)
+	if !s.matchOver {
+		return base
+	}
+	side, seated := s.mySeat()
+	mw := game.P1
+	if s.scores[game.P2] > s.scores[game.P1] {
+		mw = game.P2
+	}
+	a, b := s.scores[mw], s.scores[mw.Opponent()]
+	if !seated {
+		return fmt.Sprintf("%s — match to %s %d–%d", base, seatName(mw), a, b)
+	}
+	if side == mw {
+		return fmt.Sprintf("%s — you WIN the match %d–%d", base, s.scores[side], s.scores[side.Opponent()])
+	}
+	return fmt.Sprintf("%s — you lose the match %d–%d", base, s.scores[side], s.scores[side.Opponent()])
+}
+
+func (s *Service) handOutcomeLocked(knocker game.Side, kp, op int, gin bool) string {
 	side, seated := s.mySeat()
 	tag := "Knock"
 	if gin {

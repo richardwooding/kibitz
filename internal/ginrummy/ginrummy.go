@@ -11,13 +11,11 @@
 // valid run but Q-K-A is not (there is no wraparound). BestMelds finds the
 // decomposition that minimises leftover deadwood.
 //
-// Lay-off simplification (v1): opponent lay-off is NOT modelled. In real Gin
-// Rummy, after a non-gin knock the opponent may lay their own deadwood cards
-// onto the knocker's melds, reducing the opponent's counted deadwood before
-// scoring. This library ignores that step, so the opponent deadwood (od) used
-// in Score is simply the opponent hand's own best deadwood. This only affects
-// the non-gin knock branch; gin scoring is unaffected because a gin opponent
-// cannot lay off. A future version may add lay-off support.
+// Lay-off: after a non-gin knock the defender may lay their own deadwood cards
+// onto the knocker's melds, reducing the defender's counted deadwood before
+// scoring (see LayOff). Score applies this in the non-gin branch, so the
+// opponent deadwood (od) it compares is the post-lay-off remainder. Gin scoring
+// is unaffected because a gin opponent has no deadwood and cannot lay off.
 package ginrummy
 
 // HandTarget is the match target: the first player to reach this cumulative
@@ -77,20 +75,21 @@ func IsGin(hand []int) bool {
 // Score computes the points for a single completed hand between the knocker and
 // their opponent. gin indicates the knocker went gin (all cards melded).
 //
-// Let kd = Deadwood(knocker) and od = Deadwood(opponent):
+// Let kd = Deadwood(knocker). In the non-gin case od is the opponent's deadwood
+// AFTER laying off onto the knocker's melds (see LayOff); for gin it is the
+// opponent's full deadwood (a gin opponent cannot lay off).
 //   - Gin: knocker scores od + GinBonus; opponent scores 0.
 //   - Normal knock (kd < od): knocker scores od - kd; opponent scores 0.
 //   - Undercut (kd >= od, non-gin): opponent scores (kd - od) + UndercutBonus;
 //     knocker scores 0.
-//
-// See the package doc for the lay-off simplification affecting od in the
-// non-gin case.
 func Score(knocker, opponent []int, gin bool) (knockerPts, oppPts int) {
 	kd := Deadwood(knocker)
-	od := Deadwood(opponent)
 	if gin {
-		return od + GinBonus, 0
+		return Deadwood(opponent) + GinBonus, 0
 	}
+	_, knockerMelds, _ := BestMelds(knocker)
+	_, _, oppDeadwood := BestMelds(opponent)
+	od, _ := LayOff(oppDeadwood, knockerMelds)
 	if kd < od {
 		return od - kd, 0
 	}

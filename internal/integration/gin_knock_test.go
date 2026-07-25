@@ -35,6 +35,7 @@ func TestGinKnockAndVerify(t *testing.T) {
 	host, phrase := hostGin(t, url)
 	player := joinGin(t, url, phrase)
 	pollStart(t, host.g.Start)
+	ginPassOpening(t, host, player) // skip the opening upcard offer
 	ginWait(t, host, func(s gin.State) bool { return s.Phase == "draw" })
 	ginWait(t, player, func(s gin.State) bool { return s.Phase == "draw" })
 

@@ -239,6 +239,90 @@ func TestScoreUndercut(t *testing.T) {
 	}
 }
 
+// containsAll reports whether laid contains exactly the wanted cards (order
+// independent).
+func containsAll(laid, want []int) bool {
+	if len(laid) != len(want) {
+		return false
+	}
+	got := append([]int(nil), laid...)
+	w := append([]int(nil), want...)
+	sort.Ints(got)
+	sort.Ints(w)
+	for i := range w {
+		if got[i] != w[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// TestLayOffRunExtensionCascade lays the defender's 4♠ onto the knocker's
+// 5♠6♠7♠ run, which then cascades to admit 3♠ on a later pass. K♥ cannot lay
+// off and remains as deadwood.
+func TestLayOffRunExtensionCascade(t *testing.T) {
+	melds := [][]int{{card(4, 0), card(5, 0), card(6, 0)}} // 5♠ 6♠ 7♠ run
+	// Order 3♠ before 4♠ so 3♠ only fits after 4♠ extends the run: cascade
+	// across passes.
+	deadwood := []int{card(2, 0), card(3, 0), card(12, 1)} // 3♠, 4♠, K♥
+	remaining, laid := ginrummy.LayOff(deadwood, melds)
+	if remaining != 10 { // only K♥ left
+		t.Fatalf("run cascade: remaining = %d, want 10", remaining)
+	}
+	if !containsAll(laid, []int{card(2, 0), card(3, 0)}) {
+		t.Fatalf("run cascade: laid = %v, want 3♠ and 4♠", laid)
+	}
+}
+
+// TestLayOffSet lays the defender's spare K♣ onto the knocker's K set (which
+// grows to 4). The 5♥ stays as deadwood.
+func TestLayOffSet(t *testing.T) {
+	melds := [][]int{{card(12, 0), card(12, 1), card(12, 2)}} // K♠ K♥ K♦ set
+	deadwood := []int{card(12, 3), card(4, 1)}                // K♣, 5♥
+	remaining, laid := ginrummy.LayOff(deadwood, melds)
+	if remaining != 5 { // only 5♥ left
+		t.Fatalf("set lay-off: remaining = %d, want 5", remaining)
+	}
+	if !containsAll(laid, []int{card(12, 3)}) {
+		t.Fatalf("set lay-off: laid = %v, want K♣", laid)
+	}
+}
+
+// TestScoreGinNoLayOff verifies that a gin knock counts the opponent's FULL
+// deadwood with no lay-off, even though J♠ would otherwise extend the knocker's
+// spade run.
+func TestScoreGinNoLayOff(t *testing.T) {
+	knocker := []int{ // gin: A..10 spades run, deadwood 0
+		card(0, 0), card(1, 0), card(2, 0), card(3, 0), card(4, 0),
+		card(5, 0), card(6, 0), card(7, 0), card(8, 0), card(9, 0),
+	}
+	// J♠ is adjacent to the run's high end, but gin forbids lay-off.
+	opp := []int{card(10, 0), card(4, 1)} // J♠(10) + 5♥(5) = 15
+	kp, op := ginrummy.Score(knocker, opp, true)
+	if kp != 40 || op != 0 { // 15 + 25 gin bonus, no lay-off reduction
+		t.Fatalf("gin no-lay-off score = (%d, %d), want (40, 0)", kp, op)
+	}
+}
+
+// TestScoreLayOffFlipsToUndercut shows lay-off changing the outcome: without it
+// the knocker (deadwood 2) beats the opponent's raw deadwood 8 for +6. But the
+// opponent's 4♠ and 3♠ lay off onto the knocker's 5♠6♠7♠ run (cascade), leaving
+// only A♥ = 1 deadwood, which undercuts the knocker.
+func TestScoreLayOffFlipsToUndercut(t *testing.T) {
+	knocker := []int{card(4, 0), card(5, 0), card(6, 0), card(1, 1)} // 5♠6♠7♠ run + 2♥(2)
+	opp := []int{card(2, 0), card(3, 0), card(0, 1)}                 // 3♠, 4♠, A♥
+	if kd := ginrummy.Deadwood(knocker); kd != 2 {
+		t.Fatalf("knocker deadwood = %d, want 2", kd)
+	}
+	if od := ginrummy.Deadwood(opp); od != 8 { // raw, pre-lay-off: 3+4+1
+		t.Fatalf("opp raw deadwood = %d, want 8", od)
+	}
+	kp, op := ginrummy.Score(knocker, opp, false)
+	if kp != 0 || op != 26 { // post-lay-off od=1; (2-1)+25 undercut
+		t.Fatalf("lay-off undercut score = (%d, %d), want (0, 26)", kp, op)
+	}
+}
+
 func TestBestMeldsEmpty(t *testing.T) {
 	d, melds, unmatched := ginrummy.BestMelds(nil)
 	if d != 0 || melds != nil || unmatched != nil {
