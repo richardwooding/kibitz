@@ -38,11 +38,16 @@ button,
 .ck-board, .ck-cell,
 .rv-board, .rv-cell,
 .gm-board, .gm-cell,
+.hx-board, .hx-cell,
+.dots-board, .dots-edge,
+.go-board, .go-cell,
+.xq-board, .xq-cell,
 .bs-board, .bs-cell,
 .game-card, .picker-card {
   touch-action: manipulation;
 }
-.board, .bg-board, .c4-board, .ck-board, .rv-board, .gm-board, .bs-board {
+.board, .bg-board, .c4-board, .ck-board, .rv-board, .gm-board,
+.hx-board, .dots-board, .go-board, .xq-board, .bs-board {
   -webkit-user-select: none;
   user-select: none;
 }
@@ -640,6 +645,142 @@ button.back { margin-bottom: 0.7rem; }
 }
 .gm-stone.black { background: radial-gradient(circle at 35% 30%, #565660, #16161c 72%); }
 .gm-stone.white { background: radial-gradient(circle at 35% 30%, #ffffff, #d6d2c6 78%); }
+
+/* hex — an 11×11 rhombus of hexagons; each row is sheared right by half a cell */
+.hx-board {
+  --hx-cell: clamp(1.1rem, 5.4vw, 2rem);
+  overflow-x: auto;
+  padding: 0.5rem 0.4rem;
+  background: #2a2530;
+  border-radius: 0.4rem;
+}
+.hx-row { display: flex; gap: 2px; margin-bottom: 2px; }
+.hx-cell {
+  all: unset;
+  flex: 0 0 auto;
+  width: var(--hx-cell); height: var(--hx-cell);
+  display: grid; place-items: center;
+  background: #d9c9a4;
+  clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
+}
+.hx-cell.open { cursor: pointer; }
+.hx-cell.open:hover { background: #e9dcbd; }
+.hx-cell.last { background: #f6f078; }
+.hx-cell.win { background: #f0c93c; }
+.hx-stone {
+  width: 68%; height: 68%;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.4);
+  box-sizing: border-box;
+}
+.hx-stone.red { background: radial-gradient(circle at 35% 30%, #ff6b6b, #b01e2e 75%); }
+.hx-stone.blue { background: radial-gradient(circle at 35% 30%, #6ba8ff, #1e46b0 75%); }
+
+/* dots & boxes — 6×6 dots with clickable edge segments interleaved */
+.dots-board {
+  --dot: 12px;
+  display: grid;
+  grid-template-columns: repeat(5, var(--dot) 1fr) var(--dot);
+  grid-template-rows: repeat(5, var(--dot) 1fr) var(--dot);
+  width: min(100%, 30rem);
+  aspect-ratio: 1;
+  margin: 0 auto;
+  padding: 8px;
+  background: #1b1b24;
+  border-radius: 0.5rem;
+  box-sizing: border-box;
+}
+.dots-dot { width: var(--dot); height: var(--dot); border-radius: 50%; background: #8a8a9c; place-self: center; }
+.dots-edge { all: unset; place-self: stretch; border-radius: 3px; background: transparent; }
+.dots-edge.live { cursor: pointer; }
+.dots-edge.h { margin: calc(var(--dot) * 0.3) 0; }
+.dots-edge.v { margin: 0 calc(var(--dot) * 0.3); }
+.dots-edge.live:hover { background: rgba(124, 92, 255, 0.4); }
+.dots-edge.drawn { background: #d8d8e4; }
+.dots-edge.last { background: #f6f078; }
+.dots-box { place-self: stretch; display: grid; place-items: center; font-size: 0.8rem; line-height: 1; margin: 1px; }
+.dots-box.p1 { background: rgba(224, 67, 67, 0.30); }
+.dots-box.p2 { background: rgba(74, 163, 255, 0.30); }
+
+/* go / weiqi — a 9×9 wooden board; the 1px gap shows through as grid lines */
+.go-board {
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  gap: 1px;
+  width: min(100%, 30rem);
+  aspect-ratio: 1;
+  background: #b07a3c;
+  padding: 5px;
+  border-radius: 0.4rem;
+  margin: 0 auto;
+}
+.go-cell {
+  all: unset;
+  position: relative;
+  display: grid; place-items: center;
+  background: #d9a441;
+  aspect-ratio: 1;
+}
+.go-cell.open { cursor: pointer; }
+.go-cell.open:hover::after {
+  content: "";
+  width: 62%; height: 62%;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.16);
+}
+.go-cell.last { outline: 2px solid #f6f078; outline-offset: -1px; z-index: 1; }
+.go-stone {
+  width: 88%; height: 88%;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.4);
+  box-sizing: border-box;
+}
+.go-stone.black { background: radial-gradient(circle at 35% 30%, #565660, #16161c 72%); }
+.go-stone.white { background: radial-gradient(circle at 35% 30%, #ffffff, #d6d2c6 78%); }
+
+/* xiangqi — 9×10 board, Chinese glyphs */
+.xq-board {
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  width: min(100%, 24rem);
+  aspect-ratio: 9 / 10;
+  background: #e7c48a;
+  border: 2px solid #7a5b2e;
+  border-radius: 0.4rem;
+  overflow: hidden;
+  margin: 0 auto;
+}
+.xq-cell {
+  all: unset;
+  position: relative;
+  display: grid; place-items: center;
+  aspect-ratio: 1;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 0.5px rgba(122, 91, 46, 0.45);
+}
+.xq-cell.half-black { background: #e0b878; }
+.xq-cell.palace { box-shadow: inset 0 0 0 1px rgba(122, 91, 46, 0.8); }
+.xq-cell.source { outline: 3px solid rgba(255, 255, 255, 0.55); outline-offset: -3px; }
+.xq-cell.selected { outline: 3px solid var(--sq-select); outline-offset: -3px; }
+.xq-cell.last { background: rgba(246, 240, 120, 0.5); }
+.xq-cell.target::after {
+  content: "";
+  position: absolute;
+  width: 26%; height: 26%;
+  border-radius: 50%;
+  background: var(--sq-target);
+}
+.xq-piece {
+  width: 82%; height: 82%;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  font-size: clamp(0.8rem, 4.5vw, 1.35rem);
+  font-weight: 700;
+  background: #f3e6c8;
+  border: 2px solid #6b4f24;
+}
+.xq-piece.red { color: #b21f1f; border-color: #b21f1f; }
+.xq-piece.black { color: #16161c; border-color: #16161c; }
 
 /* battleship — stack the two grids so each keeps full width (side-by-side
    flex items with a percentage width collapse to nothing). Default stretch

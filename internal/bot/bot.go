@@ -18,8 +18,12 @@ import (
 	"github.com/richardwooding/kibitz/internal/service/checkers"
 	"github.com/richardwooding/kibitz/internal/service/chess"
 	"github.com/richardwooding/kibitz/internal/service/connect4"
+	"github.com/richardwooding/kibitz/internal/service/dots"
 	"github.com/richardwooding/kibitz/internal/service/gomoku"
+	"github.com/richardwooding/kibitz/internal/service/hex"
 	"github.com/richardwooding/kibitz/internal/service/reversi"
+	"github.com/richardwooding/kibitz/internal/service/weiqi"
+	"github.com/richardwooding/kibitz/internal/service/xiangqi"
 	"github.com/richardwooding/kibitz/internal/shipcommit"
 	"github.com/richardwooding/kibitz/internal/wire"
 )
@@ -58,6 +62,10 @@ type Services struct {
 	BG    *backgammon.Service
 	C4    *connect4.Service
 	GM    *gomoku.Service
+	HEX   *hex.Service
+	DOTS  *dots.Service
+	GO    *weiqi.Service
+	XQ    *xiangqi.Service
 	CK    *checkers.Service
 	RV    *reversi.Service
 	BS    *battleship.Service
@@ -95,6 +103,14 @@ func Drive(events <-chan any, s Services, delay time.Duration, level Level) {
 			}
 		case gomoku.State:
 			driveGomoku(s, e, level, pause)
+		case hex.State:
+			driveHex(s, e, pause)
+		case dots.State:
+			driveDots(s, e, pause)
+		case weiqi.State:
+			driveWeiqi(s, e, pause)
+		case xiangqi.State:
+			driveXiangqi(s, e, pause)
 		case reversi.State:
 			if e.Playing && e.Outcome == "" && e.TurnID == s.Self && len(e.Legal) > 0 {
 				side := int8(1) // black = P1
@@ -434,6 +450,48 @@ func gmPattern(count, open int) int {
 		return 10
 	}
 	return 1
+}
+
+// ---- hex / dots / weiqi / xiangqi (random legal move; extracted from Drive) --
+
+func driveHex(s Services, e hex.State, pause func()) {
+	if !e.Playing || e.Outcome != "" || e.TurnID != s.Self || len(e.Legal) == 0 {
+		return
+	}
+	idx := int(e.Legal[rand.Intn(len(e.Legal))])
+	pause()
+	_ = s.HEX.Place(int8(idx/hex.N), int8(idx%hex.N))
+}
+
+func driveDots(s Services, e dots.State, pause func()) {
+	if !e.Playing || e.Outcome != "" || e.TurnID != s.Self || len(e.Legal) == 0 {
+		return
+	}
+	pause()
+	_ = s.DOTS.DrawEdge(e.Legal[rand.Intn(len(e.Legal))])
+}
+
+func driveWeiqi(s Services, e weiqi.State, pause func()) {
+	if !e.Playing || e.Outcome != "" || e.TurnID != s.Self {
+		return
+	}
+	pause()
+	// Pass when out of legal points, or ~1-in-20 to keep games from dragging.
+	if len(e.Legal) == 0 || rand.Intn(20) == 0 {
+		_ = s.GO.Pass()
+		return
+	}
+	m := int(e.Legal[rand.Intn(len(e.Legal))])
+	_ = s.GO.Place(int8(m/weiqi.N), int8(m%weiqi.N))
+}
+
+func driveXiangqi(s Services, e xiangqi.State, pause func()) {
+	if !e.Playing || e.Outcome != "" || e.TurnID != s.Self || len(e.Legal) == 0 {
+		return
+	}
+	mv := e.Legal[rand.Intn(len(e.Legal))]
+	pause()
+	_ = s.XQ.Move(mv[0], mv[1])
 }
 
 // ---- reversi --------------------------------------------------------------
