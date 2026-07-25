@@ -480,4 +480,13 @@
       $("home-status").textContent = "couldn't load the core: " + err;
     }
   })();
+
+  // Register the service worker so the app is installable and its shell loads
+  // offline. Fire-and-forget after load so it never competes with the WASM
+  // fetch; failure (unsupported, insecure context) is non-fatal.
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("service-worker.js").catch(() => {});
+    });
+  }
 })();

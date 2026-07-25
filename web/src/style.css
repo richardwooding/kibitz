@@ -26,6 +26,26 @@
 }
 
 * { box-sizing: border-box; }
+
+/* Touch polish: kill the ~300ms tap delay and double-tap-zoom on interactive
+   elements, drop the grey tap-flash, and keep long-press from selecting board
+   text. Applied broadly so every game's cells/pieces feel native on a phone. */
+body { -webkit-tap-highlight-color: transparent; }
+button,
+.board, .sq,
+.bg-board, .bg-point, .bg-checker,
+.c4-board, .c4-col, .c4-cell,
+.ck-board, .ck-cell,
+.rv-board, .rv-cell,
+.bs-board, .bs-cell,
+.game-card, .picker-card {
+  touch-action: manipulation;
+}
+.board, .bg-board, .c4-board, .ck-board, .rv-board, .bs-board {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 body {
   margin: 0;
   font-family: ui-sans-serif, system-ui, sans-serif;
