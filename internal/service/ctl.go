@@ -60,7 +60,7 @@ type Roster struct {
 
 type ctlService struct {
 	mux *Mux
-	ctx Context
+	Base
 	// roster + names + endpoints are host-authoritative; joiners hold the last
 	// announced copy. Names/endpoints are self-asserted (each reports its own).
 	roster       map[wire.ParticipantID]session.Role
@@ -103,13 +103,13 @@ func (c *ctlService) setName(name string) {
 		return
 	}
 	c.selfName = name
-	c.names[c.ctx.Self] = name
-	if c.ctx.Host {
+	c.names[c.Ctx().Self] = name
+	if c.Ctx().Host {
 		c.announce()
 		return
 	}
 	if body, err := wire.Marshal(ctlMsg{Kind: ctlKindIdentity, Name: name}); err == nil {
-		_ = c.ctx.Send.SendTo(c.ctx.HostID, CtlID, body)
+		_ = c.Ctx().Send.SendTo(c.Ctx().HostID, CtlID, body)
 	}
 }
 
@@ -119,13 +119,13 @@ func (c *ctlService) setName(name string) {
 // participant a "your turn" push.
 func (c *ctlService) setEndpoint(endpoint string) {
 	c.selfEndpoint = endpoint
-	c.endpoints[c.ctx.Self] = endpoint
-	if c.ctx.Host {
+	c.endpoints[c.Ctx().Self] = endpoint
+	if c.Ctx().Host {
 		c.announce()
 		return
 	}
 	if body, err := wire.Marshal(ctlMsg{Kind: ctlKindIdentity, Endpoint: endpoint}); err == nil {
-		_ = c.ctx.Send.SendTo(c.ctx.HostID, CtlID, body)
+		_ = c.Ctx().Send.SendTo(c.Ctx().HostID, CtlID, body)
 	}
 }
 
@@ -133,7 +133,7 @@ func (c *ctlService) setEndpoint(endpoint string) {
 // generated and re-announces so every member gets it. It's an opaque browser
 // blob to the Go layer.
 func (c *ctlService) setPushKey(key string) {
-	if !c.ctx.Host {
+	if !c.Ctx().Host {
 		return
 	}
 	c.pushKey = key
@@ -144,7 +144,7 @@ func (c *ctlService) ID() string   { return CtlID }
 func (c *ctlService) Version() int { return 1 }
 
 func (c *ctlService) Attach(ctx Context) {
-	c.ctx = ctx
+	c.SetContext(ctx)
 	if ctx.Host {
 		c.roster[ctx.Self] = session.RoleHost
 	}
@@ -171,7 +171,7 @@ func (c *ctlService) HandleFrame(from wire.ParticipantID, body []byte) error {
 // handleAnnounce adopts a host-authoritative roster (roster/names/endpoints/
 // pushKey) and emits the resulting Roster event. Host-only sender.
 func (c *ctlService) handleAnnounce(from wire.ParticipantID, msg ctlMsg) error {
-	if from != c.ctx.HostID {
+	if from != c.Ctx().HostID {
 		return fmt.Errorf("ctl: announce from non-host %d", from)
 	}
 	c.roster = map[wire.ParticipantID]session.Role{}
@@ -195,7 +195,7 @@ func (c *ctlService) handleAnnounce(from wire.ParticipantID, msg ctlMsg) error {
 // authoritative roster and re-announces. Only the host aggregates; a
 // participant reports its own.
 func (c *ctlService) handleIdentity(from wire.ParticipantID, msg ctlMsg) error {
-	if !c.ctx.Host {
+	if !c.Ctx().Host {
 		return nil
 	}
 	if msg.Name != "" {
@@ -210,7 +210,7 @@ func (c *ctlService) handleIdentity(from wire.ParticipantID, msg ctlMsg) error {
 
 // handleSnapshotReq answers a late joiner's snapshot request. Host-only.
 func (c *ctlService) handleSnapshotReq(from wire.ParticipantID) error {
-	if !c.ctx.Host {
+	if !c.Ctx().Host {
 		return nil
 	}
 	return c.sendSnapshot(from)
@@ -219,7 +219,7 @@ func (c *ctlService) handleSnapshotReq(from wire.ParticipantID) error {
 // handleSnapshot restores per-service state from a host snapshot. Host-only
 // sender; the ctl's own state never travels in snapshots.
 func (c *ctlService) handleSnapshot(from wire.ParticipantID, msg ctlMsg) error {
-	if from != c.ctx.HostID {
+	if from != c.Ctx().HostID {
 		return fmt.Errorf("ctl: snapshot from non-host %d", from)
 	}
 	for id, blob := range msg.Snapshots {
@@ -239,7 +239,7 @@ func (c *ctlService) Restore([]byte) error      { return nil }
 
 // MemberKeyed / MemberLeft: host-side roster maintenance + announce.
 func (c *ctlService) MemberKeyed(id wire.ParticipantID, role session.Role) {
-	if !c.ctx.Host {
+	if !c.Ctx().Host {
 		return
 	}
 	c.roster[id] = role
@@ -247,7 +247,7 @@ func (c *ctlService) MemberKeyed(id wire.ParticipantID, role session.Role) {
 }
 
 func (c *ctlService) MemberLeft(id wire.ParticipantID) {
-	if !c.ctx.Host {
+	if !c.Ctx().Host {
 		return
 	}
 	delete(c.roster, id)
@@ -282,7 +282,7 @@ func (c *ctlService) announce() {
 	if err != nil {
 		return
 	}
-	_ = c.ctx.Send.Broadcast(CtlID, body)
+	_ = c.Ctx().Send.Broadcast(CtlID, body)
 	// The host's own UI wants the roster too.
 	c.mux.emit(c.roster3(infos))
 }
@@ -331,7 +331,7 @@ func (c *ctlService) assumeHost(leaver wire.ParticipantID) {
 	delete(c.roster, leaver)
 	delete(c.names, leaver)
 	delete(c.endpoints, leaver)
-	c.roster[c.ctx.Self] = session.RoleHost
+	c.roster[c.Ctx().Self] = session.RoleHost
 	c.announce()
 }
 
@@ -340,7 +340,7 @@ func (c *ctlService) requestSnapshot() {
 	if err != nil {
 		return
 	}
-	_ = c.ctx.Send.SendTo(c.ctx.HostID, CtlID, body)
+	_ = c.Ctx().Send.SendTo(c.Ctx().HostID, CtlID, body)
 }
 
 func (c *ctlService) sendSnapshot(to wire.ParticipantID) error {
@@ -361,7 +361,7 @@ func (c *ctlService) sendSnapshot(to wire.ParticipantID) error {
 	if err != nil {
 		return err
 	}
-	return c.ctx.Send.SendTo(to, CtlID, body)
+	return c.Ctx().Send.SendTo(to, CtlID, body)
 }
 
 func (c *ctlService) rosterCopy() map[wire.ParticipantID]session.Role {

@@ -76,7 +76,7 @@ func (s *Service) emitState() {
 	s.mu.Lock()
 	st := s.stateLocked()
 	s.mu.Unlock()
-	s.ctx.Emit(st)
+	s.Ctx().Emit(st)
 }
 
 var phaseNames = map[phase]string{

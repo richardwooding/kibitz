@@ -91,7 +91,7 @@ var (
 // the mux goroutine; TryMove/Resign/OfferDraw/LegalTargets/Start come from
 // the UI layer — the mutex covers game state.
 type Service struct {
-	ctx service.Context
+	service.Base
 
 	mu        sync.Mutex
 	table     game.Table
@@ -110,7 +110,7 @@ func New() *Service { return &Service{} }
 func (s *Service) ID() string   { return ID }
 func (s *Service) Version() int { return 1 }
 
-func (s *Service) Attach(ctx service.Context) { s.ctx = ctx }
+func (s *Service) Attach(ctx service.Context) { s.SetContext(ctx) }
 
 // OnPromote resets host-only seat bookkeeping when this end is promoted to host
 // (migration); the next joiner re-seeds the opponent via NoteKeyed.
@@ -123,7 +123,7 @@ func (s *Service) OnPromote() {
 // MemberKeyed (host side) records the seated player; games start on demand
 // via Start().
 func (s *Service) MemberKeyed(id wire.ParticipantID, role session.Role) {
-	if !s.ctx.Host {
+	if !s.Ctx().Host {
 		return
 	}
 	s.mu.Lock()
@@ -135,24 +135,24 @@ func (s *Service) MemberKeyed(id wire.ParticipantID, role session.Role) {
 // On the host it seats players — white alternates each game — and
 // broadcasts newGame; on a player it asks the host via startReq.
 func (s *Service) Start() error {
-	if !s.ctx.Host {
+	if !s.Ctx().Host {
 		body, err := wire.Marshal(msg{Kind: kindStartReq})
 		if err != nil {
 			return err
 		}
-		return s.ctx.Send.SendTo(s.ctx.HostID, ID, body)
+		return s.Ctx().Send.SendTo(s.Ctx().HostID, ID, body)
 	}
-	return s.hostStart(s.ctx.Self)
+	return s.hostStart(s.Ctx().Self)
 }
 
 // hostStart validates and launches; from is who asked (host or seated player).
 func (s *Service) hostStart(from wire.ParticipantID) error {
 	s.mu.Lock()
-	if err := s.table.AuthorizeStart(s.ctx.Host, from, s.ctx.Self, s.phaseLocked()); err != nil {
+	if err := s.table.AuthorizeStart(s.Ctx().Host, from, s.Ctx().Self, s.phaseLocked()); err != nil {
 		s.mu.Unlock()
 		return err
 	}
-	seats := s.table.NextSeats(s.ctx.Self)
+	seats := s.table.NextSeats(s.Ctx().Self)
 	s.game = chesslib.NewGame()
 	s.whiteID = seats.P1 // P1 = white (moves first)
 	s.blackID = seats.P2
@@ -166,7 +166,7 @@ func (s *Service) hostStart(from wire.ParticipantID) error {
 	if err != nil {
 		return err
 	}
-	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+	if err := s.Ctx().Send.Broadcast(ID, body); err != nil {
 		return err
 	}
 	s.emitState()
@@ -209,7 +209,7 @@ func (s *Service) TryMove(uci string) error {
 		s.mu.Unlock()
 		return ErrNoGame
 	}
-	if err := s.checkTurnLocked(s.ctx.Self); err != nil {
+	if err := s.checkTurnLocked(s.Ctx().Self); err != nil {
 		s.mu.Unlock()
 		return err
 	}
@@ -234,7 +234,7 @@ func (s *Service) TryMove(uci string) error {
 	if err != nil {
 		return err
 	}
-	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+	if err := s.Ctx().Send.Broadcast(ID, body); err != nil {
 		return err
 	}
 	s.emitState()
@@ -248,7 +248,7 @@ func (s *Service) Resign() error {
 		s.mu.Unlock()
 		return ErrNoGame
 	}
-	color, err := s.colorOfLocked(s.ctx.Self)
+	color, err := s.colorOfLocked(s.Ctx().Self)
 	if err != nil {
 		s.mu.Unlock()
 		return err
@@ -260,7 +260,7 @@ func (s *Service) Resign() error {
 	if err != nil {
 		return err
 	}
-	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+	if err := s.Ctx().Send.Broadcast(ID, body); err != nil {
 		return err
 	}
 	s.emitState()
@@ -274,7 +274,7 @@ func (s *Service) OfferDraw() error {
 		s.mu.Unlock()
 		return ErrNoGame
 	}
-	if _, err := s.colorOfLocked(s.ctx.Self); err != nil {
+	if _, err := s.colorOfLocked(s.Ctx().Self); err != nil {
 		s.mu.Unlock()
 		return err
 	}
@@ -283,7 +283,7 @@ func (s *Service) OfferDraw() error {
 	if err != nil {
 		return err
 	}
-	return s.ctx.Send.Broadcast(ID, body)
+	return s.Ctx().Send.Broadcast(ID, body)
 }
 
 func (s *Service) AgreeDraw() error {
@@ -296,7 +296,7 @@ func (s *Service) AgreeDraw() error {
 		s.mu.Unlock()
 		return errors.New("chess: no draw offer pending")
 	}
-	if _, err := s.colorOfLocked(s.ctx.Self); err != nil {
+	if _, err := s.colorOfLocked(s.Ctx().Self); err != nil {
 		s.mu.Unlock()
 		return err
 	}
@@ -308,7 +308,7 @@ func (s *Service) AgreeDraw() error {
 	if err != nil {
 		return err
 	}
-	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+	if err := s.Ctx().Send.Broadcast(ID, body); err != nil {
 		return err
 	}
 	s.emitState()
@@ -358,7 +358,7 @@ func (s *Service) HandleFrame(from wire.ParticipantID, body []byte) error {
 	case kindNewGame:
 		return s.handleNewGame(from, m)
 	case kindStartReq:
-		if !s.ctx.Host {
+		if !s.Ctx().Host {
 			return nil // only the host seats players
 		}
 		return s.hostStart(from)
@@ -379,7 +379,7 @@ func (s *Service) HandleFrame(from wire.ParticipantID, body []byte) error {
 }
 
 func (s *Service) handleNewGame(from wire.ParticipantID, m msg) error {
-	if from != s.ctx.HostID {
+	if from != s.Ctx().HostID {
 		return fmt.Errorf("chess: new game from non-host %d", from)
 	}
 	s.mu.Lock()
@@ -405,7 +405,7 @@ func (s *Service) handleMove(from wire.ParticipantID, m msg) error {
 	}
 	if err := s.checkTurnLocked(from); err != nil {
 		s.mu.Unlock()
-		s.ctx.Emit(Desync{From: from, Reason: "move out of turn"})
+		s.Ctx().Emit(Desync{From: from, Reason: "move out of turn"})
 		return err
 	}
 	prev, _ := s.snapshotBlobLocked(nil) // pre-move state; committed only on a valid move
@@ -415,7 +415,7 @@ func (s *Service) handleMove(from wire.ParticipantID, m msg) error {
 	}
 	if err != nil {
 		s.mu.Unlock()
-		s.ctx.Emit(Desync{From: from, Reason: fmt.Sprintf("illegal move %s", m.UCI)})
+		s.Ctx().Emit(Desync{From: from, Reason: fmt.Sprintf("illegal move %s", m.UCI)})
 		return fmt.Errorf("chess: peer sent illegal move %q: %w", m.UCI, err)
 	}
 	s.prevSnap = prev
@@ -426,7 +426,7 @@ func (s *Service) handleMove(from wire.ParticipantID, m msg) error {
 	s.mu.Unlock()
 
 	if !bytes.Equal(hash, m.StateHash) {
-		s.ctx.Emit(Desync{From: from, Reason: "position hash mismatch"})
+		s.Ctx().Emit(Desync{From: from, Reason: "position hash mismatch"})
 		return errors.New("chess: position hash mismatch")
 	}
 	s.emitState()
@@ -462,7 +462,7 @@ func (s *Service) handleOfferDraw(from wire.ParticipantID) error {
 	}
 	s.drawnFrom = from
 	s.mu.Unlock()
-	s.ctx.Emit(DrawOffered{From: from})
+	s.Ctx().Emit(DrawOffered{From: from})
 	return nil
 }
 
@@ -487,17 +487,17 @@ func (s *Service) handleAgreeDraw(from wire.ParticipantID) error {
 // the last mover (it's the opponent's turn now) while a stashed move exists.
 func (s *Service) OfferTakeback() error {
 	s.mu.Lock()
-	if !s.canOfferLocked(s.ctx.Self) {
+	if !s.canOfferLocked(s.Ctx().Self) {
 		s.mu.Unlock()
 		return errors.New("chess: no takeback available")
 	}
-	s.offerBy = s.ctx.Self
+	s.offerBy = s.Ctx().Self
 	s.mu.Unlock()
 	body, err := wire.Marshal(msg{Kind: kindTakebackOffer})
 	if err != nil {
 		return err
 	}
-	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+	if err := s.Ctx().Send.Broadcast(ID, body); err != nil {
 		return err
 	}
 	s.emitState()
@@ -531,7 +531,7 @@ func (s *Service) handleTakebackOffer(from wire.ParticipantID) error {
 // AcceptTakeback accepts a pending offer from the opponent and reverts one move.
 func (s *Service) AcceptTakeback() error {
 	s.mu.Lock()
-	if s.offerBy == 0 || s.offerBy == s.ctx.Self || s.phaseLocked() != game.Playing {
+	if s.offerBy == 0 || s.offerBy == s.Ctx().Self || s.phaseLocked() != game.Playing {
 		s.mu.Unlock()
 		return errors.New("chess: no takeback to accept")
 	}
@@ -541,7 +541,7 @@ func (s *Service) AcceptTakeback() error {
 	if err != nil {
 		return err
 	}
-	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+	if err := s.Ctx().Send.Broadcast(ID, body); err != nil {
 		return err
 	}
 	s.emitState()
@@ -645,7 +645,7 @@ func (s *Service) emitState() {
 	s.mu.Lock()
 	st := s.stateLocked()
 	s.mu.Unlock()
-	s.ctx.Emit(st)
+	s.Ctx().Emit(st)
 }
 
 // sanHistory renders the game's main line as a SAN list (e.g. "e4","Nf3","O-O")
@@ -681,7 +681,7 @@ func (s *Service) stateLocked() State {
 			st.TurnID = s.blackID
 		}
 	}
-	st.CanTakeback = s.offerBy == 0 && s.canOfferLocked(s.ctx.Self)
+	st.CanTakeback = s.offerBy == 0 && s.canOfferLocked(s.Ctx().Self)
 	st.TakebackBy = s.offerBy
 	return st
 }

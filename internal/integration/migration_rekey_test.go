@@ -11,8 +11,6 @@ import (
 // eventuallyDelivers keeps sending `text` from sender until receiver decrypts it
 // (or the deadline). It tolerates the brief window after a migration where the
 // bystander hasn't yet installed the rotated key: retries land once it has.
-// Sender must already be settled (its re-Attach happens-before the caller's
-// synchronizing event) so chat.Say doesn't race the mux goroutine.
 func eventuallyDelivers(t *testing.T, sender, receiver *table, text string) {
 	t.Helper()
 	deadline := time.After(15 * time.Second)
@@ -66,8 +64,11 @@ func TestHostMigrationRekeysSurvivors(t *testing.T) {
 	}
 	muxWait[service.Promoted](t, a)
 
-	// The new host's rotated-key chat reaches the bystander — only possible if
-	// the bystander re-PAKEd and installed the rotated key. (Retries cover the
-	// short window before its re-key round-trip completes.)
+	// Traffic flows both ways post-migration. b→a exercises a send from the
+	// bystander concurrently with its own mux re-Attach (the path that used to
+	// data-race before service Context became atomic). a→b is the crypto proof:
+	// the new host's rotated-key chat only decrypts once the bystander re-PAKEd
+	// and installed the rotated key (retries cover the round-trip window).
+	eventuallyDelivers(t, b, a, "bystander after migration")
 	eventuallyDelivers(t, a, b, "new host after migration")
 }

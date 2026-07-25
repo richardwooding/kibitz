@@ -33,7 +33,7 @@ func (s *Service) decodePartials(partials [][]byte) []int8 {
 // --- shuffle handshake ------------------------------------------------------
 
 func (s *Service) handleShuffle1(from wire.ParticipantID, m msg) error {
-	if from != s.ctx.HostID {
+	if from != s.Ctx().HostID {
 		return errors.New("gin: shuffle1 from non-host")
 	}
 	key, err := mentalpoker.NewKey()
@@ -65,7 +65,7 @@ func (s *Service) handleShuffle1(from wire.ParticipantID, m msg) error {
 	if err != nil {
 		return err
 	}
-	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+	if err := s.Ctx().Send.Broadcast(ID, body); err != nil {
 		return err
 	}
 	s.emitState()
@@ -74,7 +74,7 @@ func (s *Service) handleShuffle1(from wire.ParticipantID, m msg) error {
 
 func (s *Service) handleShuffle2(from wire.ParticipantID, m msg) error {
 	s.mu.Lock()
-	if !s.ctx.Host || s.ph != phShuffle {
+	if !s.Ctx().Host || s.ph != phShuffle {
 		s.mu.Unlock()
 		return nil
 	}
@@ -95,7 +95,7 @@ func (s *Service) handleShuffle2(from wire.ParticipantID, m msg) error {
 	if err != nil {
 		return err
 	}
-	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+	if err := s.Ctx().Send.Broadcast(ID, body); err != nil {
 		return err
 	}
 	s.emitState()
@@ -103,7 +103,7 @@ func (s *Service) handleShuffle2(from wire.ParticipantID, m msg) error {
 }
 
 func (s *Service) handleDeal(from wire.ParticipantID, m msg) error {
-	if from != s.ctx.HostID {
+	if from != s.Ctx().HostID {
 		return nil
 	}
 	s.mu.Lock()
@@ -161,7 +161,7 @@ func (s *Service) TakeUpcardOffer() error {
 	if err != nil {
 		return err
 	}
-	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+	if err := s.Ctx().Send.Broadcast(ID, body); err != nil {
 		return err
 	}
 	s.emitState()
@@ -182,7 +182,7 @@ func (s *Service) PassUpcard() error {
 	if err != nil {
 		return err
 	}
-	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+	if err := s.Ctx().Send.Broadcast(ID, body); err != nil {
 		return err
 	}
 	s.emitState()
@@ -246,7 +246,7 @@ func (s *Service) DrawStock() error {
 	if err != nil {
 		return err
 	}
-	return s.ctx.Send.Broadcast(ID, body)
+	return s.Ctx().Send.Broadcast(ID, body)
 }
 
 // TakeUpcard draws the (public) top of the discard pile.
@@ -271,7 +271,7 @@ func (s *Service) TakeUpcard() error {
 	if err != nil {
 		return err
 	}
-	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+	if err := s.Ctx().Send.Broadcast(ID, body); err != nil {
 		return err
 	}
 	s.emitState()
@@ -312,7 +312,7 @@ func (s *Service) handleDrawReq(from wire.ParticipantID, m msg) error {
 	if err != nil {
 		return err
 	}
-	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+	if err := s.Ctx().Send.Broadcast(ID, body); err != nil {
 		return err
 	}
 	s.emitState()
@@ -368,7 +368,7 @@ func (s *Service) Discard(card int8) error {
 	if err != nil {
 		return err
 	}
-	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+	if err := s.Ctx().Send.Broadcast(ID, body); err != nil {
 		return err
 	}
 	s.emitState()
@@ -420,7 +420,7 @@ func (s *Service) Knock(card int8) error {
 	if err != nil {
 		return err
 	}
-	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+	if err := s.Ctx().Send.Broadcast(ID, body); err != nil {
 		return err
 	}
 	s.emitState()
@@ -456,7 +456,7 @@ func (s *Service) handleKnock(from wire.ParticipantID, m msg) error {
 		if err != nil {
 			return err
 		}
-		if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+		if err := s.Ctx().Send.Broadcast(ID, body); err != nil {
 			return err
 		}
 	}
@@ -495,7 +495,7 @@ func (s *Service) Resign() error {
 	if err != nil {
 		return err
 	}
-	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+	if err := s.Ctx().Send.Broadcast(ID, body); err != nil {
 		return err
 	}
 	s.emitState()

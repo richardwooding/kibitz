@@ -118,7 +118,7 @@ var errNotYourTurn = errors.New("gin: not your turn")
 
 // Service implements service.Service.
 type Service struct {
-	ctx service.Context
+	service.Base
 
 	mu    sync.Mutex
 	table game.Table
@@ -159,7 +159,7 @@ func New() *Service { return &Service{pendPos: -1} }
 func (s *Service) ID() string   { return ID }
 func (s *Service) Version() int { return 1 }
 
-func (s *Service) Attach(ctx service.Context) { s.ctx = ctx }
+func (s *Service) Attach(ctx service.Context) { s.SetContext(ctx) }
 
 func (s *Service) OnPromote() {
 	s.mu.Lock()
@@ -168,7 +168,7 @@ func (s *Service) OnPromote() {
 }
 
 func (s *Service) MemberKeyed(id wire.ParticipantID, role session.Role) {
-	if !s.ctx.Host {
+	if !s.Ctx().Host {
 		return
 	}
 	s.mu.Lock()
@@ -211,19 +211,19 @@ func gamePhase(p phase) game.Phase {
 // Start begins a new hand: the host generates a key, encrypts + shuffles a fresh
 // deck, and sends it for the joiner to encrypt + shuffle in turn.
 func (s *Service) Start() error {
-	if !s.ctx.Host {
+	if !s.Ctx().Host {
 		body, err := wire.Marshal(msg{Kind: kindStartReq})
 		if err != nil {
 			return err
 		}
-		return s.ctx.Send.SendTo(s.ctx.HostID, ID, body)
+		return s.Ctx().Send.SendTo(s.Ctx().HostID, ID, body)
 	}
-	return s.hostStart(s.ctx.Self)
+	return s.hostStart(s.Ctx().Self)
 }
 
 func (s *Service) hostStart(from wire.ParticipantID) error {
 	s.mu.Lock()
-	if err := s.table.AuthorizeStart(s.ctx.Host, from, s.ctx.Self, gamePhase(s.ph)); err != nil {
+	if err := s.table.AuthorizeStart(s.Ctx().Host, from, s.Ctx().Self, gamePhase(s.ph)); err != nil {
 		s.mu.Unlock()
 		return err
 	}
@@ -237,7 +237,7 @@ func (s *Service) hostStart(from wire.ParticipantID) error {
 	newMatch := s.ph == phIdle || s.matchOver
 	var seats game.Seats
 	if newMatch {
-		seats = s.table.NextSeats(s.ctx.Self)
+		seats = s.table.NextSeats(s.Ctx().Self)
 		s.scores = [2]int{}
 		s.handsWon = [2]int{}
 		s.matchOver = false
@@ -259,7 +259,7 @@ func (s *Service) hostStart(from wire.ParticipantID) error {
 	if err != nil {
 		return err
 	}
-	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+	if err := s.Ctx().Send.Broadcast(ID, body); err != nil {
 		return err
 	}
 	s.emitState()
@@ -296,7 +296,7 @@ func gameSeats(m msg) game.Seats {
 
 // mySeat returns this end's seat and whether it is a seated player.
 func (s *Service) mySeat() (game.Side, bool) {
-	return s.table.Seats.SideOf(s.ctx.Self)
+	return s.table.Seats.SideOf(s.Ctx().Self)
 }
 
 func (s *Service) HandleFrame(from wire.ParticipantID, body []byte) error {
@@ -306,7 +306,7 @@ func (s *Service) HandleFrame(from wire.ParticipantID, body []byte) error {
 	}
 	switch m.Kind {
 	case kindStartReq:
-		if s.ctx.Host {
+		if s.Ctx().Host {
 			return s.hostStart(from)
 		}
 		return nil

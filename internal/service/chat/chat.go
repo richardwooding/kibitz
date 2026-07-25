@@ -48,7 +48,7 @@ type Message struct {
 // the mux goroutine; Say is called from the UI layer — the mutex covers the
 // shared history.
 type Service struct {
-	ctx service.Context
+	service.Base
 
 	mu      sync.Mutex
 	history []storedMsg
@@ -59,7 +59,7 @@ func New() *Service { return &Service{} }
 func (s *Service) ID() string   { return ID }
 func (s *Service) Version() int { return 1 }
 
-func (s *Service) Attach(ctx service.Context) { s.ctx = ctx }
+func (s *Service) Attach(ctx service.Context) { s.SetContext(ctx) }
 
 // Say broadcasts a chat message. The sender's own message is emitted locally
 // too (peers don't echo broadcasts back).
@@ -79,11 +79,11 @@ func (s *Service) Say(text string) error {
 	if err != nil {
 		return err
 	}
-	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+	if err := s.Ctx().Send.Broadcast(ID, body); err != nil {
 		return err
 	}
-	s.record(id, s.ctx.Self, text)
-	s.ctx.Emit(Message{From: s.ctx.Self, Text: text})
+	s.record(id, s.Ctx().Self, text)
+	s.Ctx().Emit(Message{From: s.Ctx().Self, Text: text})
 	return nil
 }
 
@@ -98,7 +98,7 @@ func (s *Service) HandleFrame(from wire.ParticipantID, body []byte) error {
 	if !s.record(m.ID, from, m.Text) {
 		return nil // already seen via snapshot
 	}
-	s.ctx.Emit(Message{From: from, Text: m.Text})
+	s.Ctx().Emit(Message{From: from, Text: m.Text})
 	return nil
 }
 
@@ -118,7 +118,7 @@ func (s *Service) Restore(blob []byte) error {
 	}
 	for _, m := range snap.Messages {
 		if s.record(m.ID, m.From, m.Text) {
-			s.ctx.Emit(Message{From: m.From, Text: m.Text})
+			s.Ctx().Emit(Message{From: m.From, Text: m.Text})
 		}
 	}
 	return nil

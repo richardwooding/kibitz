@@ -138,7 +138,7 @@ var (
 // the mux goroutine; Roll/Move/Resign come from the UI — the mutex covers
 // all game state.
 type Service struct {
-	ctx service.Context
+	service.Base
 
 	mu        sync.Mutex
 	table     game.Table
@@ -166,7 +166,7 @@ func New() *Service { return &Service{} }
 func (s *Service) ID() string   { return ID }
 func (s *Service) Version() int { return 1 }
 
-func (s *Service) Attach(ctx service.Context) { s.ctx = ctx }
+func (s *Service) Attach(ctx service.Context) { s.SetContext(ctx) }
 
 // OnPromote resets host-only seat bookkeeping when this end is promoted to host
 // (migration); the next joiner re-seeds the opponent via NoteKeyed.
@@ -179,7 +179,7 @@ func (s *Service) OnPromote() {
 // MemberKeyed (host side) records the seated player; games start on demand
 // via Start().
 func (s *Service) MemberKeyed(id wire.ParticipantID, role session.Role) {
-	if !s.ctx.Host {
+	if !s.Ctx().Host {
 		return
 	}
 	s.mu.Lock()
@@ -191,23 +191,23 @@ func (s *Service) MemberKeyed(id wire.ParticipantID, role session.Role) {
 // each game); a player asks the host via startReq. The opening dice
 // exchange begins automatically once everyone learns the seats.
 func (s *Service) Start() error {
-	if !s.ctx.Host {
+	if !s.Ctx().Host {
 		body, err := wire.Marshal(msg{Kind: kindStartReq})
 		if err != nil {
 			return err
 		}
-		return s.ctx.Send.SendTo(s.ctx.HostID, ID, body)
+		return s.Ctx().Send.SendTo(s.Ctx().HostID, ID, body)
 	}
-	return s.hostStart(s.ctx.Self)
+	return s.hostStart(s.Ctx().Self)
 }
 
 func (s *Service) hostStart(from wire.ParticipantID) error {
 	s.mu.Lock()
-	if err := s.table.AuthorizeStart(s.ctx.Host, from, s.ctx.Self, s.lifecycleLocked()); err != nil {
+	if err := s.table.AuthorizeStart(s.Ctx().Host, from, s.Ctx().Self, s.lifecycleLocked()); err != nil {
 		s.mu.Unlock()
 		return err
 	}
-	seats := s.table.NextSeats(s.ctx.Self)
+	seats := s.table.NextSeats(s.Ctx().Self)
 	s.resetGameLocked(wire.ParticipantID(seats.P1), wire.ParticipantID(seats.P2))
 	s.mu.Unlock()
 
@@ -215,7 +215,7 @@ func (s *Service) hostStart(from wire.ParticipantID) error {
 	if err != nil {
 		return err
 	}
-	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+	if err := s.Ctx().Send.Broadcast(ID, body); err != nil {
 		return err
 	}
 	// After a rematch seat swap the host may be BLACK — the opening commit
@@ -274,7 +274,7 @@ func (s *Service) noteTurnLocked(color Color, hops []Hop) {
 // seat and the exchange hasn't started.
 func (s *Service) maybeOpenCommit() {
 	s.mu.Lock()
-	fire := s.ph == phaseHandshake && s.opening && !s.haveCommit && s.whiteID == s.ctx.Self
+	fire := s.ph == phaseHandshake && s.opening && !s.haveCommit && s.whiteID == s.Ctx().Self
 	s.mu.Unlock()
 	if fire {
 		s.sendCommit()
@@ -314,7 +314,7 @@ func (s *Service) Roll() error {
 		s.mu.Unlock()
 		return ErrPhase
 	}
-	if s.playerIDLocked(s.turnColor) != s.ctx.Self {
+	if s.playerIDLocked(s.turnColor) != s.Ctx().Self {
 		s.mu.Unlock()
 		return ErrNotTurn
 	}
@@ -333,7 +333,7 @@ func (s *Service) Move(hops []Hop) error {
 		return ErrPhase
 	}
 	color := s.turnColor
-	if s.playerIDLocked(color) != s.ctx.Self {
+	if s.playerIDLocked(color) != s.Ctx().Self {
 		s.mu.Unlock()
 		return ErrNotTurn
 	}
@@ -351,7 +351,7 @@ func (s *Service) Move(hops []Hop) error {
 	if err != nil {
 		return err
 	}
-	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+	if err := s.Ctx().Send.Broadcast(ID, body); err != nil {
 		return err
 	}
 	s.emitState()
@@ -366,7 +366,7 @@ func (s *Service) Resign() error {
 		return ErrPhase
 	}
 	var loser Color
-	switch s.ctx.Self {
+	switch s.Ctx().Self {
 	case s.whiteID:
 		loser = White
 	case s.blackID:
@@ -383,7 +383,7 @@ func (s *Service) Resign() error {
 	if err != nil {
 		return err
 	}
-	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+	if err := s.Ctx().Send.Broadcast(ID, body); err != nil {
 		return err
 	}
 	s.emitState()
@@ -406,7 +406,7 @@ func (s *Service) HandleFrame(from wire.ParticipantID, body []byte) error {
 	case kindNewGame:
 		return s.handleNewGame(from, m)
 	case kindStartReq:
-		if !s.ctx.Host {
+		if !s.Ctx().Host {
 			return nil // only the host seats players
 		}
 		return s.hostStart(from)
@@ -425,7 +425,7 @@ func (s *Service) HandleFrame(from wire.ParticipantID, body []byte) error {
 }
 
 func (s *Service) handleNewGame(from wire.ParticipantID, m msg) error {
-	if from != s.ctx.HostID {
+	if from != s.Ctx().HostID {
 		return fmt.Errorf("backgammon: new game from non-host %d", from)
 	}
 	s.mu.Lock()
@@ -455,7 +455,7 @@ func (s *Service) handleRollCommit(from wire.ParticipantID, m msg) error {
 	copy(s.rollCommit[:], m.Commit)
 	s.haveCommit = true
 	s.ph = phaseHandshake
-	iRespond := s.opponentIDLocked() == s.ctx.Self
+	iRespond := s.opponentIDLocked() == s.Ctx().Self
 	s.mu.Unlock()
 
 	// The other player answers automatically.
@@ -472,7 +472,7 @@ func (s *Service) handleRollCommit(from wire.ParticipantID, m msg) error {
 		if err != nil {
 			return err
 		}
-		return s.ctx.Send.Broadcast(ID, body)
+		return s.Ctx().Send.Broadcast(ID, body)
 	}
 	return nil
 }
@@ -493,7 +493,7 @@ func (s *Service) handleRollResponse(from wire.ParticipantID, m msg) error {
 	}
 	copy(s.rollResponse[:], m.RB)
 	s.haveResponse = true
-	iReveal := s.myReveal != nil && s.rollerIDLocked() == s.ctx.Self
+	iReveal := s.myReveal != nil && s.rollerIDLocked() == s.Ctx().Self
 	var reveal fairdice.Reveal
 	if iReveal {
 		reveal = *s.myReveal
@@ -506,10 +506,10 @@ func (s *Service) handleRollResponse(from wire.ParticipantID, m msg) error {
 		if err != nil {
 			return err
 		}
-		if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+		if err := s.Ctx().Send.Broadcast(ID, body); err != nil {
 			return err
 		}
-		return s.applyReveal(s.ctx.Self, reveal)
+		return s.applyReveal(s.Ctx().Self, reveal)
 	}
 	return nil
 }
@@ -531,7 +531,7 @@ func (s *Service) applyReveal(roller wire.ParticipantID, reveal fairdice.Reveal)
 	if !fairdice.Verify(s.rollCommit, reveal) {
 		s.ph = phaseOver
 		s.mu.Unlock()
-		s.ctx.Emit(CheatDetected{By: roller})
+		s.Ctx().Emit(CheatDetected{By: roller})
 		return fmt.Errorf("backgammon: reveal does not match commitment from %d", roller)
 	}
 	if s.opening {
@@ -553,7 +553,7 @@ func (s *Service) applyReveal(roller wire.ParticipantID, reveal fairdice.Reveal)
 
 	// Dance: the mover has no legal moves — auto-pass so nobody sits on a
 	// dead turn.
-	moverIsMe := s.playerIDLocked(s.turnColor) == s.ctx.Self
+	moverIsMe := s.playerIDLocked(s.turnColor) == s.Ctx().Self
 	turns := LegalTurns(s.board, s.turnColor, s.dice[0], s.dice[1])
 	dance := len(turns) == 1 && len(turns[0]) == 0
 	var hash []byte
@@ -566,12 +566,12 @@ func (s *Service) applyReveal(roller wire.ParticipantID, reveal fairdice.Reveal)
 	s.mu.Unlock()
 
 	if dance && moverIsMe {
-		s.ctx.Emit(Danced{By: s.ctx.Self})
+		s.Ctx().Emit(Danced{By: s.Ctx().Self})
 		body, err := wire.Marshal(msg{Kind: kindTurn, Hops: nil, StateHash: hash})
 		if err != nil {
 			return err
 		}
-		if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+		if err := s.Ctx().Send.Broadcast(ID, body); err != nil {
 			return err
 		}
 	}
@@ -607,7 +607,7 @@ func (s *Service) handleTurn(from wire.ParticipantID, m msg) error {
 	s.mu.Unlock()
 
 	if danced {
-		s.ctx.Emit(Danced{By: from})
+		s.Ctx().Emit(Danced{By: from})
 	}
 	s.emitState()
 	return nil
@@ -757,7 +757,7 @@ func (s *Service) sendCommit() {
 	s.haveCommit = true
 	s.mu.Unlock()
 	if body, err := wire.Marshal(msg{Kind: kindRollCommit, Commit: commit[:]}); err == nil {
-		_ = s.ctx.Send.Broadcast(ID, body)
+		_ = s.Ctx().Send.Broadcast(ID, body)
 	}
 }
 
@@ -777,7 +777,7 @@ func (s *Service) emitState() {
 	s.mu.Lock()
 	st := s.stateLocked()
 	s.mu.Unlock()
-	s.ctx.Emit(st)
+	s.Ctx().Emit(st)
 }
 
 func (s *Service) stateLocked() State {
@@ -804,7 +804,7 @@ func (s *Service) stateLocked() State {
 	case phaseMove:
 		st.Phase = "moving"
 		st.TurnID = s.playerIDLocked(s.turnColor)
-		if st.TurnID == s.ctx.Self {
+		if st.TurnID == s.Ctx().Self {
 			st.Legal = LegalTurns(s.board, s.turnColor, s.dice[0], s.dice[1])
 		}
 	case phaseOver:

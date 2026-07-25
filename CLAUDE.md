@@ -77,7 +77,11 @@ Platform splits use build-tagged files (`dial_js.go` / `dial_native.go`).
 - **Services** (`internal/service`): implement `Service` (ID/Version/
   Attach/HandleFrame/Snapshot/Restore/Event). The reserved `ctl` service
   carries roles (host/player/spectator), service announcements, and snapshot
-  transfer for late joiners. Roles live INSIDE the encrypted channel.
+  transfer for late joiners. Roles live INSIDE the encrypted channel. Services
+  embed `service.Base` and read their Context via `s.Ctx()` (atomic) — never a
+  bare field — because the mux re-Attaches services (reconnect Rebind, host
+  migration) from the mux goroutine while methods may read Context from another
+  goroutine (e.g. the WASM bridge calling a move).
 - **Game sync is both-sides-validate**: every client runs the same
   deterministic rules engine; movers broadcast `{Move, Seq, StateHash}`,
   receivers verify or surface a desync error. There is no authoritative

@@ -69,7 +69,7 @@ var ErrNotTurn = errors.New("connect4: not your turn")
 // Service implements service.Service; the mutex covers game state between
 // the mux goroutine and UI calls.
 type Service struct {
-	ctx service.Context
+	service.Base
 
 	mu      sync.Mutex
 	table   game.Table
@@ -89,7 +89,7 @@ func New() *Service { return &Service{} }
 func (s *Service) ID() string   { return ID }
 func (s *Service) Version() int { return 1 }
 
-func (s *Service) Attach(ctx service.Context) { s.ctx = ctx }
+func (s *Service) Attach(ctx service.Context) { s.SetContext(ctx) }
 
 // OnPromote resets host-only seat bookkeeping when this end is promoted to host
 // (migration); the next joiner re-seeds the opponent via NoteKeyed.
@@ -100,7 +100,7 @@ func (s *Service) OnPromote() {
 }
 
 func (s *Service) MemberKeyed(id wire.ParticipantID, role session.Role) {
-	if !s.ctx.Host {
+	if !s.Ctx().Host {
 		return
 	}
 	s.mu.Lock()
@@ -123,23 +123,23 @@ func (s *Service) MemberLeft(id wire.ParticipantID) {
 
 // Start launches a game or rematch (host seats; players ask via startReq).
 func (s *Service) Start() error {
-	if !s.ctx.Host {
+	if !s.Ctx().Host {
 		body, err := wire.Marshal(msg{Kind: kindStartReq})
 		if err != nil {
 			return err
 		}
-		return s.ctx.Send.SendTo(s.ctx.HostID, ID, body)
+		return s.Ctx().Send.SendTo(s.Ctx().HostID, ID, body)
 	}
-	return s.hostStart(s.ctx.Self)
+	return s.hostStart(s.Ctx().Self)
 }
 
 func (s *Service) hostStart(from wire.ParticipantID) error {
 	s.mu.Lock()
-	if err := s.table.AuthorizeStart(s.ctx.Host, from, s.ctx.Self, s.ph); err != nil {
+	if err := s.table.AuthorizeStart(s.Ctx().Host, from, s.Ctx().Self, s.ph); err != nil {
 		s.mu.Unlock()
 		return err
 	}
-	seats := s.table.NextSeats(s.ctx.Self)
+	seats := s.table.NextSeats(s.Ctx().Self)
 	s.resetLocked(seats)
 	s.mu.Unlock()
 
@@ -147,7 +147,7 @@ func (s *Service) hostStart(from wire.ParticipantID) error {
 	if err != nil {
 		return err
 	}
-	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+	if err := s.Ctx().Send.Broadcast(ID, body); err != nil {
 		return err
 	}
 	s.emitState()
@@ -179,7 +179,7 @@ func (s *Service) noteDropLocked(side game.Side, col int8) {
 // Drop plays the local player's disc in col.
 func (s *Service) Drop(col int8) error {
 	s.mu.Lock()
-	side, err := s.checkTurnLocked(s.ctx.Self)
+	side, err := s.checkTurnLocked(s.Ctx().Self)
 	if err != nil {
 		s.mu.Unlock()
 		return err
@@ -200,7 +200,7 @@ func (s *Service) Drop(col int8) error {
 	if err != nil {
 		return err
 	}
-	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+	if err := s.Ctx().Send.Broadcast(ID, body); err != nil {
 		return err
 	}
 	s.emitState()
@@ -210,7 +210,7 @@ func (s *Service) Drop(col int8) error {
 // Resign concedes.
 func (s *Service) Resign() error {
 	s.mu.Lock()
-	side, seated := s.table.Seats.SideOf(s.ctx.Self)
+	side, seated := s.table.Seats.SideOf(s.Ctx().Self)
 	if !seated || s.ph != game.Playing {
 		s.mu.Unlock()
 		return errors.New("connect4: no game to resign")
@@ -223,7 +223,7 @@ func (s *Service) Resign() error {
 	if err != nil {
 		return err
 	}
-	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+	if err := s.Ctx().Send.Broadcast(ID, body); err != nil {
 		return err
 	}
 	s.emitState()
@@ -237,7 +237,7 @@ func (s *Service) HandleFrame(from wire.ParticipantID, body []byte) error {
 	}
 	switch m.Kind {
 	case kindNewGame:
-		if from != s.ctx.HostID {
+		if from != s.Ctx().HostID {
 			return fmt.Errorf("connect4: new game from non-host %d", from)
 		}
 		s.mu.Lock()
@@ -246,7 +246,7 @@ func (s *Service) HandleFrame(from wire.ParticipantID, body []byte) error {
 		s.emitState()
 		return nil
 	case kindStartReq:
-		if !s.ctx.Host {
+		if !s.Ctx().Host {
 			return nil
 		}
 		return s.hostStart(from)
@@ -266,17 +266,17 @@ func (s *Service) HandleFrame(from wire.ParticipantID, body []byte) error {
 // the last mover (it's the opponent's turn now) while a stashed move exists.
 func (s *Service) OfferTakeback() error {
 	s.mu.Lock()
-	if !s.canOfferLocked(s.ctx.Self) {
+	if !s.canOfferLocked(s.Ctx().Self) {
 		s.mu.Unlock()
 		return errors.New("connect4: no takeback available")
 	}
-	s.offerBy = s.ctx.Self
+	s.offerBy = s.Ctx().Self
 	s.mu.Unlock()
 	body, err := wire.Marshal(msg{Kind: kindTakebackOffer})
 	if err != nil {
 		return err
 	}
-	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+	if err := s.Ctx().Send.Broadcast(ID, body); err != nil {
 		return err
 	}
 	s.emitState()
@@ -301,7 +301,7 @@ func (s *Service) handleTakebackOffer(from wire.ParticipantID) error {
 // AcceptTakeback accepts a pending offer from the opponent and reverts one move.
 func (s *Service) AcceptTakeback() error {
 	s.mu.Lock()
-	if s.offerBy == 0 || s.offerBy == s.ctx.Self || s.ph != game.Playing {
+	if s.offerBy == 0 || s.offerBy == s.Ctx().Self || s.ph != game.Playing {
 		s.mu.Unlock()
 		return errors.New("connect4: no takeback to accept")
 	}
@@ -311,7 +311,7 @@ func (s *Service) AcceptTakeback() error {
 	if err != nil {
 		return err
 	}
-	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+	if err := s.Ctx().Send.Broadcast(ID, body); err != nil {
 		return err
 	}
 	s.emitState()
@@ -488,7 +488,7 @@ func (s *Service) emitState() {
 	s.mu.Lock()
 	st := s.stateLocked()
 	s.mu.Unlock()
-	s.ctx.Emit(st)
+	s.Ctx().Emit(st)
 }
 
 func (s *Service) stateLocked() State {
@@ -516,7 +516,7 @@ func (s *Service) stateLocked() State {
 	if _, cells := s.board.Winner(); cells != nil {
 		st.WinCells = cells
 	}
-	side, seated := s.table.Seats.SideOf(s.ctx.Self)
+	side, seated := s.table.Seats.SideOf(s.Ctx().Self)
 	st.CanTakeback = seated && s.ph == game.Playing && s.prevSnap != nil && s.turn != side && s.offerBy == 0
 	st.TakebackBy = s.offerBy
 	return st

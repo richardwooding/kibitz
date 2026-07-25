@@ -86,7 +86,7 @@ type CheatDetected struct{ By wire.ParticipantID }
 
 // Service implements service.Service.
 type Service struct {
-	ctx service.Context
+	service.Base
 
 	mu    sync.Mutex
 	table game.Table
@@ -122,7 +122,7 @@ func (s *Service) clearReveals() {
 func (s *Service) ID() string   { return ID }
 func (s *Service) Version() int { return 1 }
 
-func (s *Service) Attach(ctx service.Context) { s.ctx = ctx }
+func (s *Service) Attach(ctx service.Context) { s.SetContext(ctx) }
 
 // OnPromote resets host-only seat bookkeeping when this end is promoted to host
 // (migration); the next joiner re-seeds the opponent via NoteKeyed.
@@ -133,7 +133,7 @@ func (s *Service) OnPromote() {
 }
 
 func (s *Service) MemberKeyed(id wire.ParticipantID, role session.Role) {
-	if !s.ctx.Host {
+	if !s.Ctx().Host {
 		return
 	}
 	s.mu.Lock()
@@ -167,23 +167,23 @@ func (s *Service) lifecycleLocked() game.Phase {
 
 // Start launches a game or rematch.
 func (s *Service) Start() error {
-	if !s.ctx.Host {
+	if !s.Ctx().Host {
 		body, err := wire.Marshal(msg{Kind: kindStartReq})
 		if err != nil {
 			return err
 		}
-		return s.ctx.Send.SendTo(s.ctx.HostID, ID, body)
+		return s.Ctx().Send.SendTo(s.Ctx().HostID, ID, body)
 	}
-	return s.hostStart(s.ctx.Self)
+	return s.hostStart(s.Ctx().Self)
 }
 
 func (s *Service) hostStart(from wire.ParticipantID) error {
 	s.mu.Lock()
-	if err := s.table.AuthorizeStart(s.ctx.Host, from, s.ctx.Self, s.lifecycleLocked()); err != nil {
+	if err := s.table.AuthorizeStart(s.Ctx().Host, from, s.Ctx().Self, s.lifecycleLocked()); err != nil {
 		s.mu.Unlock()
 		return err
 	}
-	seats := s.table.NextSeats(s.ctx.Self)
+	seats := s.table.NextSeats(s.Ctx().Self)
 	s.resetLocked(seats)
 	s.mu.Unlock()
 
@@ -191,7 +191,7 @@ func (s *Service) hostStart(from wire.ParticipantID) error {
 	if err != nil {
 		return err
 	}
-	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+	if err := s.Ctx().Send.Broadcast(ID, body); err != nil {
 		return err
 	}
 	s.emitState()
@@ -238,7 +238,7 @@ func (s *Service) noteShotLocked(cell uint8, shipID int8, defender game.Side) {
 // Commit locks in the local player's fleet and broadcasts the commitments.
 func (s *Service) Commit(placement [100]uint8) error {
 	s.mu.Lock()
-	side, seated := s.table.Seats.SideOf(s.ctx.Self)
+	side, seated := s.table.Seats.SideOf(s.Ctx().Self)
 	if !seated || s.ph != phasePlacing {
 		s.mu.Unlock()
 		return errors.New("battleship: not placing")
@@ -267,7 +267,7 @@ func (s *Service) Commit(placement [100]uint8) error {
 	if err != nil {
 		return err
 	}
-	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+	if err := s.Ctx().Send.Broadcast(ID, body); err != nil {
 		return err
 	}
 	s.emitState()
@@ -277,7 +277,7 @@ func (s *Service) Commit(placement [100]uint8) error {
 // Shoot fires at a cell of the opponent's board.
 func (s *Service) Shoot(cell uint8) error {
 	s.mu.Lock()
-	side, seated := s.table.Seats.SideOf(s.ctx.Self)
+	side, seated := s.table.Seats.SideOf(s.Ctx().Self)
 	if !seated || s.ph != phaseShooting || side != s.turn {
 		s.mu.Unlock()
 		return errors.New("battleship: not your shot")
@@ -298,7 +298,7 @@ func (s *Service) Shoot(cell uint8) error {
 	if err != nil {
 		return err
 	}
-	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+	if err := s.Ctx().Send.Broadcast(ID, body); err != nil {
 		return err
 	}
 	s.emitState()
@@ -308,7 +308,7 @@ func (s *Service) Shoot(cell uint8) error {
 // Resign concedes; validation still runs so the result is honest.
 func (s *Service) Resign() error {
 	s.mu.Lock()
-	side, seated := s.table.Seats.SideOf(s.ctx.Self)
+	side, seated := s.table.Seats.SideOf(s.Ctx().Self)
 	if !seated || (s.ph != phaseShooting && s.ph != phasePlacing) {
 		s.mu.Unlock()
 		return errors.New("battleship: no game to resign")
@@ -321,7 +321,7 @@ func (s *Service) Resign() error {
 	if err != nil {
 		return err
 	}
-	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+	if err := s.Ctx().Send.Broadcast(ID, body); err != nil {
 		return err
 	}
 	s.afterValidationEntry()
@@ -335,7 +335,7 @@ func (s *Service) HandleFrame(from wire.ParticipantID, body []byte) error {
 	}
 	switch m.Kind {
 	case kindNewGame:
-		if from != s.ctx.HostID {
+		if from != s.Ctx().HostID {
 			return fmt.Errorf("battleship: new game from non-host %d", from)
 		}
 		s.mu.Lock()
@@ -344,7 +344,7 @@ func (s *Service) HandleFrame(from wire.ParticipantID, body []byte) error {
 		s.emitState()
 		return nil
 	case kindStartReq:
-		if !s.ctx.Host {
+		if !s.Ctx().Host {
 			return nil
 		}
 		return s.hostStart(from)
@@ -401,7 +401,7 @@ func (s *Service) handleShot(from wire.ParticipantID, m msg) error {
 		return fmt.Errorf("battleship: invalid shot from %d", from)
 	}
 	s.pending = int8(m.Cell)
-	iDefend := s.table.Seats.IDOf(target) == s.ctx.Self && s.myBoard != nil
+	iDefend := s.table.Seats.IDOf(target) == s.Ctx().Self && s.myBoard != nil
 	var reveal shipcommit.CellReveal
 	if iDefend {
 		reveal = s.myBoard.Cells[m.Cell]
@@ -419,7 +419,7 @@ func (s *Service) handleShot(from wire.ParticipantID, m msg) error {
 // sendReveal applies the defender's own reveal locally (it won't hear its
 // broadcast echoed) and ships it with the post-apply state hash.
 func (s *Service) sendReveal(reveal shipcommit.CellReveal) error {
-	if err := s.applyReveal(s.ctx.Self, reveal); err != nil {
+	if err := s.applyReveal(s.Ctx().Self, reveal); err != nil {
 		return err
 	}
 	s.mu.Lock()
@@ -429,7 +429,7 @@ func (s *Service) sendReveal(reveal shipcommit.CellReveal) error {
 	if err != nil {
 		return err
 	}
-	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+	if err := s.Ctx().Send.Broadcast(ID, body); err != nil {
 		return err
 	}
 	s.afterValidationEntry()
@@ -471,7 +471,7 @@ func (s *Service) applyReveal(from wire.ParticipantID, reveal shipcommit.CellRev
 		s.ph = phaseOver
 		s.cheatBy = from
 		s.mu.Unlock()
-		s.ctx.Emit(CheatDetected{By: from})
+		s.Ctx().Emit(CheatDetected{By: from})
 		s.emitState()
 		return fmt.Errorf("battleship: reveal fails commitment from %d", from)
 	}
@@ -509,7 +509,7 @@ func (s *Service) enterValidationLocked() {
 // this end is a player, it opens its full board.
 func (s *Service) afterValidationEntry() {
 	s.mu.Lock()
-	side, seated := s.table.Seats.SideOf(s.ctx.Self)
+	side, seated := s.table.Seats.SideOf(s.Ctx().Self)
 	fire := s.ph == phaseValidating && seated && s.myBoard != nil && !s.validated[side]
 	var cells []shipcommit.CellReveal
 	if fire {
@@ -520,14 +520,14 @@ func (s *Service) afterValidationEntry() {
 		return
 	}
 	// Apply locally first (no echo), then broadcast.
-	if err := s.recordFullReveal(s.ctx.Self, cells); err != nil {
+	if err := s.recordFullReveal(s.Ctx().Self, cells); err != nil {
 		return
 	}
 	body, err := wire.Marshal(msg{Kind: kindFullReveal, Cells: cells})
 	if err != nil {
 		return
 	}
-	_ = s.ctx.Send.Broadcast(ID, body)
+	_ = s.Ctx().Send.Broadcast(ID, body)
 }
 
 func (s *Service) handleFullReveal(from wire.ParticipantID, m msg) error {
@@ -553,7 +553,7 @@ func (s *Service) recordFullReveal(from wire.ParticipantID, cells []shipcommit.C
 			s.ph = phaseOver
 			s.cheatBy = from
 			s.mu.Unlock()
-			s.ctx.Emit(CheatDetected{By: from})
+			s.Ctx().Emit(CheatDetected{By: from})
 			s.emitState()
 			return fmt.Errorf("battleship: full reveal fails commitment from %d", from)
 		}
@@ -564,7 +564,7 @@ func (s *Service) recordFullReveal(from wire.ParticipantID, cells []shipcommit.C
 		s.ph = phaseOver
 		s.cheatBy = from
 		s.mu.Unlock()
-		s.ctx.Emit(CheatDetected{By: from})
+		s.Ctx().Emit(CheatDetected{By: from})
 		s.emitState()
 		return fmt.Errorf("battleship: illegal fleet from %d: %w", from, err)
 	}
@@ -695,7 +695,7 @@ func (s *Service) emitState() {
 	s.mu.Lock()
 	st := s.stateLocked()
 	s.mu.Unlock()
-	s.ctx.Emit(st)
+	s.Ctx().Emit(st)
 }
 
 func (s *Service) stateLocked() State {
