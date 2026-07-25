@@ -52,9 +52,11 @@ type command struct {
 	Sq     int8      `json:"sq"`              // reversi square
 	Cell   uint8     `json:"cell"`            // battleship cell
 	Fleet  []uint8   `json:"fleet,omitempty"` // battleship placement
-	Name   string    `json:"name,omitempty"`  // screen name for create/join
-	Mode   string    `json:"mode,omitempty"`  // solo mode: "bot" | "hotseat"
-	Level  string    `json:"level,omitempty"` // solo bot difficulty: "easy" | "hard"
+	Name     string `json:"name,omitempty"`     // screen name for create/join
+	Mode     string `json:"mode,omitempty"`     // solo mode: "bot" | "hotseat"
+	Level    string `json:"level,omitempty"`    // solo bot difficulty: "easy" | "hard"
+	PushKey  string `json:"pushKey,omitempty"`  // host: shared session VAPID keypair blob
+	Endpoint string `json:"endpoint,omitempty"` // this client's Web Push endpoint
 }
 
 type app struct {
@@ -119,6 +121,12 @@ var commands = map[string]func(command){
 	"solo":       func(c command) { startSolo(c.Name, c.Mode == "bot", c.Level) },
 	"leave":      func(command) { leave() },
 	"game.start": func(c command) { startGame(c.Game) },
+
+	// Turn-notification plumbing (networked only): the host shares the session
+	// VAPID keypair; each client shares its Web Push endpoint. Both ride the
+	// encrypted ctl channel — the relay never sees them.
+	"push.key":      func(c command) { withMux(func(m *service.Mux) { m.SetPushKey(c.PushKey) }) },
+	"push.endpoint": func(c command) { withMux(func(m *service.Mux) { m.SetEndpoint(c.Endpoint) }) },
 
 	"chat.say": func(c command) {
 		withChat(func(s *chat.Service) error { return s.Say(c.Text) })
@@ -552,6 +560,16 @@ func reconnectNet(mux *service.Mux, gen int) bool {
 	return false
 }
 
+// withMux runs fn with the current networked mux, if any (solo has none).
+func withMux(fn func(*service.Mux)) {
+	current.mu.Lock()
+	m := current.mux
+	current.mu.Unlock()
+	if m != nil {
+		fn(m)
+	}
+}
+
 func emitRoster(e service.Roster) {
 	members := map[string]string{}
 	for id, role := range e.Members {
@@ -561,7 +579,14 @@ func emitRoster(e service.Roster) {
 	for id, n := range e.Names {
 		names[fmt.Sprint(uint32(id))] = n
 	}
-	emit("roster", map[string]any{"members": members, "names": names})
+	endpoints := map[string]string{}
+	for id, ep := range e.Endpoints {
+		endpoints[fmt.Sprint(uint32(id))] = ep
+	}
+	emit("roster", map[string]any{
+		"members": members, "names": names,
+		"endpoints": endpoints, "pushKey": e.PushKey,
+	})
 }
 
 func emitChessState(e chess.State) {

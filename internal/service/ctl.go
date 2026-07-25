@@ -33,6 +33,9 @@ type ctlMsg struct {
 	Snapshots map[string][]byte `cbor:"4,keyasint,omitempty"`
 	Name      string            `cbor:"5,keyasint,omitempty"` // identity: sender's name
 	Names     map[uint32]string `cbor:"6,keyasint,omitempty"` // announce: id → name
+	Endpoint  string            `cbor:"7,keyasint,omitempty"` // identity: sender's Web Push endpoint
+	Endpoints map[uint32]string `cbor:"8,keyasint,omitempty"` // announce: id → push endpoint
+	PushKey   string            `cbor:"9,keyasint,omitempty"` // announce: shared session VAPID keypair (opaque JS blob)
 }
 
 // ServiceInfo names one service a session end is running.
@@ -42,28 +45,38 @@ type ServiceInfo struct {
 }
 
 // Roster is the ctl service's event: current membership with roles and
-// screen names, plus what services the host runs.
+// screen names, plus what services the host runs. Endpoints and PushKey carry
+// the (opt-in) turn-notification plumbing: each member's Web Push endpoint and
+// the shared session VAPID keypair (an opaque browser blob the Go layer only
+// relays). All of it rides inside the encrypted channel — the relay never sees
+// it.
 type Roster struct {
-	Members  map[wire.ParticipantID]session.Role
-	Names    map[wire.ParticipantID]string
-	Services []ServiceInfo
+	Members   map[wire.ParticipantID]session.Role
+	Names     map[wire.ParticipantID]string
+	Endpoints map[wire.ParticipantID]string
+	PushKey   string
+	Services  []ServiceInfo
 }
 
 type ctlService struct {
 	mux *Mux
 	ctx Context
-	// roster + names are host-authoritative; joiners hold the last announced
-	// copy. Names are self-asserted (each participant reports its own).
-	roster   map[wire.ParticipantID]session.Role
-	names    map[wire.ParticipantID]string
-	selfName string
+	// roster + names + endpoints are host-authoritative; joiners hold the last
+	// announced copy. Names/endpoints are self-asserted (each reports its own).
+	roster       map[wire.ParticipantID]session.Role
+	names        map[wire.ParticipantID]string
+	endpoints    map[wire.ParticipantID]string
+	pushKey      string // shared session VAPID keypair (host-set; opaque blob)
+	selfName     string
+	selfEndpoint string
 }
 
 func newCtl(m *Mux) *ctlService {
 	return &ctlService{
-		mux:    m,
-		roster: map[wire.ParticipantID]session.Role{},
-		names:  map[wire.ParticipantID]string{},
+		mux:       m,
+		roster:    map[wire.ParticipantID]session.Role{},
+		names:     map[wire.ParticipantID]string{},
+		endpoints: map[wire.ParticipantID]string{},
 	}
 }
 
@@ -100,6 +113,33 @@ func (c *ctlService) setName(name string) {
 	}
 }
 
+// setEndpoint records the local participant's Web Push endpoint and distributes
+// it like a name: the host folds it into the authoritative roster and
+// re-announces; a joiner reports it to the host. Peers use it to send this
+// participant a "your turn" push.
+func (c *ctlService) setEndpoint(endpoint string) {
+	c.selfEndpoint = endpoint
+	c.endpoints[c.ctx.Self] = endpoint
+	if c.ctx.Host {
+		c.announce()
+		return
+	}
+	if body, err := wire.Marshal(ctlMsg{Kind: ctlKindIdentity, Endpoint: endpoint}); err == nil {
+		_ = c.ctx.Send.SendTo(c.ctx.HostID, CtlID, body)
+	}
+}
+
+// setPushKey (host only) records the shared session VAPID keypair the host
+// generated and re-announces so every member gets it. It's an opaque browser
+// blob to the Go layer.
+func (c *ctlService) setPushKey(key string) {
+	if !c.ctx.Host {
+		return
+	}
+	c.pushKey = key
+	c.announce()
+}
+
 func (c *ctlService) ID() string   { return CtlID }
 func (c *ctlService) Version() int { return 1 }
 
@@ -128,13 +168,23 @@ func (c *ctlService) HandleFrame(from wire.ParticipantID, body []byte) error {
 		for id, n := range msg.Names {
 			c.names[wire.ParticipantID(id)] = n
 		}
-		c.mux.emit(Roster{Members: c.rosterCopy(), Names: c.namesCopy(), Services: msg.Services})
+		c.endpoints = map[wire.ParticipantID]string{}
+		for id, ep := range msg.Endpoints {
+			c.endpoints[wire.ParticipantID(id)] = ep
+		}
+		c.pushKey = msg.PushKey
+		c.mux.emit(c.roster3(msg.Services))
 	case ctlKindIdentity:
-		// Only the host aggregates names; a participant reports its own.
+		// Only the host aggregates names/endpoints; a participant reports its own.
 		if !c.ctx.Host {
 			return nil
 		}
-		c.names[from] = sanitizeName(msg.Name)
+		if msg.Name != "" {
+			c.names[from] = sanitizeName(msg.Name)
+		}
+		if msg.Endpoint != "" {
+			c.endpoints[from] = msg.Endpoint
+		}
 		c.announce()
 	case ctlKindSnapshotReq:
 		if !c.ctx.Host {
@@ -176,6 +226,7 @@ func (c *ctlService) MemberLeft(id wire.ParticipantID) {
 	}
 	delete(c.roster, id)
 	delete(c.names, id)
+	delete(c.endpoints, id)
 	c.announce()
 }
 
@@ -185,22 +236,41 @@ func (c *ctlService) announce() {
 		roster[uint32(id)] = uint8(r)
 	}
 	names := map[uint32]string{}
-	for id, n := range c.names {
-		if _, seated := c.roster[id]; seated { // only announce names of current members
+	endpoints := map[uint32]string{}
+	for id := range c.roster { // only announce data for current members
+		if n := c.names[id]; n != "" {
 			names[uint32(id)] = n
+		}
+		if ep := c.endpoints[id]; ep != "" {
+			endpoints[uint32(id)] = ep
 		}
 	}
 	var infos []ServiceInfo
 	for _, s := range c.mux.services {
 		infos = append(infos, ServiceInfo{ID: s.ID(), Version: s.Version()})
 	}
-	body, err := wire.Marshal(ctlMsg{Kind: ctlKindAnnounce, Roster: roster, Names: names, Services: infos})
+	body, err := wire.Marshal(ctlMsg{
+		Kind: ctlKindAnnounce, Roster: roster, Names: names,
+		Endpoints: endpoints, PushKey: c.pushKey, Services: infos,
+	})
 	if err != nil {
 		return
 	}
 	_ = c.ctx.Send.Broadcast(CtlID, body)
 	// The host's own UI wants the roster too.
-	c.mux.emit(Roster{Members: c.rosterCopy(), Names: c.namesCopy(), Services: infos})
+	c.mux.emit(c.roster3(infos))
+}
+
+// roster3 builds the Roster event from current state (used by both the host's
+// announce and a joiner receiving one).
+func (c *ctlService) roster3(infos []ServiceInfo) Roster {
+	return Roster{
+		Members:   c.rosterCopy(),
+		Names:     c.namesCopy(),
+		Endpoints: c.endpointsCopy(),
+		PushKey:   c.pushKey,
+		Services:  infos,
+	}
 }
 
 func (c *ctlService) requestSnapshot() {
@@ -243,6 +313,14 @@ func (c *ctlService) rosterCopy() map[wire.ParticipantID]session.Role {
 func (c *ctlService) namesCopy() map[wire.ParticipantID]string {
 	out := make(map[wire.ParticipantID]string, len(c.names))
 	for k, v := range c.names {
+		out[k] = v
+	}
+	return out
+}
+
+func (c *ctlService) endpointsCopy() map[wire.ParticipantID]string {
+	out := make(map[wire.ParticipantID]string, len(c.endpoints))
+	for k, v := range c.endpoints {
 		out[k] = v
 	}
 	return out

@@ -91,3 +91,37 @@ async function staleWhileRevalidate(req) {
     .catch(() => null);
   return hit || (await fetching) || fetch(req);
 }
+
+// ---- turn notifications ----------------------------------------------------
+// Pushes are payload-free ("your turn" wakes only — no game content ever leaves
+// the device), so every push shows the same generic notification. If a kibitz
+// window is already focused, skip it: the player is looking at the board.
+self.addEventListener("push", (e) => {
+  e.waitUntil(
+    (async () => {
+      const clis = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      if (clis.some((c) => c.focused || c.visibilityState === "visible")) return;
+      await self.registration.showNotification("kibitz", {
+        body: "Your turn.",
+        icon: "icon-192.png",
+        badge: "icon-192.png",
+        tag: "kibitz-turn", // coalesce: one "your turn" at a time
+        renotify: true,
+      });
+    })()
+  );
+});
+
+// Tapping the notification focuses an existing kibitz window or opens one.
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  e.waitUntil(
+    (async () => {
+      const clis = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      for (const c of clis) {
+        if ("focus" in c) return c.focus();
+      }
+      if (self.clients.openWindow) return self.clients.openWindow("/");
+    })()
+  );
+});

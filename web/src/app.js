@@ -19,6 +19,7 @@
     solo: false, // local session (no relay): pass-and-play or vs the computer
     vsBot: false, // solo vs the computer (user is player 1; a bot drives player 2)
     inSession: false, // pushed a history entry for the session (lobby/table)
+    endpoints: {}, // id -> Web Push endpoint (from the ctl roster)
   };
 
   // displayName returns a participant's screen name, "you" for self, or a
@@ -241,6 +242,7 @@
       renderLobbyName();
       pushSession();
       show("lobby");
+      push.generateIfHost(); // mint the session VAPID key so peers can subscribe
     },
     "session.joined"(e) {
       state.self = e.self;
@@ -276,6 +278,11 @@
       state.members = e.members;
       state.names = {};
       for (const [id, n] of Object.entries(e.names || {})) state.names[Number(id)] = n;
+      state.endpoints = {};
+      for (const [id, ep] of Object.entries(e.endpoints || {})) state.endpoints[Number(id)] = ep;
+      push.ingestKey(e.pushKey || "");
+      push.generateIfHost(); // host mints the session VAPID key if not yet set
+      syncNotifyButton();
       renderMembers();
       renderLobbyName(); // no-op visually unless the lobby is showing
       // Names may have just arrived — refresh the open game's labels.
@@ -309,6 +316,7 @@
         mod.onEvent(e.type, e);
         renderPicker();
         updateTurnCue();
+        if (e.type.endsWith(".state")) maybeNotifyTurn(e.type.slice(0, dot), e.turnId);
       }
     }
   };
@@ -339,6 +347,164 @@
     else document.title = baseTitle;
   }
   document.addEventListener("visibilitychange", updateTurnCue);
+
+  // ---- turn notifications (Web Push) -----------------------------------------
+  // Opt-in "your turn" pushes for networked games. The host mints a per-session
+  // VAPID keypair and each client shares its push endpoint — all over the
+  // encrypted ctl channel, so the relay never sees them. When a move hands the
+  // turn to the opponent, the mover signs an EMPTY push in-browser (browsers
+  // can't post to push services directly) and hands it to the relay's keyless
+  // /push forwarder. No game content ever leaves the device — the service
+  // worker shows a generic "your turn".
+
+  const pushSupported =
+    "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+  const lastTurn = {}; // gameId -> last observed turnId; fire only on transition
+
+  const b64u = {
+    fromBytes(bytes) {
+      let s = "";
+      for (const b of bytes) s += String.fromCharCode(b);
+      return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    },
+    fromStr(str) { return b64u.fromBytes(new TextEncoder().encode(str)); },
+    toBytes(s) {
+      s = s.replace(/-/g, "+").replace(/_/g, "/");
+      while (s.length % 4) s += "=";
+      const bin = atob(s);
+      const out = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+      return out;
+    },
+  };
+
+  const push = {
+    key: "",        // shared keypair blob as distributed over ctl
+    priv: null,     // imported ECDSA private CryptoKey (for signing)
+    pubB64: "",     // raw public key base64url (VAPID 'k=' + applicationServerKey)
+    enabled: false, // this client has an active subscription
+    _gen: false,
+
+    // ingestKey imports a newly-seen shared keypair; re-subscribes if already on
+    // (the key changes each session, so an existing subscription must rebind).
+    async ingestKey(blob) {
+      if (!blob || blob === push.key || !pushSupported) return;
+      try {
+        const { pub, priv } = JSON.parse(blob);
+        push.priv = await crypto.subtle.importKey(
+          "jwk", priv, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
+        push.pubB64 = pub;
+        push.key = blob;
+      } catch { return; }
+      if (push.enabled) push.subscribe().catch(() => {});
+    },
+
+    // generateIfHost mints the session VAPID keypair once (host only) and shares
+    // it so peers can subscribe and any player can sign.
+    async generateIfHost() {
+      if (state.role !== "host" || push.key || push._gen || !pushSupported) return;
+      push._gen = true;
+      try {
+        const kp = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign"]);
+        const pub = b64u.fromBytes(new Uint8Array(await crypto.subtle.exportKey("raw", kp.publicKey)));
+        const jwk = await crypto.subtle.exportKey("jwk", kp.privateKey);
+        const blob = JSON.stringify({ pub, priv: jwk });
+        await push.ingestKey(blob);      // import locally for our own sends
+        send({ type: "push.key", pushKey: blob });
+      } catch { /* keygen unsupported — notifications just stay off */ }
+      push._gen = false;
+    },
+
+    // enable requests permission and subscribes (needs the shared pub first).
+    async enable() {
+      if (!pushSupported || !push.pubB64) {
+        toast("Notifications aren't ready yet — try again in a moment.");
+        return;
+      }
+      let perm = Notification.permission;
+      if (perm === "default") perm = await Notification.requestPermission();
+      if (perm !== "granted") {
+        toast(perm === "denied" ? "Notifications are blocked in your browser settings." : "Notifications not enabled.");
+        syncNotifyButton();
+        return;
+      }
+      try {
+        await push.subscribe();
+        toast("You'll be notified when it's your turn.");
+      } catch {
+        toast("Couldn't enable notifications (on iOS, install to the Home Screen first).");
+      }
+      syncNotifyButton();
+    },
+
+    async subscribe() {
+      const reg = await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        const cur = sub.options && sub.options.applicationServerKey;
+        const same = cur && b64u.fromBytes(new Uint8Array(cur)) === push.pubB64;
+        if (!same) { await sub.unsubscribe().catch(() => {}); sub = null; }
+      }
+      if (!sub) {
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: b64u.toBytes(push.pubB64),
+        });
+      }
+      push.enabled = true;
+      send({ type: "push.endpoint", endpoint: sub.endpoint });
+    },
+
+    // notify sends peerId an empty "your turn" push, signed in-browser and
+    // forwarded by the relay (which holds no keys and sees only the endpoint).
+    async notify(peerId) {
+      const endpoint = state.endpoints[peerId];
+      if (!endpoint || !push.priv || !push.pubB64) return;
+      try {
+        const aud = new URL(endpoint).origin;
+        const header = b64u.fromStr(JSON.stringify({ typ: "JWT", alg: "ES256" }));
+        const payload = b64u.fromStr(JSON.stringify({
+          aud, exp: Math.floor(Date.now() / 1000) + 12 * 3600,
+          sub: "mailto:kibitz@users.noreply.github.com",
+        }));
+        const input = header + "." + payload;
+        const sig = await crypto.subtle.sign(
+          { name: "ECDSA", hash: "SHA-256" }, push.priv, new TextEncoder().encode(input));
+        const jwt = input + "." + b64u.fromBytes(new Uint8Array(sig));
+        const res = await fetch("/push", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ endpoint, authorization: `vapid t=${jwt}, k=${push.pubB64}`, ttl: 60 }),
+        });
+        if (res.status === 404 || res.status === 410) delete state.endpoints[peerId]; // gone
+      } catch { /* best-effort */ }
+    },
+  };
+
+  function seated(id) {
+    const r = state.members[id];
+    return r === "host" || r === "player";
+  }
+
+  // maybeNotifyTurn fires a push to the opponent when a move hands them the turn.
+  // Only the mover sends (turn is now the OTHER seated player); the recipient's
+  // own client sees turn===self and stays quiet. First sighting just records.
+  function maybeNotifyTurn(gameId, turnId) {
+    const prev = lastTurn[gameId];
+    lastTurn[gameId] = turnId;
+    if (prev === undefined || turnId === prev || !turnId) return; // no transition / pending
+    if (state.solo || !seated(state.self) || turnId === state.self || !seated(turnId)) return;
+    push.notify(turnId);
+  }
+
+  function syncNotifyButton() {
+    const b = $("btn-notify");
+    if (!b) return;
+    const show = pushSupported && !state.solo && state.inSession &&
+      !push.enabled && Notification.permission !== "denied";
+    b.classList.toggle("hidden", !show);
+  }
+  if ($("btn-notify")) $("btn-notify").addEventListener("click", () => push.enable());
 
   // ---- roster + chat --------------------------------------------------------
 

@@ -121,6 +121,24 @@ func (m *Mux) SetName(name string) {
 	}
 }
 
+// SetEndpoint distributes the local participant's Web Push endpoint over the
+// encrypted ctl channel so peers can send it "your turn" notifications. Same
+// goroutine discipline as SetName.
+func (m *Mux) SetEndpoint(endpoint string) {
+	select {
+	case m.cmds <- func() { m.ctl.setEndpoint(endpoint) }:
+	default:
+	}
+}
+
+// SetPushKey (host) distributes the shared session VAPID keypair over ctl.
+func (m *Mux) SetPushKey(key string) {
+	select {
+	case m.cmds <- func() { m.ctl.setPushKey(key) }:
+	default:
+	}
+}
+
 // Events is the merged stream: SessionEvent, Desync, and every service's
 // own event types (chat.Message, ctl Roster, …).
 func (m *Mux) Events() <-chan any { return m.events }

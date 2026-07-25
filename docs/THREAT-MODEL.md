@@ -78,6 +78,32 @@ knowledge:
   all tokens and sessions (in-memory only — reconnect then falls back to a
   fresh rejoin). No new persistent state.
 
+## Turn notifications (Web Push)
+
+Opt-in "your turn" notifications let friends play across the day. Browsers can't
+POST to a push service directly (CORS), so the server has to forward — but it
+never gains keys or content:
+
+- **VAPID keys are client-held, ephemeral, and E2E-distributed.** The host mints
+  a per-session VAPID keypair in-browser; it travels to members inside the
+  encrypted `ctl` channel (like the group key), never to the relay. Each member
+  shares only its push *endpoint* over `ctl`.
+- **Notifications carry no payload.** A push is an empty wake; the service worker
+  shows a generic "your turn". No move, board, name, or phrase is ever sent —
+  there is nothing in a push to read.
+- **The `/push` route is a keyless, content-blind forwarder.** The mover signs an
+  empty VAPID push in-browser and hands the finished request to `/push`, which
+  forwards it verbatim to the push service. The relay holds no VAPID key, so it
+  **cannot forge** a push — only forward or drop it (an availability power it
+  already has). It sees the recipient's push endpoint (metadata) and an opaque
+  JWT; forwarding is **restricted to known push-service hosts** so `/push` can't
+  be used as an open proxy (SSRF).
+- **What the relay learns (metadata):** push endpoints (stable per-device
+  identifiers from FCM/Mozilla/Apple/WNS) and notification timing. Not content.
+- **Endpoint exposure** rides the same TLS assumption as the SessionID/tokens;
+  over plaintext ws a network eavesdropper sees endpoints (metadata), never
+  plaintext.
+
 ## Trust assumptions
 
 - **The host is trusted.** It holds the group key and assigns roles. That's

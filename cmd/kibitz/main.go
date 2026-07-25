@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/richardwooding/kibitz/internal/pushfwd"
 	"github.com/richardwooding/kibitz/internal/relay"
 	"github.com/richardwooding/kibitz/web"
 )
@@ -77,6 +78,10 @@ func main() {
 	relaySrv := relay.New(relay.Options{MaxSessions: *maxSessions})
 	defer relaySrv.Close()
 	mux.Handle("/ws", relaySrv)
+	// Keyless Web Push forwarder: clients sign an empty VAPID push in-browser
+	// (CORS forbids posting to push services directly) and this forwards it. It
+	// holds no keys and sees no game content — see internal/pushfwd.
+	mux.Handle("/push", pushfwd.New())
 
 	srv := &http.Server{
 		Addr:              *listen,
