@@ -844,12 +844,25 @@ button.back { margin-bottom: 0.7rem; }
   border: 1px solid var(--border);
   flex: none;
 }
-/* home: centered credit sitting below the hero */
-#view-home .by-line {
+/* credit + feedback sit on one centered, wrapping line */
+.foot-credit {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: center;
-  margin: 2.25rem auto 0;
+  gap: 0.5rem;
 }
+.foot-link {
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+.foot-link:hover { color: var(--accent); }
+.foot-sep { color: var(--muted); opacity: 0.5; }
+
+/* home: centered credit sitting below the hero */
+#view-home .foot-credit { margin: 2.25rem auto 0; }
 /* other views: a quiet footer with a hairline top rule */
 .app-footer {
   margin-top: 2rem;
