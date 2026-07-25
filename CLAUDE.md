@@ -9,10 +9,17 @@ sessions. A host gets a code phrase (`lion-42-maple`) plus a share link and QR;
 others join with it. A relay server (hosted or self-hosted, one binary)
 forwards frames it can never read — the phrase seeds a PAKE handshake and all
 service traffic is encrypted client-side. Layered services run over one
-session: chat plus six games — chess (corentings/chess), backgammon,
-connect4, checkers, reversi, battleship (shipcommit per-cell commitments).
+session: chat plus twelve games — chess (corentings/chess), backgammon,
+connect4, checkers, reversi, gomoku, hex, dots & boxes, go/weiqi, xiangqi,
+battleship (shipcommit per-cell commitments), and gin rummy (internal/gin +
+internal/mentalpoker — a dealerless "mental poker" shuffle). Most games are
+both-sides-validate perfect-information; battleship and gin are interactive
+commit-reveal / mental-poker protocols instead. Eleven of the twelve have a
+"Hard" bot (internal/bot) for solo play; gin is networked-two-player only.
 Games start on demand from a picker (service Start() / startReq;
 internal/service/game holds shared seat/lifecycle logic); rematch swaps seats.
+There's also an opt-in GitHub-OAuth admin dashboard (internal/dashboard, at
+/dashboard) that stays dormant unless the DASHBOARD_* env vars are set.
 
 **Game rules engines and fair dice are extracted into standalone modules**
 (richardwooding/{backgammon,checkers,reversi,fairdice}); the kibitz service

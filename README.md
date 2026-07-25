@@ -3,8 +3,8 @@
 > Pull up a chair.
 
 **kibitz** is [croc](https://github.com/schollz/croc)-style pairing for
-long-lived, end-to-end-encrypted sessions — chat and turn-based games (chess
-first, backgammon next) instead of file transfer.
+long-lived, end-to-end-encrypted sessions — chat and a dozen turn-based games
+instead of file transfer.
 
 - **Pair like croc**: the host gets a code phrase like `lion-42-maple`, plus a
   share link and QR code. Friends join by clicking or typing.
@@ -18,14 +18,23 @@ first, backgammon next) instead of file transfer.
 
 ## Status
 
-**v0.3 — six games.** Chess, backgammon (provably fair commit-reveal dice),
-checkers, reversi, Connect Four, and **Battleship where cheating is
-cryptographically impossible**: each player commits to every cell of their
-board before the first shot, every reveal is verified by every participant
-(spectators included), and both full boards are opened and legality-checked
-at game end — all without any server ever seeing a thing, because the relay
-only ever forwards ciphertext. Games start on demand from the picker and run
-side by side in one session; rematches swap colors.
+**Twelve games.** Chess, backgammon (provably fair commit-reveal dice),
+checkers, reversi, Connect Four, Gomoku, Hex, Dots & Boxes, Go, Xiangqi, and
+two games where cheating is *cryptographically* impossible:
+
+- **Battleship** — each player commits to every cell of their board before the
+  first shot; every reveal is verified by every participant (spectators
+  included), and both full boards are opened and legality-checked at game end.
+- **Gin Rummy** — dealt by a "mental poker" shuffle: the two players jointly
+  encrypt and shuffle the deck with a commuting cipher, so neither of them (nor
+  the relay) learns the order or the opponent's hand, yet the deck is proven to
+  be a fair, untouched 52 cards when keys are revealed at showdown. Full match
+  play to 100 with lay-off and dealer alternation.
+
+All of it runs without any server ever seeing a thing, because the relay only
+forwards ciphertext. Games start on demand from the picker and run side by side
+in one session; rematches swap seats. Eleven of the twelve ship with a "Hard"
+computer opponent for solo play (Gin is networked-two-player only).
 
 ## How it works
 

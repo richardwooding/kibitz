@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>kibitz — play a friend, end-to-end encrypted</title>
-<meta name="description" content="Pull up a chair. Chess, backgammon, checkers, reversi, Connect Four, and provably-fair Battleship — with chat — over one end-to-end-encrypted session. Pair with a code phrase through a relay that can never read a thing. 100% Go, WASM in your browser.">
+<meta name="description" content="Pull up a chair. Twelve games — chess, backgammon, Go, Xiangqi, a provably-fair Battleship, and Gin Rummy dealt by a shuffle nobody can rig — with chat, over one end-to-end-encrypted session. Pair with a code phrase through a relay that can never read a thing. 100% Go, WASM in your browser.">
 <meta property="og:site_name" content="Richard Wooding">
 <meta property="og:type" content="website">
 <meta property="og:title" content="kibitz — play a friend, end-to-end encrypted">
-<meta property="og:description" content="Six games and chat over one end-to-end-encrypted session, paired with a code phrase through a blind relay. 100% Go, WASM in your browser.">
+<meta property="og:description" content="Twelve games and chat over one end-to-end-encrypted session, paired with a code phrase through a blind relay. 100% Go, WASM in your browser.">
 <meta property="og:url" content="https://richardwooding.github.io/kibitz/">
 <meta property="og:image" content="https://richardwooding.github.io/kibitz/og.png">
 <meta property="og:image:width" content="1200">
@@ -16,7 +16,7 @@
 <meta property="og:image:alt" content="kibitz — play a friend, end-to-end encrypted">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="kibitz — play a friend, end-to-end encrypted">
-<meta name="twitter:description" content="Six games and chat over one end-to-end-encrypted session, paired with a code phrase through a blind relay.">
+<meta name="twitter:description" content="Twelve games and chat over one end-to-end-encrypted session, paired with a code phrase through a blind relay.">
 <meta name="twitter:image" content="https://richardwooding.github.io/kibitz/og.png">
 <link rel="canonical" href="https://richardwooding.github.io/kibitz/">
 <meta name="theme-color" content="#0d1117">
@@ -96,6 +96,7 @@
     <button class="gl-nav-toggle" aria-label="Toggle navigation" data-gl-nav-toggle="nav" aria-expanded="false">☰</button>
     <nav id="nav">
       <a href="#games">Games</a>
+      <a href="#fair">Provably fair</a>
       <a href="#crypto">How it's private</a>
       <button class="gl-theme-toggle" data-gl-theme-toggle aria-label="Toggle color theme" aria-pressed="true">
         <svg class="gl-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
@@ -110,9 +111,9 @@
 <section class="gl-hero">
   <div class="gl-wrap gl-hero-grid">
     <div>
-      <p class="gl-eyebrow">end-to-end encrypted · six games · chat</p>
+      <p class="gl-eyebrow">end-to-end encrypted · twelve games · chat</p>
       <h1>Pull up a chair, <span class="gl-grad">play a friend.</span></h1>
-      <p class="sub">kibitz is chess, backgammon, checkers, reversi, Connect Four, and provably-fair Battleship — with a chat alongside — over one end-to-end-encrypted session. You get a code phrase like <code>lion-42-maple</code>, a share link, and a QR; the first friend to join sits down as your opponent, everyone after that kibitzes. The relay that carries it all can never read a move or a message.</p>
+      <p class="sub">kibitz is twelve games — chess, backgammon, checkers, reversi, Connect Four, Gomoku, Hex, Dots &amp; Boxes, Go, Xiangqi, a provably-fair Battleship, and Gin Rummy dealt by a shuffle neither player nor the server can rig — with a chat alongside, over one end-to-end-encrypted session. You get a code phrase like <code>lion-42-maple</code>, a share link, and a QR; the first friend to join sits down as your opponent, everyone after that kibitzes. The relay that carries it all can never read a move, a card, or a message.</p>
       <div class="gl-cta">
         <a class="gl-btn primary" href="https://kibitz-play.fly.dev" target="_blank" rel="noopener">▶ Play now</a>
         <a class="gl-btn ghost" href="https://github.com/richardwooding/kibitz">View on GitHub</a>
@@ -138,8 +139,8 @@
 <section id="games" class="gl-section">
   <div class="gl-wrap">
     <p class="gl-eyebrow">what's on the table</p>
-    <h2>Six games, one encrypted session.</h2>
-    <p class="gl-lede" style="margin-top:14px">Games start on demand from a picker and run side by side — play a chess game and a backgammon game at once, chatting the whole time. Every rules engine is pure Go, compiled to WebAssembly, and runs identically on both screens.</p>
+    <h2>Twelve games, one encrypted session.</h2>
+    <p class="gl-lede" style="margin-top:14px">Games start on demand from a picker and run side by side — play a chess game and a backgammon game at once, chatting the whole time. Every rules engine is pure Go, compiled to WebAssembly, and runs identically on both screens. Eleven of the twelve have a "Hard" computer opponent for solo play.</p>
     <div class="gl-grid feat" style="margin-top:28px">
       <div class="gl-card">
         <img class="game-shot" src="shots/chess.png" alt="A chess game in the kibitz app" loading="lazy" width="544" height="544">
@@ -167,11 +168,60 @@
         <p>Drop, connect, gloat. A quick one between the longer games — with the disc-drop animation and a hover ghost showing where your piece will land.</p>
       </div>
       <div class="gl-card">
+        <img class="game-shot" src="shots/gomoku.png" alt="A Gomoku game in the kibitz app" loading="lazy" width="512" height="512">
+        <h3>Gomoku</h3>
+        <p>Five in a row on a 15×15 board. Easy to start, sharp the moment you spot a double threat — place a stone, block a line, and the last move glows.</p>
+      </div>
+      <div class="gl-card">
+        <img class="game-shot" src="shots/hex.png" alt="A Hex game in the kibitz app" loading="lazy" width="588" height="390">
+        <h3>Hex</h3>
+        <p>Connect your two edges across a rhombus of hexagons — red top-to-bottom, blue side-to-side. Hex can't be drawn: somebody's chain always gets there first.</p>
+      </div>
+      <div class="gl-card">
+        <img class="game-shot" src="shots/dots.png" alt="A Dots and Boxes game in the kibitz app" loading="lazy" width="480" height="480">
+        <h3>Dots &amp; Boxes</h3>
+        <p>Claim edges; close the fourth side of a box and you score it and move again. The whole game turns on who's forced to open the next chain.</p>
+      </div>
+      <div class="gl-card">
+        <img class="game-shot" src="shots/weiqi.png" alt="A game of Go in the kibitz app" loading="lazy" width="480" height="480">
+        <h3>Go</h3>
+        <p>Go on a 9×9 board — surround territory, capture stones, pass when nothing's left to gain. Suicide and ko are enforced; scored Chinese-style with komi.</p>
+      </div>
+      <div class="gl-card">
+        <img class="game-shot tall" src="shots/xiangqi.png" alt="A Xiangqi (Chinese chess) game in the kibitz app" loading="lazy" width="384" height="427">
+        <h3>Xiangqi</h3>
+        <p>Chinese chess, the full ruleset — the river, the palace, cannons that leap to capture, and the flying-general rule. Give check, force mate.</p>
+      </div>
+      <div class="gl-card">
         <img class="game-shot tall" src="shots/battleship.png" alt="A Battleship game in the kibitz app, showing hits and misses" loading="lazy" width="588" height="916">
         <h3>Battleship</h3>
-        <p>Provably fair: each cell of your fleet is a cryptographic commitment made before the first shot. "Sunk" becomes a public derivation — there's no message left to lie in. No hidden server; nobody cheats.</p>
+        <p>Provably fair: each cell of your fleet is a cryptographic commitment made before the first shot. "Sunk" becomes a public derivation — there's no message left to lie in.</p>
+      </div>
+      <div class="gl-card">
+        <img class="game-shot" src="shots/gin.png" alt="A Gin Rummy hand in the kibitz app" loading="lazy" width="588" height="209">
+        <h3>Gin Rummy</h3>
+        <p>Dealt by a "mental-poker" shuffle: the two of you jointly shuffle so neither player — nor the relay — knows the deck or the other's hand, yet every card is provable at showdown. Meld, knock, and play a match to 100.</p>
       </div>
     </div>
+  </div>
+</section>
+
+<section id="fair" class="gl-section">
+  <div class="gl-wrap">
+    <p class="gl-eyebrow">provably fair</p>
+    <h2>Two games can't be cheated — even by their own players.</h2>
+    <p class="gl-lede" style="margin-top:14px">Encryption stops the relay from reading a game. But hidden-information games raise a harder question: how do you trust your <em>opponent</em>, with no referee in the middle? Two of kibitz's games answer it with cryptography instead of trust — and backgammon's dice use the same commit-reveal trick.</p>
+    <div class="gl-grid two" style="margin-top:26px">
+      <div class="gl-card">
+        <h3>Battleship — commit before you fire</h3>
+        <p>Each cell of your fleet is a cryptographic commitment locked in before the first shot. Every "hit", "miss", and "sunk" is then a public derivation checked against those commitments — there's no message left to lie in, and no hidden server that could. Move your ships after the fact and the maths simply won't verify.</p>
+      </div>
+      <div class="gl-card">
+        <h3>Gin Rummy — a shuffle nobody controls</h3>
+        <p>The deck is shuffled by <em>mental poker</em>: you and your opponent each encrypt and shuffle it with a commuting cipher, so neither of you — and certainly not the blind relay — knows the order or the other's hand. At showdown you reveal your keys, and the deck is proven to decrypt to a fair, untouched 52 cards. A dealerless deal with no dealer to trust.</p>
+      </div>
+    </div>
+    <p class="gl-hint" style="margin-top:18px">All three build on the same primitive: commit to a secret first, reveal it later, and let everyone check the maths.</p>
   </div>
 </section>
 
@@ -179,7 +229,7 @@
   <div class="gl-wrap">
     <p class="gl-eyebrow">how it's private</p>
     <h2>The relay is blind.</h2>
-    <p class="gl-lede" style="margin-top:14px">Your code phrase never reaches the server — it seeds a PAKE handshake between you and each friend. From that, everyone shares a group key; every move, dice roll, and chat line is sealed with XChaCha20-Poly1305 before it leaves the tab. The relay only forwards opaque frames between participants: it sees connection counts and a session id that's a one-way hash of the phrase, and nothing else. Self-host the one-binary relay or use the hosted one — either way it can't read a thing.</p>
+    <p class="gl-lede" style="margin-top:14px">Your code phrase never reaches the server — it seeds a PAKE handshake between you and each friend. From that, everyone shares a group key; every move, dice roll, dealt card, and chat line is sealed with XChaCha20-Poly1305 before it leaves the tab. The relay only forwards opaque frames between participants: it sees connection counts and a session id that's a one-way hash of the phrase, and nothing else. Self-host the one-binary relay or use the hosted one — either way it can't read a thing.</p>
     <div class="gl-split" style="margin-top:24px">
       <pre class="gl-code"><span class="c">// the phrase is the secret — it never</span>
 <span class="c">// travels; the session id is a hash</span>
@@ -195,7 +245,7 @@ members   <span class="loc">2 players + 3 kibitzers</span>
 frames    <span class="loc">▓▓▓ opaque ciphertext ▓▓▓</span>
 
 <span class="c"># what it can never see</span>
-moves · dice · chat · names   <span class="warn">✗ sealed</span></pre>
+moves·dice·cards·chat·names   <span class="warn">✗ sealed</span></pre>
     </div>
     <p class="gl-hint" style="margin-top:18px">Games sync both-sides-validate — each client runs the same deterministic engine and checks a state hash, so there's no authoritative server to trust or to breach. Read the full <a href="https://github.com/richardwooding/kibitz/blob/main/docs/THREAT-MODEL.md">threat model ↗</a>.</p>
     <div class="gl-cta" style="margin-top:26px">
