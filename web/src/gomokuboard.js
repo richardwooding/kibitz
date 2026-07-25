@@ -1,0 +1,107 @@
+// gomokuboard.js — the Gomoku module: 15×15 grid, click an empty point to
+// place a stone; first to five in a row wins.
+(() => {
+  "use strict";
+
+  const SIZE = 15;
+
+  window.GameModules = window.GameModules || {};
+  window.GameModules.gomoku = { label: "⚫ Gomoku", paneId: "game-gomoku", create };
+
+  function create(ctx) {
+    const { $, send } = ctx;
+    let g = null;
+    let visible = false;
+
+    const isHotseat = () => ctx.hotseat && ctx.hotseat();
+    const isPlayer = () => isHotseat() || (g && (g.p1Id === ctx.self() || g.p2Id === ctx.self()));
+    // In solo the user drives both sides, so it is always "their" turn.
+    const myTurn = () => g && (isHotseat() || g.turnId === ctx.self());
+    const over = () => g && g.outcome !== "";
+
+    function render() {
+      if (!visible || !g) return;
+      ctx.renderMoves($("gomoku-moves"), g.history);
+      const statusEl = $("gomoku-status");
+      if (!g.playing) {
+        statusEl.textContent = "Waiting for the game to start…";
+        return;
+      }
+      if (over()) {
+        statusEl.textContent = g.outcome;
+      } else {
+        const stone = g.turnId === g.p1Id ? "⚫" : "⚪";
+        if (isHotseat()) {
+          statusEl.textContent = `${stone} to move`;
+        } else {
+          const mine = g.turnId === ctx.self();
+          statusEl.textContent = mine ? `Your move ${stone}` : `${ctx.name(g.turnId)}'s move ${stone}`;
+          if (isPlayer()) {
+            statusEl.textContent += ` · you are ${g.p1Id === ctx.self() ? "⚫" : "⚪"}`;
+          }
+        }
+      }
+      $("gomoku-resign").classList.toggle("hidden", !isPlayer() || over());
+
+      const el = $("gomoku-board");
+      el.classList.toggle("my-turn", myTurn() && !over());
+      el.innerHTML = "";
+      const win = new Set(g.winCells || []);
+      const canPlay = myTurn() && !over();
+      for (let idx = 0; idx < SIZE * SIZE; idx++) {
+        const cell = document.createElement("button");
+        cell.type = "button";
+        cell.className = "gm-cell";
+        const v = g.board[idx];
+        if (v !== 0) {
+          const stone = document.createElement("span");
+          stone.className = "gm-stone " + (v === 1 ? "black" : "white");
+          cell.appendChild(stone);
+        }
+        if (win.has(idx)) cell.classList.add("win");
+        if (idx === g.last) cell.classList.add("last");
+        if (canPlay && v === 0) {
+          const row = Math.floor(idx / SIZE), col = idx % SIZE;
+          cell.classList.add("open");
+          cell.addEventListener("click", () => send({ type: "gomoku.place", row, col }));
+        }
+        el.appendChild(cell);
+      }
+    }
+
+    $("gomoku-resign").addEventListener("click", () => {
+      if (confirm("Resign Gomoku?")) send({ type: "gomoku.resign" });
+    });
+
+    function outcomeWon() {
+      if (g.outcome === "draw" || !isPlayer()) return null;
+      const iAmBlack = g.p1Id === ctx.self();
+      return g.outcome === (iAmBlack ? "black wins" : "white wins");
+    }
+
+    return {
+      onEvent(type, e) {
+        if (type !== "gomoku.state") return;
+        const prev = g;
+        g = e;
+        if (prev && prev.board && g.board && g.last >= 0 &&
+            prev.board[g.last] === 0 && g.board[g.last] !== 0 && window.fx) {
+          window.fx.sound.drop();
+        }
+        render();
+        if (prev && prev.playing && !over_(prev) && over() && window.fx) {
+          window.fx.celebrate($("game-gomoku"), outcomeWon(), window.fx.result(outcomeWon(),
+            { draw: g.outcome === "draw", spectator: g.outcome, hotseat: isHotseat() }));
+        }
+      },
+      setVisible(v) { visible = v; if (v) render(); },
+      card() {
+        if (!g || !g.playing) return { status: "idle" };
+        if (over()) return { status: "over", detail: g.outcome };
+        return { status: "live", myTurn: myTurn() };
+      },
+    };
+
+    function over_(s) { return s && s.outcome !== ""; }
+  }
+})();

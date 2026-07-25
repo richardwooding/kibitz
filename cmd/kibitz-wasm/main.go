@@ -32,6 +32,7 @@ import (
 	"github.com/richardwooding/kibitz/internal/service/checkers"
 	"github.com/richardwooding/kibitz/internal/service/chess"
 	"github.com/richardwooding/kibitz/internal/service/connect4"
+	"github.com/richardwooding/kibitz/internal/service/gomoku"
 	"github.com/richardwooding/kibitz/internal/service/reversi"
 	"github.com/richardwooding/kibitz/internal/session"
 	"github.com/richardwooding/kibitz/internal/solo"
@@ -39,25 +40,26 @@ import (
 
 // command is every UI→core message; unused fields stay empty.
 type command struct {
-	Type   string    `json:"type"`
-	Phrase string    `json:"phrase,omitempty"`
-	Text   string    `json:"text,omitempty"`
-	UCI    string    `json:"uci,omitempty"`
-	From   string    `json:"from,omitempty"`  // square, for chess.targets
-	ID     int       `json:"id,omitempty"`    // request correlation for queries
-	Hops   [][2]int8 `json:"hops,omitempty"`  // backgammon turn, player-relative
-	Game   string    `json:"game,omitempty"`  // service ID for game.start
-	Col    int8      `json:"col"`             // connect4 column
-	Path   []int8    `json:"path,omitempty"`  // checkers move path
-	Sq     int8      `json:"sq"`              // reversi square
-	Cell   uint8     `json:"cell"`            // battleship cell
-	Fleet  []uint8   `json:"fleet,omitempty"` // battleship placement
-	Name     string `json:"name,omitempty"`     // screen name for create/join
-	Mode     string `json:"mode,omitempty"`     // solo mode: "bot" | "hotseat"
-	Level    string `json:"level,omitempty"`    // solo bot difficulty: "easy" | "hard"
-	PushKey  string `json:"pushKey,omitempty"`  // host: shared session VAPID keypair blob
-	Endpoint string `json:"endpoint,omitempty"` // this client's Web Push endpoint
-	Spectate bool   `json:"spectate,omitempty"` // join intent: watch instead of play
+	Type     string    `json:"type"`
+	Phrase   string    `json:"phrase,omitempty"`
+	Text     string    `json:"text,omitempty"`
+	UCI      string    `json:"uci,omitempty"`
+	From     string    `json:"from,omitempty"`     // square, for chess.targets
+	ID       int       `json:"id,omitempty"`       // request correlation for queries
+	Hops     [][2]int8 `json:"hops,omitempty"`     // backgammon turn, player-relative
+	Game     string    `json:"game,omitempty"`     // service ID for game.start
+	Col      int8      `json:"col"`                // connect4 column
+	Path     []int8    `json:"path,omitempty"`     // checkers move path
+	Row      int8      `json:"row"`                // gomoku row
+	Sq       int8      `json:"sq"`                 // reversi square
+	Cell     uint8     `json:"cell"`               // battleship cell
+	Fleet    []uint8   `json:"fleet,omitempty"`    // battleship placement
+	Name     string    `json:"name,omitempty"`     // screen name for create/join
+	Mode     string    `json:"mode,omitempty"`     // solo mode: "bot" | "hotseat"
+	Level    string    `json:"level,omitempty"`    // solo bot difficulty: "easy" | "hard"
+	PushKey  string    `json:"pushKey,omitempty"`  // host: shared session VAPID keypair blob
+	Endpoint string    `json:"endpoint,omitempty"` // this client's Web Push endpoint
+	Spectate bool      `json:"spectate,omitempty"` // join intent: watch instead of play
 }
 
 type app struct {
@@ -69,6 +71,7 @@ type app struct {
 	chess  *chess.Service
 	bg     *backgammon.Service
 	c4     *connect4.Service
+	gm     *gomoku.Service
 	ck     *checkers.Service
 	rv     *reversi.Service
 	bs     *battleship.Service
@@ -83,6 +86,7 @@ type app struct {
 	chessB              *chess.Service
 	bgB                 *backgammon.Service
 	c4B                 *connect4.Service
+	gmB                 *gomoku.Service
 	ckB                 *checkers.Service
 	rvB                 *reversi.Service
 	bsB                 *battleship.Service
@@ -151,6 +155,9 @@ var commands = map[string]func(command){
 
 	"c4.drop":   func(c command) { moveC4(func(s *connect4.Service) error { return s.Drop(c.Col) }) },
 	"c4.resign": func(command) { withC4((*connect4.Service).Resign) },
+
+	"gomoku.place":  func(c command) { moveGM(func(s *gomoku.Service) error { return s.Place(c.Row, c.Col) }) },
+	"gomoku.resign": func(command) { withGM((*gomoku.Service).Resign) },
 
 	"checkers.move":      func(c command) { moveCK(func(s *checkers.Service) error { return s.TryMove(c.Path) }) },
 	"checkers.resign":    func(command) { withCK((*checkers.Service).Resign) },
@@ -253,17 +260,17 @@ func join(phrase, name string, spectate bool) {
 	})
 }
 
-// newServices builds a fresh set of the seven layered services.
+// newServices builds a fresh set of the eight layered services.
 func newServices() (ch *chat.Service, cs *chess.Service, bg *backgammon.Service,
-	c4 *connect4.Service, ck *checkers.Service, rv *reversi.Service, bs *battleship.Service) {
+	c4 *connect4.Service, gm *gomoku.Service, ck *checkers.Service, rv *reversi.Service, bs *battleship.Service) {
 	return chat.New(), chess.New(), backgammon.New(), connect4.New(),
-		checkers.New(), reversi.New(), battleship.New()
+		gomoku.New(), checkers.New(), reversi.New(), battleship.New()
 }
 
 // start attaches services and begins pumping mux events to the UI.
 func start(client *session.Client, name string) {
-	ch, cs, bg, c4, ck, rv, bs := newServices()
-	mux := service.NewMux(client, ch, cs, bg, c4, ck, rv, bs)
+	ch, cs, bg, c4, gm, ck, rv, bs := newServices()
+	mux := service.NewMux(client, ch, cs, bg, c4, gm, ck, rv, bs)
 	mux.SetName(name)      // no-op for a blank name; peers then see "#id"
 	mux.SetReconnectable() // survive transient drops; see reconnectNet
 
@@ -273,7 +280,8 @@ func start(client *session.Client, name string) {
 	current.solo = false
 	current.mux = mux
 	current.client, current.chat, current.chess = client, ch, cs
-	current.bg, current.c4, current.ck, current.rv, current.bs = bg, c4, ck, rv, bs
+	current.bg, current.c4, current.gm = bg, c4, gm
+	current.ck, current.rv, current.bs = ck, rv, bs
 	current.mu.Unlock()
 
 	go pump(mux, myGen, false, false)
@@ -286,11 +294,11 @@ func start(client *session.Client, name string) {
 // drives end B. No network, no partner. See internal/solo and internal/bot.
 func startSolo(name string, vsBot bool, level string) {
 	host, guest, seat := solo.New()
-	chA, csA, bgA, c4A, ckA, rvA, bsA := newServices()
-	muxA := service.NewMux(host, chA, csA, bgA, c4A, ckA, rvA, bsA)
+	chA, csA, bgA, c4A, gmA, ckA, rvA, bsA := newServices()
+	muxA := service.NewMux(host, chA, csA, bgA, c4A, gmA, ckA, rvA, bsA)
 	muxA.SetName(name)
-	chB, csB, bgB, c4B, ckB, rvB, bsB := newServices()
-	muxB := service.NewMux(guest, chB, csB, bgB, c4B, ckB, rvB, bsB)
+	chB, csB, bgB, c4B, gmB, ckB, rvB, bsB := newServices()
+	muxB := service.NewMux(guest, chB, csB, bgB, c4B, gmB, ckB, rvB, bsB)
 	if vsBot {
 		muxB.SetName("Computer")
 	} else {
@@ -304,9 +312,11 @@ func startSolo(name string, vsBot bool, level string) {
 	current.mux = nil // solo muxes are not reconnectable and never dropped
 	current.soloHost, current.soloGuest = host, guest
 	current.chat, current.chess, current.bg = chA, csA, bgA
-	current.c4, current.ck, current.rv, current.bs = c4A, ckA, rvA, bsA
+	current.c4, current.gm = c4A, gmA
+	current.ck, current.rv, current.bs = ckA, rvA, bsA
 	current.chatB, current.chessB, current.bgB = chB, csB, bgB
-	current.c4B, current.ckB, current.rvB, current.bsB = c4B, ckB, rvB, bsB
+	current.c4B, current.gmB = c4B, gmB
+	current.ckB, current.rvB, current.bsB = ckB, rvB, bsB
 	current.mu.Unlock()
 
 	go pump(muxA, myGen, true, vsBot) // end A drives the UI
@@ -320,7 +330,7 @@ func startSolo(name string, vsBot bool, level string) {
 			lvl = bot.Medium
 		}
 		go bot.Drive(muxB.Events(), bot.Services{
-			Self: guest.Self(), Chess: csB, BG: bgB, C4: c4B, CK: ckB, RV: rvB, BS: bsB,
+			Self: guest.Self(), Chess: csB, BG: bgB, C4: c4B, GM: gmB, CK: ckB, RV: rvB, BS: bsB,
 		}, 500*time.Millisecond, lvl)
 	} else {
 		go drainMux(muxB) // end B stays in sync silently
@@ -339,7 +349,8 @@ func closePrev() {
 	current.client, current.soloHost, current.soloGuest = nil, nil, nil
 	current.mux = nil
 	current.chatB, current.chessB, current.bgB = nil, nil, nil
-	current.c4B, current.ckB, current.rvB, current.bsB = nil, nil, nil, nil
+	current.c4B, current.gmB = nil, nil
+	current.ckB, current.rvB, current.bsB = nil, nil, nil
 	current.mu.Unlock()
 	// A clean Close (normal closure) tells the relay we left for good — no grace.
 	// We do NOT close the mux stream here: its run goroutine may still emit the
@@ -401,6 +412,13 @@ func moveC4(f func(*connect4.Service) error) {
 	routeMove(a, b, s, f)
 }
 
+func moveGM(f func(*gomoku.Service) error) {
+	current.mu.Lock()
+	a, b, s := current.gm, current.gmB, current.solo
+	current.mu.Unlock()
+	routeMove(a, b, s, f)
+}
+
 func moveCK(f func(*checkers.Service) error) {
 	current.mu.Lock()
 	a, b, s := current.ck, current.ckB, current.solo
@@ -430,6 +448,9 @@ func startGame(id string) {
 	}
 	if current.c4 != nil {
 		starters["connect4"] = current.c4.Start
+	}
+	if current.gm != nil {
+		starters["gomoku"] = current.gm.Start
 	}
 	if current.ck != nil {
 		starters["checkers"] = current.ck.Start
@@ -479,6 +500,8 @@ func pump(mux *service.Mux, gen int, isSolo, vsBot bool) {
 			emitError(fmt.Sprintf("dice cheat detected from participant %d — game voided", e.By))
 		case connect4.State:
 			emitC4State(e)
+		case gomoku.State:
+			emitGomokuState(e)
 		case checkers.State:
 			emitCKState(e)
 		case checkers.DrawOffered:
@@ -677,6 +700,15 @@ func emitC4State(e connect4.State) {
 	})
 }
 
+func emitGomokuState(e gomoku.State) {
+	emit("gomoku.state", map[string]any{
+		"board": e.Board[:], "p1Id": uint32(e.P1ID), "p2Id": uint32(e.P2ID),
+		"turnId": uint32(e.TurnID), "outcome": e.Outcome,
+		"winCells": e.WinCells, "last": e.Last, "playing": e.Playing,
+		"history": e.History,
+	})
+}
+
 func targets(from string, id int) {
 	current.mu.Lock()
 	cs := current.chess
@@ -696,7 +728,8 @@ func leave() {
 	current.mu.Lock()
 	current.solo = false
 	current.chat, current.chess, current.bg = nil, nil, nil
-	current.c4, current.ck, current.rv, current.bs = nil, nil, nil, nil
+	current.c4, current.gm = nil, nil
+	current.ck, current.rv, current.bs = nil, nil, nil
 	current.mu.Unlock()
 }
 
@@ -724,6 +757,13 @@ func withBG(f func(*backgammon.Service) error) {
 func withC4(f func(*connect4.Service) error) {
 	current.mu.Lock()
 	s := current.c4
+	current.mu.Unlock()
+	callService(s == nil, func() error { return f(s) })
+}
+
+func withGM(f func(*gomoku.Service) error) {
+	current.mu.Lock()
+	s := current.gm
 	current.mu.Unlock()
 	callService(s == nil, func() error { return f(s) })
 }

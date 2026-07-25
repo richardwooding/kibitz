@@ -37,11 +37,12 @@ button,
 .c4-board, .c4-col, .c4-cell,
 .ck-board, .ck-cell,
 .rv-board, .rv-cell,
+.gm-board, .gm-cell,
 .bs-board, .bs-cell,
 .game-card, .picker-card {
   touch-action: manipulation;
 }
-.board, .bg-board, .c4-board, .ck-board, .rv-board, .bs-board {
+.board, .bg-board, .c4-board, .ck-board, .rv-board, .gm-board, .bs-board {
   -webkit-user-select: none;
   user-select: none;
 }
@@ -601,6 +602,44 @@ button.back { margin-bottom: 0.7rem; }
 }
 .rv-disc.black { background: #17171f; }
 .rv-disc.white { background: #f4f2ea; }
+
+/* gomoku — a 15×15 wooden board; the gap shows through as grid lines */
+.gm-board {
+  display: grid;
+  grid-template-columns: repeat(15, 1fr);
+  gap: 1px;
+  width: min(100%, 32rem);
+  aspect-ratio: 1;
+  background: #b07a3c;
+  padding: 5px;
+  border-radius: 0.4rem;
+  margin: 0 auto;
+}
+.gm-cell {
+  all: unset;
+  position: relative;
+  display: grid;
+  place-items: center;
+  background: #d9a441;
+  aspect-ratio: 1;
+}
+.gm-cell.open { cursor: pointer; }
+.gm-cell.open:hover::after {
+  content: "";
+  width: 62%; height: 62%;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.16);
+}
+.gm-cell.last { outline: 2px solid #f6f078; outline-offset: -1px; z-index: 1; }
+.gm-cell.win { background: #f0c93c; }
+.gm-stone {
+  width: 84%; height: 84%;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.4);
+  box-sizing: border-box;
+}
+.gm-stone.black { background: radial-gradient(circle at 35% 30%, #565660, #16161c 72%); }
+.gm-stone.white { background: radial-gradient(circle at 35% 30%, #ffffff, #d6d2c6 78%); }
 
 /* battleship — stack the two grids so each keeps full width (side-by-side
    flex items with a percentage width collapse to nothing). Default stretch

@@ -1,0 +1,408 @@
+// The Gomoku service — five-in-a-row on a 15×15 board. Same shape as the
+// Connect Four service (game.Table for seats/lifecycle, on-demand Start,
+// both-sides-validate with a position hash computed identically on send and
+// receive); the move is a free (row,col) placement rather than a column drop.
+package gomoku
+
+import (
+	"bytes"
+	"crypto/sha256"
+	"errors"
+	"fmt"
+	"sync"
+
+	"github.com/richardwooding/kibitz/internal/service"
+	"github.com/richardwooding/kibitz/internal/service/game"
+	"github.com/richardwooding/kibitz/internal/session"
+	"github.com/richardwooding/kibitz/internal/wire"
+)
+
+const ID = "gomoku"
+
+const (
+	kindNewGame  uint8 = 1
+	kindStartReq uint8 = 2
+	kindPlace    uint8 = 3
+	kindResign   uint8 = 4
+)
+
+type msg struct {
+	Kind      uint8  `cbor:"1,keyasint"`
+	P1        uint32 `cbor:"2,keyasint,omitempty"`
+	P2        uint32 `cbor:"3,keyasint,omitempty"`
+	Row       int8   `cbor:"4,keyasint,omitempty"`
+	Col       int8   `cbor:"5,keyasint,omitempty"`
+	StateHash []byte `cbor:"6,keyasint,omitempty"`
+}
+
+type snapshot struct {
+	Board   Board    `cbor:"1,keyasint"`
+	P1      uint32   `cbor:"2,keyasint"`
+	P2      uint32   `cbor:"3,keyasint"`
+	Turn    uint8    `cbor:"4,keyasint"`
+	Phase   uint8    `cbor:"5,keyasint"`
+	Winner  int8     `cbor:"6,keyasint"` // 0 none, 1/2 side, 3 draw
+	Last    int16    `cbor:"7,keyasint"`
+	History []string `cbor:"8,keyasint,omitempty"`
+}
+
+// State is emitted after every change; the UI renders it directly.
+type State struct {
+	Playing  bool
+	Board    Board
+	P1ID     wire.ParticipantID // black, moves first
+	P2ID     wire.ParticipantID // white
+	TurnID   wire.ParticipantID // 0 when over/idle
+	Outcome  string             // "", "black wins", "white wins", "draw"
+	WinCells []int16
+	Last     int16    // last placed stone's index, -1 when none
+	History  []string // ordered move notation, "⚫ h8" / "⚪ e6"
+}
+
+var ErrNotTurn = errors.New("gomoku: not your turn")
+
+// Service implements service.Service; the mutex covers game state between the
+// mux goroutine and UI calls.
+type Service struct {
+	ctx service.Context
+
+	mu      sync.Mutex
+	table   game.Table
+	board   Board
+	ph      game.Phase
+	turn    game.Side
+	winner  int8 // 0 in play, 1/2 winner, 3 draw
+	last    int16
+	history []string
+}
+
+func New() *Service { return &Service{} }
+
+func (s *Service) ID() string   { return ID }
+func (s *Service) Version() int { return 1 }
+
+func (s *Service) Attach(ctx service.Context) { s.ctx = ctx }
+
+// OnPromote resets host-only seat bookkeeping when this end is promoted to host
+// (migration); the next joiner re-seeds the opponent via NoteKeyed.
+func (s *Service) OnPromote() {
+	s.mu.Lock()
+	s.table.OnPromote()
+	s.mu.Unlock()
+}
+
+func (s *Service) MemberKeyed(id wire.ParticipantID, role session.Role) {
+	if !s.ctx.Host {
+		return
+	}
+	s.mu.Lock()
+	s.table.NoteKeyed(id, role)
+	s.mu.Unlock()
+}
+
+func (s *Service) MemberLeft(id wire.ParticipantID) {
+	s.mu.Lock()
+	winner, forfeit := s.table.NoteLeft(id, s.ph)
+	if forfeit {
+		s.winner = int8(winner) + 1
+		s.ph = game.Over
+	}
+	s.mu.Unlock()
+	if forfeit {
+		s.emitState()
+	}
+}
+
+// Start launches a game or rematch (host seats; players ask via startReq).
+func (s *Service) Start() error {
+	if !s.ctx.Host {
+		body, err := wire.Marshal(msg{Kind: kindStartReq})
+		if err != nil {
+			return err
+		}
+		return s.ctx.Send.SendTo(s.ctx.HostID, ID, body)
+	}
+	return s.hostStart(s.ctx.Self)
+}
+
+func (s *Service) hostStart(from wire.ParticipantID) error {
+	s.mu.Lock()
+	if err := s.table.AuthorizeStart(s.ctx.Host, from, s.ctx.Self, s.ph); err != nil {
+		s.mu.Unlock()
+		return err
+	}
+	seats := s.table.NextSeats(s.ctx.Self)
+	s.resetLocked(seats)
+	s.mu.Unlock()
+
+	body, err := wire.Marshal(msg{Kind: kindNewGame, P1: uint32(seats.P1), P2: uint32(seats.P2)})
+	if err != nil {
+		return err
+	}
+	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+		return err
+	}
+	s.emitState()
+	return nil
+}
+
+func (s *Service) resetLocked(seats game.Seats) {
+	s.board = Board{}
+	s.table.Seats = seats
+	s.ph = game.Playing
+	s.turn = game.P1
+	s.winner = 0
+	s.last = -1
+	s.history = nil
+}
+
+// notePlaceLocked appends a move's notation ("⚫ h8" / "⚪ e6", column letter +
+// 1-based row) — called on both the mover and receiver paths so every end
+// builds the same list.
+func (s *Service) notePlaceLocked(side game.Side, row, col int8) {
+	disc := "⚫"
+	if side == game.P2 {
+		disc = "⚪"
+	}
+	s.history = append(s.history, fmt.Sprintf("%s %c%d", disc, 'a'+col, row+1))
+}
+
+// Place plays the local player's stone at (row, col).
+func (s *Service) Place(row, col int8) error {
+	s.mu.Lock()
+	side, err := s.checkTurnLocked(s.ctx.Self)
+	if err != nil {
+		s.mu.Unlock()
+		return err
+	}
+	idx, err := s.board.Place(row, col, int8(side)+1)
+	if err != nil {
+		s.mu.Unlock()
+		return err
+	}
+	s.last = idx
+	s.notePlaceLocked(side, row, col)
+	hash := s.applyAndHashLocked()
+	s.mu.Unlock()
+
+	body, err := wire.Marshal(msg{Kind: kindPlace, Row: row, Col: col, StateHash: hash})
+	if err != nil {
+		return err
+	}
+	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+		return err
+	}
+	s.emitState()
+	return nil
+}
+
+// Resign concedes.
+func (s *Service) Resign() error {
+	s.mu.Lock()
+	side, seated := s.table.Seats.SideOf(s.ctx.Self)
+	if !seated || s.ph != game.Playing {
+		s.mu.Unlock()
+		return errors.New("gomoku: no game to resign")
+	}
+	s.winner = int8(side.Opponent()) + 1
+	s.ph = game.Over
+	s.mu.Unlock()
+
+	body, err := wire.Marshal(msg{Kind: kindResign})
+	if err != nil {
+		return err
+	}
+	if err := s.ctx.Send.Broadcast(ID, body); err != nil {
+		return err
+	}
+	s.emitState()
+	return nil
+}
+
+func (s *Service) HandleFrame(from wire.ParticipantID, body []byte) error {
+	m, err := wire.Body[msg](body)
+	if err != nil {
+		return fmt.Errorf("gomoku: %w", err)
+	}
+	switch m.Kind {
+	case kindNewGame:
+		if from != s.ctx.HostID {
+			return fmt.Errorf("gomoku: new game from non-host %d", from)
+		}
+		s.mu.Lock()
+		s.resetLocked(game.Seats{P1: wire.ParticipantID(m.P1), P2: wire.ParticipantID(m.P2)})
+		s.mu.Unlock()
+		s.emitState()
+		return nil
+	case kindStartReq:
+		if !s.ctx.Host {
+			return nil
+		}
+		return s.hostStart(from)
+	case kindPlace:
+		return s.handlePlace(from, m)
+	case kindResign:
+		return s.handleResign(from)
+	}
+	return fmt.Errorf("gomoku: unknown message kind %d", m.Kind)
+}
+
+func (s *Service) handlePlace(from wire.ParticipantID, m msg) error {
+	s.mu.Lock()
+	side, err := s.checkTurnLocked(from)
+	if err != nil {
+		s.mu.Unlock()
+		return err
+	}
+	idx, err := s.board.Place(m.Row, m.Col, int8(side)+1)
+	if err != nil {
+		s.mu.Unlock()
+		return err
+	}
+	s.last = idx
+	s.notePlaceLocked(side, m.Row, m.Col)
+	hash := s.applyAndHashLocked()
+	ok := bytes.Equal(hash, m.StateHash)
+	if !ok {
+		s.ph = game.Over
+	}
+	s.mu.Unlock()
+	if !ok {
+		return errors.New("gomoku: position hash mismatch")
+	}
+	s.emitState()
+	return nil
+}
+
+func (s *Service) handleResign(from wire.ParticipantID) error {
+	s.mu.Lock()
+	side, seated := s.table.Seats.SideOf(from)
+	if !seated || s.ph != game.Playing {
+		s.mu.Unlock()
+		return errors.New("gomoku: resign outside game")
+	}
+	s.winner = int8(side.Opponent()) + 1
+	s.ph = game.Over
+	s.mu.Unlock()
+	s.emitState()
+	return nil
+}
+
+func (s *Service) Snapshot() ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.ph == game.Idle {
+		return nil, nil
+	}
+	return wire.Marshal(snapshot{
+		Board: s.board, P1: uint32(s.table.Seats.P1), P2: uint32(s.table.Seats.P2),
+		Turn: uint8(s.turn), Phase: uint8(s.ph), Winner: s.winner, Last: s.last,
+		History: s.history,
+	})
+}
+
+func (s *Service) Restore(blob []byte) error {
+	snap, err := wire.Body[snapshot](blob)
+	if err != nil {
+		return fmt.Errorf("gomoku: restore: %w", err)
+	}
+	s.mu.Lock()
+	// Late-joiner catch-up only (see chess/backgammon for why).
+	if s.ph != game.Idle {
+		s.mu.Unlock()
+		return nil
+	}
+	s.board = snap.Board
+	s.table.Seats = game.Seats{P1: wire.ParticipantID(snap.P1), P2: wire.ParticipantID(snap.P2)}
+	s.turn = game.Side(snap.Turn)
+	s.ph = game.Phase(snap.Phase)
+	s.winner = snap.Winner
+	s.last = snap.Last
+	s.history = snap.History
+	s.mu.Unlock()
+	s.emitState()
+	return nil
+}
+
+// State returns the current game state for UI pulls.
+func (s *Service) State() State {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.stateLocked()
+}
+
+// --- internals ---------------------------------------------------------------
+
+func (s *Service) checkTurnLocked(who wire.ParticipantID) (game.Side, error) {
+	if s.ph != game.Playing {
+		return 0, errors.New("gomoku: no game in progress")
+	}
+	side, seated := s.table.Seats.SideOf(who)
+	if !seated {
+		return 0, errors.New("gomoku: not a player")
+	}
+	if side != s.turn {
+		return 0, ErrNotTurn
+	}
+	return side, nil
+}
+
+// applyAndHashLocked resolves the outcome after a placement, then hashes the
+// post-move state. Called identically on both the send and receive paths — the
+// hash convention every open-information game shares.
+func (s *Service) applyAndHashLocked() []byte {
+	if w, _ := s.board.Winner(); w != 0 {
+		s.winner = w
+		s.ph = game.Over
+	} else if s.board.Full() {
+		s.winner = 3
+		s.ph = game.Over
+	} else {
+		s.turn = s.turn.Opponent()
+	}
+	b, err := wire.Marshal(struct {
+		Board Board `cbor:"1,keyasint"`
+		Turn  uint8 `cbor:"2,keyasint"`
+		Phase uint8 `cbor:"3,keyasint"`
+	}{s.board, uint8(s.turn), uint8(s.ph)})
+	if err != nil {
+		return nil
+	}
+	sum := sha256.Sum256(b)
+	return sum[:8]
+}
+
+func (s *Service) emitState() {
+	s.mu.Lock()
+	st := s.stateLocked()
+	s.mu.Unlock()
+	s.ctx.Emit(st)
+}
+
+func (s *Service) stateLocked() State {
+	if s.ph == game.Idle {
+		return State{Last: -1}
+	}
+	st := State{
+		Playing: true,
+		Board:   s.board,
+		P1ID:    s.table.Seats.P1,
+		P2ID:    s.table.Seats.P2,
+		Last:    s.last,
+		History: append([]string(nil), s.history...),
+	}
+	switch {
+	case s.ph == game.Over && s.winner == 3:
+		st.Outcome = "draw"
+	case s.ph == game.Over && s.winner == 1:
+		st.Outcome = "black wins"
+	case s.ph == game.Over && s.winner == 2:
+		st.Outcome = "white wins"
+	default:
+		st.TurnID = s.table.Seats.IDOf(s.turn)
+	}
+	if _, cells := s.board.Winner(); cells != nil {
+		st.WinCells = cells
+	}
+	return st
+}

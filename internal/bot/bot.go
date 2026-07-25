@@ -18,6 +18,7 @@ import (
 	"github.com/richardwooding/kibitz/internal/service/checkers"
 	"github.com/richardwooding/kibitz/internal/service/chess"
 	"github.com/richardwooding/kibitz/internal/service/connect4"
+	"github.com/richardwooding/kibitz/internal/service/gomoku"
 	"github.com/richardwooding/kibitz/internal/service/reversi"
 	"github.com/richardwooding/kibitz/internal/shipcommit"
 	"github.com/richardwooding/kibitz/internal/wire"
@@ -56,6 +57,7 @@ type Services struct {
 	Chess *chess.Service
 	BG    *backgammon.Service
 	C4    *connect4.Service
+	GM    *gomoku.Service
 	CK    *checkers.Service
 	RV    *reversi.Service
 	BS    *battleship.Service
@@ -91,6 +93,8 @@ func Drive(events <-chan any, s Services, delay time.Duration, level Level) {
 					_ = s.C4.Drop(col)
 				}
 			}
+		case gomoku.State:
+			driveGomoku(s, e, level, pause)
 		case reversi.State:
 			if e.Playing && e.Outcome == "" && e.TurnID == s.Self && len(e.Legal) > 0 {
 				side := int8(1) // black = P1
@@ -264,6 +268,170 @@ func c4Eval(b *connect4.Board, toMove int8) int {
 func c4Other(d int8) int8 {
 	if d == 1 {
 		return 2
+	}
+	return 1
+}
+
+// ---- gomoku ---------------------------------------------------------------
+
+// driveGomoku plays the bot's stone when it is on turn (extracted from Drive to
+// keep that switch's cognitive complexity within the ratchet).
+func driveGomoku(s Services, e gomoku.State, level Level, pause func()) {
+	if !e.Playing || e.Outcome != "" || e.TurnID != s.Self {
+		return
+	}
+	side := int8(1) // black = P1
+	if e.P2ID == s.Self {
+		side = 2
+	}
+	if row, col, ok := gmPick(resolveLevel(level, rand.Float64()), e.Board, side); ok {
+		pause()
+		_ = s.GM.Place(row, col)
+	}
+}
+
+func gmPick(level Level, b gomoku.Board, side int8) (int8, int8, bool) {
+	if level == Hard {
+		return gmHard(b, side)
+	}
+	return gmRandom(b)
+}
+
+func gmRandom(b gomoku.Board) (int8, int8, bool) {
+	var empty []int
+	for i := 0; i < len(b); i++ {
+		if b[i] == 0 {
+			empty = append(empty, i)
+		}
+	}
+	if len(empty) == 0 {
+		return 0, 0, false
+	}
+	i := empty[rand.Intn(len(empty))]
+	return int8(i / gomoku.Size), int8(i % gomoku.Size), true
+}
+
+// gmHard scores every empty cell near a stone by the threat it makes for the
+// bot plus the threat it denies the opponent (blocking), and plays the best —
+// so it completes and blocks fours/open-threes without a full tree search.
+func gmHard(b gomoku.Board, side int8) (int8, int8, bool) {
+	opp := int8(1)
+	if side == 1 {
+		opp = 2
+	}
+	best, bestScore := -1, -1
+	for _, idx := range gmCandidates(b) {
+		if score := gmEval(b, idx, side) + gmEval(b, idx, opp); score > bestScore {
+			bestScore, best = score, idx
+		}
+	}
+	if best < 0 {
+		return 0, 0, false
+	}
+	return int8(best / gomoku.Size), int8(best % gomoku.Size), true
+}
+
+// gmCandidates lists empty cells within two of any stone (the only moves worth
+// considering); on an empty board it returns just the centre.
+func gmCandidates(b gomoku.Board) []int {
+	var out []int
+	any := false
+	for i := 0; i < len(b); i++ {
+		if b[i] != 0 {
+			any = true
+			continue
+		}
+		if gmNearStone(b, i) {
+			out = append(out, i)
+		}
+	}
+	if !any {
+		return []int{(gomoku.Size/2)*gomoku.Size + gomoku.Size/2}
+	}
+	return out
+}
+
+func gmNearStone(b gomoku.Board, idx int) bool {
+	row, col := idx/gomoku.Size, idx%gomoku.Size
+	for dr := -2; dr <= 2; dr++ {
+		for dc := -2; dc <= 2; dc++ {
+			if (dr != 0 || dc != 0) && gmCell(b, row+dr, col+dc) > 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// gmCell reads a board cell, returning -1 off the board (so run scans stop).
+func gmCell(b gomoku.Board, r, c int) int8 {
+	if r < 0 || r >= gomoku.Size || c < 0 || c >= gomoku.Size {
+		return -1
+	}
+	return b[r*gomoku.Size+c]
+}
+
+// gmEval scores placing `who` at idx: the sum over the four lines of the run it
+// would make, weighted by length and open ends.
+func gmEval(b gomoku.Board, idx int, who int8) int {
+	row, col := idx/gomoku.Size, idx%gomoku.Size
+	dirs := [4][2]int{{1, 0}, {0, 1}, {1, 1}, {1, -1}}
+	score := 0
+	for _, d := range dirs {
+		score += gmDirScore(b, row, col, d[0], d[1], who)
+	}
+	return score
+}
+
+func gmDirScore(b gomoku.Board, row, col, dr, dc int, who int8) int {
+	count, open := 1, 0
+	r, c := row+dr, col+dc
+	for gmCell(b, r, c) == who {
+		count++
+		r += dr
+		c += dc
+	}
+	if gmCell(b, r, c) == 0 {
+		open++
+	}
+	r, c = row-dr, col-dc
+	for gmCell(b, r, c) == who {
+		count++
+		r -= dr
+		c -= dc
+	}
+	if gmCell(b, r, c) == 0 {
+		open++
+	}
+	return gmPattern(count, open)
+}
+
+// gmPattern maps a run's length and open-end count to a heuristic value: a made
+// five is decisive, an open four or double threat is strong, blocked runs worth
+// little.
+func gmPattern(count, open int) int {
+	if count >= 5 {
+		return 1000000
+	}
+	if open == 0 {
+		return 0
+	}
+	switch count {
+	case 4:
+		if open == 2 {
+			return 100000
+		}
+		return 10000
+	case 3:
+		if open == 2 {
+			return 5000
+		}
+		return 500
+	case 2:
+		if open == 2 {
+			return 100
+		}
+		return 10
 	}
 	return 1
 }
