@@ -20,6 +20,7 @@
 
     function render() {
       if (!visible || !g) return;
+      ctx.renderMoves($("reversi-moves"), g.history);
       const statusEl = $("reversi-status");
       if (!g.playing) {
         statusEl.textContent = "Waiting for the game to start…";

@@ -145,6 +145,8 @@
 
     function renderPane() {
       if (!visible || !g) return;
+      ctx.renderMoves($("chess-moves"), g.history);
+      $("chess-pgn").classList.toggle("hidden", !(g.history && g.history.length));
       const el = $("status-line");
       if (!g.playing) {
         el.textContent = "Waiting for the game to start…";
@@ -174,6 +176,15 @@
     });
     $("btn-draw").addEventListener("click", () => send({ type: "chess.offerDraw" }));
     $("btn-agree-draw").addEventListener("click", () => send({ type: "chess.agreeDraw" }));
+    $("chess-pgn").addEventListener("click", async () => {
+      if (!g || !g.pgn) return;
+      try {
+        await navigator.clipboard.writeText(g.pgn);
+        toast("PGN copied.");
+      } catch {
+        toast("Couldn't copy — select the moves to copy manually.");
+      }
+    });
 
     function outcomeWon() {
       if (!isPlayer() || g.outcome === "1/2-1/2") return null;

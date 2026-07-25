@@ -131,4 +131,15 @@ func TestConnectFourLateJoinerSyncs(t *testing.T) {
 	if st.TurnID != host.client.Self() {
 		t.Fatalf("late joiner turn = %d", st.TurnID)
 	}
+	// Move history is authoritative in state + snapshot: the host accrued it
+	// as moves were applied, and the late joiner receives the full list via the
+	// snapshot — not just moves made after it joined.
+	hostHist := host.c4.State().History
+	if len(hostHist) != 2 || hostHist[0] != "🔴 4" || hostHist[1] != "🟡 3" {
+		t.Fatalf("host history = %v, want [🔴 4 🟡 3]", hostHist)
+	}
+	lateHist := c4Wait(t, late, func(s connect4.State) bool { return len(s.History) == 2 }).History
+	if lateHist[0] != hostHist[0] || lateHist[1] != hostHist[1] {
+		t.Fatalf("late joiner history = %v, want %v", lateHist, hostHist)
+	}
 }

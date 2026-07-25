@@ -58,6 +58,7 @@
 
     function render() {
       if (!visible || !g) return;
+      ctx.renderMoves($("checkers-moves"), g.history);
       const statusEl = $("checkers-status");
       if (!g.playing) {
         statusEl.textContent = "Waiting for the game to start…";

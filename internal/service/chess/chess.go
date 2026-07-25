@@ -56,7 +56,9 @@ type State struct {
 	Outcome string             // "*", "1-0", "0-1", "1/2-1/2"
 	Method  string             // "Checkmate", "Resignation", …
 	LastUCI string
-	Playing bool // a game exists (start conditions met)
+	Playing bool     // a game exists (start conditions met)
+	History []string // SAN move list, derived from the engine's move tree
+	PGN     string   // full PGN, for one-click export
 }
 
 // DrawOffered is emitted when the opponent offers a draw.
@@ -505,6 +507,17 @@ func (s *Service) emitState() {
 	s.ctx.Emit(st)
 }
 
+// sanHistory renders the game's main line as a SAN list (e.g. "e4","Nf3","O-O")
+// straight from the engine's move tree, so it's correct after a Restore too.
+func sanHistory(g *chesslib.Game) []string {
+	hist := g.MoveHistory()
+	out := make([]string, 0, len(hist))
+	for _, h := range hist {
+		out = append(out, chesslib.AlgebraicNotation{}.Encode(h.PrePosition, h.Move))
+	}
+	return out
+}
+
 func (s *Service) stateLocked() State {
 	if s.game == nil {
 		return State{}
@@ -517,6 +530,8 @@ func (s *Service) stateLocked() State {
 		Method:  s.game.Method().String(),
 		LastUCI: s.lastUCI,
 		Playing: true,
+		History: sanHistory(s.game),
+		PGN:     s.game.String(),
 	}
 	if s.game.Outcome() == chesslib.NoOutcome {
 		if s.game.Position().Turn() == chesslib.White {

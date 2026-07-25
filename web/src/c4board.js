@@ -22,6 +22,7 @@
 
     function render() {
       if (!visible || !g) return;
+      ctx.renderMoves($("c4-moves"), g.history);
       const statusEl = $("c4-status");
       if (!g.playing) {
         statusEl.textContent = "Waiting for the game to start…";

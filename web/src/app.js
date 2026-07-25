@@ -109,7 +109,24 @@
     solo: () => state.solo, // in a local session (no relay)
     hotseat: () => state.solo && !state.vsBot, // pass-and-play: drive both sides
     vsBot: () => state.vsBot, // playing the computer
+    renderMoves, // shared move-list renderer (see below)
   };
+
+  // renderMoves fills an <ol> move-list from a game's authoritative history
+  // (state.History), numbering via the ordered list and keeping the newest move
+  // in view. Shared by every board module so the panel looks identical.
+  function renderMoves(el, moves) {
+    if (!el) return;
+    moves = moves || [];
+    if (el.childElementCount === moves.length) return; // unchanged (avoid reflow)
+    el.innerHTML = "";
+    for (const m of moves) {
+      const li = document.createElement("li");
+      li.textContent = m;
+      el.appendChild(li);
+    }
+    el.scrollTop = el.scrollHeight;
+  }
   const games = {}; // id -> instantiated module
   for (const [id, def] of Object.entries(window.GameModules || {})) {
     games[id] = { ...def, ...def.create(ctx) };

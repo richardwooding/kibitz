@@ -60,12 +60,13 @@ type msg struct {
 }
 
 type snapshot struct {
-	Board  Board  `cbor:"1,keyasint"`
-	P1     uint32 `cbor:"2,keyasint"`
-	P2     uint32 `cbor:"3,keyasint"`
-	Turn   uint8  `cbor:"4,keyasint"`
-	Phase  uint8  `cbor:"5,keyasint"`
-	Winner int8   `cbor:"6,keyasint"` // -1 none, 0/1 side, 2 draw
+	Board   Board    `cbor:"1,keyasint"`
+	P1      uint32   `cbor:"2,keyasint"`
+	P2      uint32   `cbor:"3,keyasint"`
+	Turn    uint8    `cbor:"4,keyasint"`
+	Phase   uint8    `cbor:"5,keyasint"`
+	Winner  int8     `cbor:"6,keyasint"` // -1 none, 0/1 side, 2 draw
+	History []string `cbor:"7,keyasint,omitempty"`
 }
 
 // State is emitted after every change; the UI renders it directly.
@@ -78,6 +79,7 @@ type State struct {
 	Legal    []Move // only populated for the mover
 	Outcome  string // "", "black wins", "white wins", "draw"
 	LastPath []int8
+	History  []string // ordered move notation, "11-15" / "18x9x2"
 }
 
 // Service implements service.Service.
@@ -91,6 +93,7 @@ type Service struct {
 	turn     Side
 	winner   int8 // -1 in play, 0/1 winner side, 2 draw
 	lastPath []int8
+	history  []string
 	drawFrom wire.ParticipantID
 }
 
@@ -170,7 +173,21 @@ func (s *Service) resetLocked(seats game.Seats) {
 	s.turn = Black
 	s.winner = -1
 	s.lastPath = nil
+	s.history = nil
 	s.drawFrom = 0
+}
+
+// noteLocked appends a move's path as 1-based squares joined by "-"
+// ("11-15", "18-25-11"). Called on both mover and receiver paths.
+func (s *Service) noteLocked(path []int8) {
+	str := ""
+	for i, sq := range path {
+		if i > 0 {
+			str += "-"
+		}
+		str += fmt.Sprintf("%d", int(sq)+1)
+	}
+	s.history = append(s.history, str)
 }
 
 // TryMove plays the local player's move (a full path).
@@ -187,6 +204,7 @@ func (s *Service) TryMove(path []int8) error {
 	}
 	s.board = Apply(s.board, side, Move(path))
 	s.lastPath = path
+	s.noteLocked(path)
 	s.drawFrom = 0
 	hash := s.applyAndHashLocked()
 	s.mu.Unlock()
@@ -324,6 +342,7 @@ func (s *Service) handleMove(from wire.ParticipantID, m msg) error {
 	}
 	s.board = Apply(s.board, side, Move(m.Path))
 	s.lastPath = m.Path
+	s.noteLocked(m.Path)
 	s.drawFrom = 0
 	hash := s.applyAndHashLocked()
 	ok := bytes.Equal(hash, m.StateHash)
@@ -346,7 +365,7 @@ func (s *Service) Snapshot() ([]byte, error) {
 	}
 	return wire.Marshal(snapshot{
 		Board: s.board, P1: uint32(s.table.Seats.P1), P2: uint32(s.table.Seats.P2),
-		Turn: uint8(s.turn), Phase: uint8(s.ph), Winner: s.winner,
+		Turn: uint8(s.turn), Phase: uint8(s.ph), Winner: s.winner, History: s.history,
 	})
 }
 
@@ -366,6 +385,7 @@ func (s *Service) Restore(blob []byte) error {
 	s.turn = Side(snap.Turn)
 	s.ph = game.Phase(snap.Phase)
 	s.winner = snap.Winner
+	s.history = snap.History
 	s.mu.Unlock()
 	s.emitState()
 	return nil
@@ -433,6 +453,7 @@ func (s *Service) stateLocked() State {
 		P1ID:     s.table.Seats.P1,
 		P2ID:     s.table.Seats.P2,
 		LastPath: s.lastPath,
+		History:  append([]string(nil), s.history...),
 	}
 	switch {
 	case s.ph == game.Over && s.winner == 2:

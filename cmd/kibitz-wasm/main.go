@@ -598,6 +598,7 @@ func emitChessState(e chess.State) {
 		"fen": e.FEN, "whiteId": uint32(e.WhiteID), "blackId": uint32(e.BlackID),
 		"turnId": uint32(e.TurnID), "outcome": e.Outcome, "method": e.Method,
 		"lastUci": e.LastUCI, "playing": e.Playing,
+		"history": e.History, "pgn": e.PGN,
 	})
 }
 
@@ -617,7 +618,7 @@ func emitBGState(e backgammon.State) {
 		"turnId": uint32(e.TurnID), "phase": e.Phase,
 		"dice": []int8{e.Dice[0], e.Dice[1]}, "legal": legal,
 		"outcome": e.Outcome, "pipsW": e.PipsW, "pipsB": e.PipsB,
-		"playing": e.Playing,
+		"playing": e.Playing, "history": e.History,
 	})
 }
 
@@ -630,6 +631,7 @@ func emitCKState(e checkers.State) {
 		"board": e.Board[:], "p1Id": uint32(e.P1ID), "p2Id": uint32(e.P2ID),
 		"turnId": uint32(e.TurnID), "outcome": e.Outcome,
 		"legal": legal, "lastPath": e.LastPath, "playing": e.Playing,
+		"history": e.History,
 	})
 }
 
@@ -641,6 +643,7 @@ func emitBSState(e battleship.State) {
 		"reveals":   [][]int8{e.Reveals[0][:], e.Reveals[1][:]},
 		"sunk":      [][]int{u8ints(e.Sunk[0]), u8ints(e.Sunk[1])},
 		"outcome":   e.Outcome, "cheatBy": uint32(e.CheatBy), "playing": e.Playing,
+		"history": e.History,
 	})
 }
 
@@ -661,7 +664,7 @@ func emitRVState(e reversi.State) {
 		"board": e.Board[:], "p1Id": uint32(e.P1ID), "p2Id": uint32(e.P2ID),
 		"turnId": uint32(e.TurnID), "outcome": e.Outcome, "legal": e.Legal,
 		"passed": e.Passed, "black": e.Black, "white": e.White,
-		"lastSq": e.LastSq, "playing": e.Playing,
+		"lastSq": e.LastSq, "playing": e.Playing, "history": e.History,
 	})
 }
 
@@ -670,6 +673,7 @@ func emitC4State(e connect4.State) {
 		"board": e.Board[:], "p1Id": uint32(e.P1ID), "p2Id": uint32(e.P2ID),
 		"turnId": uint32(e.TurnID), "outcome": e.Outcome,
 		"winCells": e.WinCells, "lastCol": e.LastCol, "playing": e.Playing,
+		"history": e.History,
 	})
 }
 

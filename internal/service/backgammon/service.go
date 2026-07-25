@@ -18,6 +18,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 
 	bgengine "github.com/richardwooding/backgammon"
@@ -86,11 +87,12 @@ type snapshot struct {
 	Points    int8    `cbor:"8,keyasint"`
 	// In-flight roll exchange, so a late joiner can process a reveal it
 	// didn't see the start of (the snapshotting host is trusted by design).
-	Opening      bool   `cbor:"9,keyasint,omitempty"`
-	HaveCommit   bool   `cbor:"10,keyasint,omitempty"`
-	Commit       []byte `cbor:"11,keyasint,omitempty"`
-	HaveResponse bool   `cbor:"12,keyasint,omitempty"`
-	RB           []byte `cbor:"13,keyasint,omitempty"`
+	Opening      bool     `cbor:"9,keyasint,omitempty"`
+	HaveCommit   bool     `cbor:"10,keyasint,omitempty"`
+	Commit       []byte   `cbor:"11,keyasint,omitempty"`
+	HaveResponse bool     `cbor:"12,keyasint,omitempty"`
+	RB           []byte   `cbor:"13,keyasint,omitempty"`
+	History      []string `cbor:"14,keyasint,omitempty"`
 }
 
 type phase uint8
@@ -116,6 +118,7 @@ type State struct {
 	Outcome string             // "", or "white wins (gammon, 2pts)" etc.
 	PipsW   int
 	PipsB   int
+	History []string // ordered turn notation, "⚪ 63: 24/18 13/10"
 }
 
 // Danced is emitted when a player had no legal moves and the turn passed.
@@ -154,6 +157,8 @@ type Service struct {
 	haveCommit   bool
 	rollResponse fairdice.Response
 	haveResponse bool
+
+	history []string
 }
 
 func New() *Service { return &Service{} }
@@ -233,6 +238,36 @@ func (s *Service) resetGameLocked(white, black wire.ParticipantID) {
 	s.result = nil
 	s.dice = [2]int8{}
 	s.haveCommit, s.haveResponse, s.myReveal = false, false, nil
+	s.history = nil
+}
+
+// noteTurnLocked records a played turn as "⚪ 63: 24/18 13/10" (mover disc,
+// the two dice, then each hop as From/To with bar/off). Uses s.dice, so it must
+// be called before advanceLocked clears the roll. Both ends call it identically.
+func (s *Service) noteTurnLocked(color Color, hops []Hop) {
+	disc := "⚪"
+	if color == Black {
+		disc = "⚫"
+	}
+	pt := func(p int8) string {
+		switch p {
+		case 25:
+			return "bar"
+		case 0:
+			return "off"
+		default:
+			return fmt.Sprintf("%d", p)
+		}
+	}
+	moves := "(danced)"
+	if len(hops) > 0 {
+		parts := make([]string, len(hops))
+		for i, h := range hops {
+			parts[i] = pt(h.From) + "/" + pt(h.To)
+		}
+		moves = strings.Join(parts, " ")
+	}
+	s.history = append(s.history, fmt.Sprintf("%s %d%d: %s", disc, s.dice[0], s.dice[1], moves))
 }
 
 // maybeOpenCommit fires the opening roll commit if this end holds the white
@@ -307,6 +342,7 @@ func (s *Service) Move(hops []Hop) error {
 		return err
 	}
 	s.board = ApplyTurn(s.board, color, hops)
+	s.noteTurnLocked(color, hops)
 	hash := s.stateHashLocked()
 	s.advanceLocked()
 	s.mu.Unlock()
@@ -559,6 +595,7 @@ func (s *Service) handleTurn(from wire.ParticipantID, m msg) error {
 		return err
 	}
 	s.board = ApplyTurn(s.board, color, m.Hops)
+	s.noteTurnLocked(color, m.Hops)
 	hash := s.stateHashLocked()
 	if !bytes.Equal(hash, m.StateHash) {
 		s.ph = phaseOver
@@ -614,6 +651,7 @@ func (s *Service) Snapshot() ([]byte, error) {
 		Dice:      s.dice,
 		Winner:    -1,
 		Opening:   s.opening,
+		History:   s.history,
 	}
 	// Carry the in-flight roll exchange so the joiner can finish it.
 	if s.ph == phaseHandshake {
@@ -654,6 +692,7 @@ func (s *Service) Restore(blob []byte) error {
 	s.ph = phase(snap.Phase)
 	s.dice = snap.Dice
 	s.opening = snap.Opening
+	s.history = snap.History
 	s.haveCommit = snap.HaveCommit
 	if snap.HaveCommit && len(snap.Commit) == len(s.rollCommit) {
 		copy(s.rollCommit[:], snap.Commit)
@@ -753,6 +792,7 @@ func (s *Service) stateLocked() State {
 		Dice:    s.dice,
 		PipsW:   s.board.PipCount(White),
 		PipsB:   s.board.PipCount(Black),
+		History: append([]string(nil), s.history...),
 	}
 	switch s.ph {
 	case phaseRoll:

@@ -129,6 +129,7 @@
 
     function render() {
       if (!visible || !g) return;
+      ctx.renderMoves($("bs-moves"), g.history);
       const statusEl = $("bs-status");
       const placingPane = $("bs-placing");
       const playPane = $("bs-playing");

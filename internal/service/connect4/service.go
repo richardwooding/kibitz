@@ -34,13 +34,14 @@ type msg struct {
 }
 
 type snapshot struct {
-	Board   Board  `cbor:"1,keyasint"`
-	P1      uint32 `cbor:"2,keyasint"`
-	P2      uint32 `cbor:"3,keyasint"`
-	Turn    uint8  `cbor:"4,keyasint"`
-	Phase   uint8  `cbor:"5,keyasint"`
-	Winner  int8   `cbor:"6,keyasint"` // 0 none, 1/2 side, 3 draw
-	LastCol int8   `cbor:"7,keyasint"`
+	Board   Board    `cbor:"1,keyasint"`
+	P1      uint32   `cbor:"2,keyasint"`
+	P2      uint32   `cbor:"3,keyasint"`
+	Turn    uint8    `cbor:"4,keyasint"`
+	Phase   uint8    `cbor:"5,keyasint"`
+	Winner  int8     `cbor:"6,keyasint"` // 0 none, 1/2 side, 3 draw
+	LastCol int8     `cbor:"7,keyasint"`
+	History []string `cbor:"8,keyasint,omitempty"`
 }
 
 // State is emitted after every change; the UI renders it directly.
@@ -52,7 +53,8 @@ type State struct {
 	TurnID   wire.ParticipantID // 0 when over/idle
 	Outcome  string             // "", "red wins", "yellow wins", "draw"
 	WinCells []int8
-	LastCol  int8 // -1 when none
+	LastCol  int8     // -1 when none
+	History  []string // ordered move notation, "🔴 4" / "🟡 3"
 }
 
 var ErrNotTurn = errors.New("connect4: not your turn")
@@ -69,6 +71,7 @@ type Service struct {
 	turn    game.Side
 	winner  int8 // 0 in play, 1/2 winner, 3 draw
 	lastCol int8
+	history []string
 }
 
 func New() *Service { return &Service{} }
@@ -148,6 +151,17 @@ func (s *Service) resetLocked(seats game.Seats) {
 	s.turn = game.P1
 	s.winner = 0
 	s.lastCol = -1
+	s.history = nil
+}
+
+// noteDropLocked appends a move's notation ("🔴 4" / "🟡 3", 1-based column) —
+// called on both the mover and receiver paths so every end builds the same list.
+func (s *Service) noteDropLocked(side game.Side, col int8) {
+	disc := "🔴"
+	if side == game.P2 {
+		disc = "🟡"
+	}
+	s.history = append(s.history, fmt.Sprintf("%s %d", disc, col+1))
 }
 
 // Drop plays the local player's disc in col.
@@ -163,6 +177,7 @@ func (s *Service) Drop(col int8) error {
 		return err
 	}
 	s.lastCol = col
+	s.noteDropLocked(side, col)
 	hash := s.applyAndHashLocked()
 	s.mu.Unlock()
 
@@ -240,6 +255,7 @@ func (s *Service) handleDrop(from wire.ParticipantID, m msg) error {
 		return err
 	}
 	s.lastCol = m.Col
+	s.noteDropLocked(side, m.Col)
 	hash := s.applyAndHashLocked()
 	ok := bytes.Equal(hash, m.StateHash)
 	if !ok {
@@ -276,6 +292,7 @@ func (s *Service) Snapshot() ([]byte, error) {
 	return wire.Marshal(snapshot{
 		Board: s.board, P1: uint32(s.table.Seats.P1), P2: uint32(s.table.Seats.P2),
 		Turn: uint8(s.turn), Phase: uint8(s.ph), Winner: s.winner, LastCol: s.lastCol,
+		History: s.history,
 	})
 }
 
@@ -296,6 +313,7 @@ func (s *Service) Restore(blob []byte) error {
 	s.ph = game.Phase(snap.Phase)
 	s.winner = snap.Winner
 	s.lastCol = snap.LastCol
+	s.history = snap.History
 	s.mu.Unlock()
 	s.emitState()
 	return nil
@@ -366,6 +384,7 @@ func (s *Service) stateLocked() State {
 		P1ID:    s.table.Seats.P1,
 		P2ID:    s.table.Seats.P2,
 		LastCol: s.lastCol,
+		History: append([]string(nil), s.history...),
 	}
 	switch {
 	case s.ph == game.Over && s.winner == 3:

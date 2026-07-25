@@ -187,6 +187,7 @@
 
     function renderPane() {
       if (!visible || !g) return;
+      ctx.renderMoves($("bg-moves"), g.history);
       const statusEl = $("bg-status");
       if (!g.playing) {
         statusEl.textContent = "Waiting for the game to start…";

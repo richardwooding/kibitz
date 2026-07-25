@@ -77,6 +77,7 @@ type State struct {
 	Sunk    [2][]uint8 // ship ids fully sunk on each seat's board
 	Outcome string
 	CheatBy wire.ParticipantID
+	History []string // ordered shot log, "B5 hit" / "C3 miss" / "D4 sunk"
 }
 
 // CheatDetected freezes the game: a reveal failed verification or a final
@@ -101,6 +102,7 @@ type Service struct {
 	pending   int8      // cell awaiting reveal, -1 none
 	winner    int8      // -1 undecided, 0/1 seat
 	cheatBy   wire.ParticipantID
+	history   []string
 }
 
 func New() *Service {
@@ -209,6 +211,28 @@ func (s *Service) resetLocked(seats game.Seats) {
 	s.pending = -1
 	s.winner = -1
 	s.cheatBy = 0
+	s.history = nil
+}
+
+// noteShotLocked appends "B5 hit" / "C3 miss" / "D4 sunk" for a resolved shot.
+// defender is the board owner; shipID>0 is a hit, and a hit that completes the
+// ship (all its cells now revealed) is a sink. Both ends run applyReveal, so
+// they all append the same entry.
+func (s *Service) noteShotLocked(cell uint8, shipID int8, defender game.Side) {
+	res := "miss"
+	if shipID > 0 {
+		res = "hit"
+		need, got := int(shipcommit.Lengths[shipID]), 0
+		for _, v := range s.reveals[defender] {
+			if v == shipID {
+				got++
+			}
+		}
+		if got >= need {
+			res = "sunk"
+		}
+	}
+	s.history = append(s.history, fmt.Sprintf("%c%d %s", rune('A'+cell%10), 1+cell/10, res))
 }
 
 // Commit locks in the local player's fleet and broadcasts the commitments.
@@ -452,6 +476,7 @@ func (s *Service) applyReveal(from wire.ParticipantID, reveal shipcommit.CellRev
 		return fmt.Errorf("battleship: reveal fails commitment from %d", from)
 	}
 	s.reveals[side][reveal.Cell] = int8(reveal.ShipID)
+	s.noteShotLocked(reveal.Cell, int8(reveal.ShipID), side)
 	s.pending = -1
 	if s.hitsLocked(side) >= shipcommit.TotalShipCells {
 		// The shooter sank the fleet.
@@ -580,6 +605,7 @@ type snapshot struct {
 	Validated [2]bool   `cbor:"8,keyasint"`
 	Pending   int8      `cbor:"9,keyasint"`
 	Winner    int8      `cbor:"10,keyasint"`
+	History   []string  `cbor:"11,keyasint,omitempty"`
 }
 
 func (s *Service) Snapshot() ([]byte, error) {
@@ -592,7 +618,7 @@ func (s *Service) Snapshot() ([]byte, error) {
 		P1: uint32(s.table.Seats.P1), P2: uint32(s.table.Seats.P2),
 		Phase: uint8(s.ph), Turn: uint8(s.turn),
 		Committed: s.committed, Validated: s.validated,
-		Pending: s.pending, Winner: s.winner,
+		Pending: s.pending, Winner: s.winner, History: s.history,
 	}
 	for side := 0; side < 2; side++ {
 		if s.committed[side] {
@@ -625,6 +651,7 @@ func (s *Service) Restore(blob []byte) error {
 	s.validated = snap.Validated
 	s.pending = snap.Pending
 	s.winner = snap.Winner
+	s.history = snap.History
 	for side := 0; side < 2; side++ {
 		if len(snap.Commits[side]) == 3200 {
 			for i := 0; i < 100; i++ {
@@ -684,6 +711,7 @@ func (s *Service) stateLocked() State {
 		Committed: s.committed,
 		Reveals:   s.reveals,
 		CheatBy:   s.cheatBy,
+		History:   append([]string(nil), s.history...),
 	}
 	for side := 0; side < 2; side++ {
 		st.Sunk[side] = s.sunkLocked(game.Side(side))
