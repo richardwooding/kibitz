@@ -823,6 +823,41 @@ button.back { margin-bottom: 0.7rem; }
 }
 .version-badge:hover { opacity: 0.9; }
 
+/* author credit — prominent under the home hero, and a footer elsewhere */
+.by-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+.by-line strong { color: var(--fg); font-weight: 600; }
+.by-line:hover { color: var(--accent); }
+.by-line:hover strong { color: var(--accent); }
+.by-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  flex: none;
+}
+/* home: centered credit sitting below the hero */
+#view-home .by-line {
+  display: flex;
+  justify-content: center;
+  margin: 2.25rem auto 0;
+}
+/* other views: a quiet footer with a hairline top rule */
+.app-footer {
+  margin-top: 2rem;
+  padding: 1rem 1rem 2.4rem;
+  border-top: 1px solid var(--border);
+  text-align: center;
+}
+
 /* toast */
 .toast {
   position: fixed;
