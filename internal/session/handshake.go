@@ -236,6 +236,74 @@ func (c *Client) handleHandshakeDirect(from wire.ParticipantID, kind wire.Payloa
 	c.emit(MemberKeyed{ID: from, Role: role})
 }
 
+// handleRekeyPake1 is the promoted host's side of a survivor's re-PAKE after a
+// migration: complete the exchange to a fresh pairwise key, retain it (so later
+// member-leave rekeys can re-wrap), reply with the PAKE flight, then deliver the
+// rotated group key wrapped under that pairwise. Role is RoleNone — the survivor
+// keeps whatever role it already had.
+func (c *Client) handleRekeyPake1(from wire.ParticipantID, praw []byte) {
+	c.mu.Lock()
+	isHost := c.role == RoleHost && c.hostID == c.self
+	c.mu.Unlock()
+	if !isHost {
+		return
+	}
+	p, err := wire.Body[wire.Pake](praw)
+	if err != nil {
+		return
+	}
+	pairwise, flight2, err := crypto.HostExchange(c.phraseC, p.Data, c.sid, from, c.self)
+	if err != nil {
+		return
+	}
+	c.mu.Lock()
+	c.pairwise[from] = pairwise
+	key := c.groupKey
+	c.mu.Unlock()
+
+	reply, err := wire.EncodePayload(wire.KindRekeyPake2, wire.Pake{Data: flight2})
+	if err != nil {
+		return
+	}
+	if c.writeFrame(wire.MsgDirect, wire.Direct{To: from, Payload: reply}) != nil {
+		return
+	}
+	wrapped, err := crypto.WrapGroupKey(pairwise, key, byte(RoleNone), c.sid, from)
+	if err != nil {
+		return
+	}
+	gkPayload, err := wire.EncodePayload(wire.KindRekey, wrapped)
+	if err != nil {
+		return
+	}
+	_ = c.writeFrame(wire.MsgDirect, wire.Direct{To: from, Payload: gkPayload})
+}
+
+// handleRekeyPake2 is the survivor's side: finish the re-PAKE into the pairwise
+// key it will use to unwrap the incoming rotated group key (KindRekey follows).
+func (c *Client) handleRekeyPake2(from wire.ParticipantID, praw []byte) {
+	c.mu.Lock()
+	j := c.rekeyJoiner
+	ok := j != nil && from == c.hostID
+	c.mu.Unlock()
+	if !ok {
+		return
+	}
+	p, err := wire.Body[wire.Pake](praw)
+	if err != nil {
+		return
+	}
+	pairwise, err := j.Finish(p.Data, c.sid, c.self, c.hostID)
+	if err != nil {
+		return
+	}
+	c.mu.Lock()
+	c.hostPairwise = pairwise
+	c.haveHostPairwise = true
+	c.rekeyJoiner = nil
+	c.mu.Unlock()
+}
+
 // assignJoinerRole picks the role for a newly keyed joiner. The caller must
 // hold c.mu: it reads c.joiners without re-locking. A joiner that asked to
 // watch is always a spectator, so it never takes the open player seat.
@@ -324,6 +392,12 @@ func (c *Client) handlePayload(from wire.ParticipantID, payload []byte) {
 		// fall through to decryption below
 	case wire.KindRekey:
 		c.handleRekey(from, praw)
+		return
+	case wire.KindRekeyPake1:
+		c.handleRekeyPake1(from, praw)
+		return
+	case wire.KindRekeyPake2:
+		c.handleRekeyPake2(from, praw)
 		return
 	default:
 		c.handleHandshakeDirect(from, kind, praw)

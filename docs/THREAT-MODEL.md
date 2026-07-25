@@ -117,14 +117,16 @@ the authority model but not the key model:
 - **Succession is decided in the encrypted channel**, not by the relay: every
   survivor deterministically elects the same successor from the ctl roster; the
   elected one promotes itself and claims host. The relay only records the claim.
-- **The departing host is not locked out.** The successor already holds the
-  group key (it was keyed) and wraps that *same* key to future joiners. Unlike a
-  non-host leaver — who **is** locked out by a rekey (see "Key rotation on
-  member-leave" below) — a departing host cannot be: the successor only ran a
-  PAKE with the *original* host, so it shares no pairwise channel with the other
-  members to distribute a fresh key. Rotating on a host departure would require
-  the survivors to re-PAKE with the new host (future work); until then the
-  departed host still knows the current key.
+- **The departing host is locked out too (re-PAKE rekey).** The successor holds
+  the group key, but a promoted host shares no pairwise channel with the other
+  survivors — so, on promotion, it **mints a fresh group key** and each
+  surviving member **re-runs the PAKE** with it (over the phrase everyone still
+  holds) to fetch that key (`KindRekeyPake1`/`KindRekeyPake2` → `KindRekey`).
+  The departed host never receives the new key, so it is locked out of
+  subsequent traffic just like a non-host leaver. Members keep their roles (the
+  rekey wrap carries no role change), and the prev-key ring covers frames in
+  flight across the rotation. See "Key rotation on member-leave" for the
+  non-host case.
 - **`ClaimHost` is unauthenticated at the blind relay.** A malicious *member*
   (already inside the trust boundary — it holds the group key) could claim host
   to hijack *new-joiner routing* — a denial-of-service on new joins, never a key
@@ -148,14 +150,14 @@ said afterwards. To close that, the host **rotates the group key on a leave**:
   still in flight under the old key when the rotation lands is decrypted
   normally. Senders always seal under the newest key; per-sender ordering means
   the host's own new-key frames never arrive before the rekey that precedes them.
-- **Requires the original host.** Re-wrapping needs a pairwise key with every
-  survivor, which only the original host holds (it PAKE'd with each). A promoted
-  successor lacks pairwise channels with the members it never handshook, so it
-  keeps the current key (see "Host migration"). Rotation is therefore a no-op
-  after a host migration until a re-PAKE mechanism exists.
-- **Scope.** This gives forward secrecy across a **non-host member's departure**
-  from an original-host session. It does not provide forward secrecy within a
-  continuous membership, nor against a departing host.
+- **Works after a migration too.** Re-wrapping needs a pairwise key with each
+  survivor. The original host has one with everyone (it PAKE'd with each); a
+  promoted host establishes them through the migration re-PAKE (see "Host
+  migration"), so it can rekey subsequent leaves just the same.
+- **Scope.** Combined with the host-departure re-PAKE, **any** participant's
+  departure — host or not — rotates the key and locks the leaver out of later
+  traffic. What remains outside forward secrecy: a member reads everything while
+  it is present (rotation happens on membership change, not continuously).
 
 ## Trust assumptions
 
@@ -163,12 +165,11 @@ said afterwards. To close that, the host **rotates the group key on a leave**:
   fine: the host is a player, not infrastructure.
 - **Everyone who knows the phrase is inside the boundary.** Spectators
   decrypt everything, including the players' chat.
-- **Key rotation on member-leave (partial).** When a non-host member leaves an
-  original-host session, the host rotates the group key so the departed member
-  is locked out of later traffic (see "Key rotation on member-leave"). A
-  *departing host* is not locked out, and a current member reads everything
-  while present — so this is forward secrecy across a non-host departure, not
-  full forward secrecy.
+- **Key rotation on any leave.** When any participant leaves — a member, or the
+  host (via migration + re-PAKE) — the group key is rotated so the leaver is
+  locked out of later traffic (see "Key rotation on member-leave" and "Host
+  migration"). A current member still reads everything while present, so this is
+  forward secrecy across membership changes, not full forward secrecy.
 - Games are **both-sides-validate**: each client runs the same rules engine
   and checks a position hash on every move. A cheating client can't make an
   illegal move stick; it can only cause a visible desync.
@@ -177,7 +178,8 @@ said afterwards. To close that, the host **rotates the group key on a leave**:
 
 - Anonymity (the relay sees IPs; use your own transport-level protections)
 - Hiding that kibitz is in use, or which session sizes/timings exist
-- Full forward secrecy. A member reads all traffic while present, and a
-  departing host keeps the key. The group key IS rotated when a non-host member
-  leaves an original-host session, locking that member out of later traffic
-  (see "Key rotation on member-leave").
+- Full forward secrecy. A member reads all traffic while it is present. The
+  group key IS rotated whenever anyone leaves — a member or the host — locking
+  the leaver out of subsequent traffic (see "Key rotation on member-leave" and
+  "Host migration"), but a member is not locked out of traffic sent while it was
+  still in the session.

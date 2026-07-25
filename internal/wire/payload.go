@@ -21,6 +21,11 @@ const (
 	KindGroupKey PayloadKind = 3 // host→joiner: wrapped group key + role
 	KindSealed   PayloadKind = 4 // any→any: encrypted Envelope
 	KindRekey    PayloadKind = 5 // host→member: a fresh wrapped group key after a member leaves
+	// After a host migration the promoted host shares no pairwise key with the
+	// other survivors, so they re-run the PAKE to establish one and fetch the
+	// rotated key (delivered as a KindRekey). These mirror KindPake1/KindPake2.
+	KindRekeyPake1 PayloadKind = 6 // survivor→new host: re-PAKE first flight
+	KindRekeyPake2 PayloadKind = 7 // new host→survivor: re-PAKE reply flight
 )
 
 // Pake carries one PAKE flight (schollz/pake/v3 serialized state; the

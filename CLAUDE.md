@@ -66,11 +66,13 @@ Platform splits use build-tagged files (`dial_js.go` / `dial_native.go`).
   random 32-byte group key to each joiner; XChaCha20-Poly1305 for all AEAD
   with AD = SessionID ∥ version ∥ senderID (kills cross-session/sender
   replay). SessionID = SHA-256("kibitz/v1/session-id" ∥ phrase)[:16].
-  Wrong phrase → group-key unwrap fails cleanly. The host rotates the group key
-  when a non-host member leaves (re-wraps to survivors via `KindRekey`; a short
-  prev-key ring decrypts in-flight frames) — forward secrecy across a non-host
-  departure. A promoted (migrated) host can't rekey (no pairwise channel to the
-  other members), so host-departure isn't covered. Threat model:
+  Wrong phrase → group-key unwrap fails cleanly. The group key is rotated on any
+  leave so the leaver is locked out of later traffic (forward secrecy across
+  membership changes): a member-leave re-wraps a fresh key to survivors via
+  `KindRekey` under their pairwise keys; a host-leave rides host migration —
+  the promoted host mints a fresh key and survivors re-PAKE with it
+  (`KindRekeyPake1/2` → `KindRekey`) since it holds no pairwise channel to them.
+  A short prev-key ring decrypts frames in flight across the swap. Threat model:
   docs/THREAT-MODEL.md.
 - **Services** (`internal/service`): implement `Service` (ID/Version/
   Attach/HandleFrame/Snapshot/Restore/Event). The reserved `ctl` service

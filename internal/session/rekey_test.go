@@ -106,6 +106,80 @@ func TestRekeyOnLeaveLocksOutDepartedMember(t *testing.T) {
 	}
 }
 
+// TestHostDepartureRekeyLocksOutOldHost is the forward-secrecy proof for host
+// migration: after the host leaves and a survivor is promoted, the promoted host
+// rotates the group key and the other survivors re-PAKE to fetch it — so the
+// DEPARTED host's key can no longer open new traffic, and survivors keep their
+// roles. Drives the session-layer migration crypto directly (BecomeHost +
+// RotateForMigration on the successor, RekeyWithNewHost on the survivor), the
+// same calls the mux makes in maybeMigrate.
+func TestHostDepartureRekeyLocksOutOldHost(t *testing.T) {
+	ctx := context.Background()
+	url := reconnectRelay(t)
+
+	host, phrase, err := Host(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	player, err := Join(ctx, url, phrase, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = player.Close() })
+	waitEvent[MemberKeyed](t, host)
+	spectator, err := Join(ctx, url, phrase, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = spectator.Close() })
+	waitEvent[MemberKeyed](t, host)
+
+	hostKey := groupKeyOf(host) // what the departing host keeps a copy of
+	if groupKeyOf(player) != hostKey || groupKeyOf(spectator) != hostKey {
+		t.Fatal("participants did not converge on the group key at join")
+	}
+
+	// The host departs; the player is promoted (successor), the spectator is a
+	// surviving non-host member. Mirror exactly what mux.maybeMigrate does.
+	if err := host.Close(); err != nil {
+		t.Fatal(err)
+	}
+	player.BecomeHost()
+	player.RotateForMigration()
+	spectator.SetHostID(player.Self())
+	if err := spectator.RekeyWithNewHost(); err != nil {
+		t.Fatal(err)
+	}
+
+	// The spectator fetches the rotated key via the re-PAKE; both survivors end
+	// up on the same NEW key, different from what the host kept.
+	newKey := waitKeyChange(t, spectator, hostKey)
+	if got := groupKeyOf(player); got != newKey {
+		t.Fatalf("promoted host and survivor disagree on the rotated key: %x vs %x", got[:4], newKey[:4])
+	}
+	if newKey == hostKey {
+		t.Fatal("key did not rotate on host departure")
+	}
+
+	// Forward secrecy: the departed host's key must NOT open post-migration
+	// traffic; the rotated key must.
+	sf, err := crypto.Seal(newKey, []byte("after you left, old host"), player.sid, player.self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := crypto.Open(hostKey, sf, player.sid, player.self); err == nil {
+		t.Fatal("departed host's key still decrypts new traffic — no forward secrecy on host departure")
+	}
+	if _, err := crypto.Open(newKey, sf, player.sid, player.self); err != nil {
+		t.Fatalf("survivor's rotated key failed to open new traffic: %v", err)
+	}
+
+	// The survivor keeps its role across the re-key (migration rekey wraps RoleNone).
+	if spectator.Role() != RoleSpectator {
+		t.Fatalf("spectator role not preserved across migration rekey: got %v", spectator.Role())
+	}
+}
+
 func wireEnvelope(t *testing.T, service string, seq uint64, body []byte) []byte {
 	t.Helper()
 	b, err := wire.Marshal(wire.Envelope{ServiceID: service, Seq: seq, Body: body})

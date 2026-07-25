@@ -80,6 +80,7 @@ type Client struct {
 	pairwise         map[wire.ParticipantID]crypto.Key // host: per-member pairwise keys, for re-wrapping
 	hostPairwise     crypto.Key                        // joiner: pairwise key with the host, for unwrapping a rekey
 	haveHostPairwise bool
+	rekeyJoiner      *crypto.Joiner // survivor: in-flight re-PAKE with a newly-promoted host
 
 	events chan Event
 
@@ -282,6 +283,55 @@ func (c *Client) ClaimHost() error {
 	return c.writeFrame(wire.MsgClaimHost, wire.ClaimHost{})
 }
 
+// RotateForMigration is called on the promoted host immediately after
+// BecomeHost: it mints a fresh group key the departed host does NOT hold, so
+// once survivors re-fetch it (see RekeyWithNewHost) the departed host is locked
+// out of subsequent traffic. The old key is retained in the ring so in-flight
+// frames still open, and the pairwise map is reset (a promoted host holds none)
+// to refill as survivors re-PAKE. Runs on the mux goroutine, before any
+// survivor's re-PAKE can traverse the network, so the fresh key is in place
+// when the re-PAKE responder wraps it.
+func (c *Client) RotateForMigration() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.role != RoleHost || c.hostID != c.self {
+		return
+	}
+	newKey, err := crypto.NewGroupKey()
+	if err != nil {
+		return
+	}
+	c.pushPrevKeyLocked(c.groupKey)
+	c.groupKey = newKey
+	c.pairwise = map[wire.ParticipantID]crypto.Key{}
+}
+
+// RekeyWithNewHost is called on a surviving non-host member after a host
+// migration: the promoted host shares no pairwise key with it, so it re-runs
+// the PAKE (over the phrase everyone still holds) to establish one; the host
+// replies (KindRekeyPake2) and then delivers the rotated group key (KindRekey).
+// No-op if we are the host or not keyed.
+func (c *Client) RekeyWithNewHost() error {
+	c.mu.Lock()
+	if c.role == RoleHost || c.hostID == c.self || !c.keyed {
+		c.mu.Unlock()
+		return nil
+	}
+	host := c.hostID
+	j, err := crypto.NewJoiner(c.phraseC)
+	if err != nil {
+		c.mu.Unlock()
+		return err
+	}
+	c.rekeyJoiner = j
+	c.mu.Unlock()
+	payload, err := wire.EncodePayload(wire.KindRekeyPake1, wire.Pake{Data: j.Flight1})
+	if err != nil {
+		return err
+	}
+	return c.writeFrame(wire.MsgDirect, wire.Direct{To: host, Payload: payload})
+}
+
 // Close tears the connection down gracefully (a normal-closure "bye"); the
 // relay treats this as leaving for good — no grace, no reconnect.
 func (c *Client) Close() error {
@@ -368,23 +418,18 @@ func (c *Client) pushPrevKeyLocked(old crypto.Key) {
 }
 
 // rekeyAfterLeave rotates the group key when a member leaves so the departed
-// participant can no longer decrypt new traffic. It is a no-op unless this
-// client is the original host — it must hold a pairwise key for EVERY surviving
-// member to re-wrap the fresh key. A promoted (migrated) host lacks pairwise
-// keys with the members it never handshook, so it keeps the current key (the
-// documented host-departure limitation). Runs on the readLoop goroutine, the
-// same one that keys new joiners, so it never races a concurrent join.
+// participant can no longer decrypt new traffic. It re-wraps a fresh key to
+// every member this host holds a pairwise key for (c.pairwise) — populated at
+// join by the original host and by the re-PAKE for a promoted host, so this
+// works in both cases. No-op unless we are the host with at least one such
+// member. Runs on the readLoop goroutine, the same one that keys new joiners
+// and handles re-PAKEs, so it never races those. Role is RoleNone: a member's
+// role never changes on a leave, so survivors keep their existing one.
 func (c *Client) rekeyAfterLeave() {
 	c.mu.Lock()
-	if c.role != RoleHost || c.hostID != c.self || len(c.joiners) == 0 {
+	if c.role != RoleHost || c.hostID != c.self || len(c.pairwise) == 0 {
 		c.mu.Unlock()
 		return
-	}
-	for id := range c.joiners {
-		if _, ok := c.pairwise[id]; !ok {
-			c.mu.Unlock()
-			return // can't re-wrap to every survivor (migrated host) — keep the key
-		}
 	}
 	newKey, err := crypto.NewGroupKey()
 	if err != nil {
@@ -395,9 +440,9 @@ func (c *Client) rekeyAfterLeave() {
 		to wire.ParticipantID
 		gk wire.GroupKey
 	}
-	outs := make([]rekeyTo, 0, len(c.joiners))
-	for id, role := range c.joiners {
-		wrapped, werr := crypto.WrapGroupKey(c.pairwise[id], newKey, byte(role), c.sid, id)
+	outs := make([]rekeyTo, 0, len(c.pairwise))
+	for id, pw := range c.pairwise {
+		wrapped, werr := crypto.WrapGroupKey(pw, newKey, byte(RoleNone), c.sid, id)
 		if werr != nil {
 			c.mu.Unlock()
 			return
@@ -445,7 +490,9 @@ func (c *Client) handleRekey(from wire.ParticipantID, praw []byte) {
 	c.mu.Lock()
 	c.pushPrevKeyLocked(c.groupKey)
 	c.groupKey = key
-	c.role = Role(role)
+	if Role(role) != RoleNone { // a migration rekey wraps RoleNone: keep our existing role
+		c.role = Role(role)
+	}
 	c.mu.Unlock()
 }
 

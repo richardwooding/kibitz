@@ -75,6 +75,8 @@ type Promoter interface {
 	BecomeHost()
 	SetHostID(wire.ParticipantID)
 	ClaimHost() error
+	RotateForMigration()     // new host: mint a fresh group key the departed host lacks
+	RekeyWithNewHost() error // survivor: re-PAKE with the new host to fetch that key
 }
 
 // NewMux attaches services to the client and starts routing. The ctl service
@@ -233,6 +235,7 @@ func (m *Mux) maybeMigrate(left wire.ParticipantID) {
 	amNew := successor == m.client.Self()
 	if amNew {
 		p.BecomeHost()
+		p.RotateForMigration() // fresh key before any survivor's re-PAKE can arrive
 	} else {
 		p.SetHostID(successor)
 	}
@@ -252,6 +255,8 @@ func (m *Mux) maybeMigrate(left wire.ParticipantID) {
 		m.ctl.assumeHost(left)
 		_ = p.ClaimHost()
 		m.emit(Promoted{Self: m.client.Self()})
+	} else {
+		_ = p.RekeyWithNewHost() // fetch the rotated key from the promoted host
 	}
 }
 
