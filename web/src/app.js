@@ -218,9 +218,12 @@
   // Not-yet-live statuses: battleship's two-player note, or the default
   // "not started" card with its Start button.
   function applyIdleBadge(id, badge, card, canStart) {
-    if (state.solo && !state.vsBot && id === "battleship") {
-      // Battleship's simultaneous secret placement doesn't fit pass-and-play on
-      // one screen; vs the computer it's fully playable.
+    // Battleship's secret placement doesn't fit pass-and-play (but is fine vs the
+    // computer); Gin's dealerless shuffle needs two live players and has no bot,
+    // so it's two-player-only in every solo mode.
+    const twoPlayerOnly = (state.solo && !state.vsBot && id === "battleship") ||
+      (state.solo && id === "gin");
+    if (twoPlayerOnly) {
       badge.textContent = "two players";
       const note = document.createElement("div");
       note.className = "game-matchup";

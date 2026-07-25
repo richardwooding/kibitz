@@ -42,6 +42,7 @@ button,
 .dots-board, .dots-edge,
 .go-board, .go-cell,
 .xq-board, .xq-cell,
+.gin-board, .gin-card,
 .bs-board, .bs-cell,
 .game-card, .picker-card {
   touch-action: manipulation;
@@ -781,6 +782,44 @@ button.back { margin-bottom: 0.7rem; }
 }
 .xq-piece.red { color: #b21f1f; border-color: #b21f1f; }
 .xq-piece.black { color: #16161c; border-color: #16161c; }
+
+/* gin rummy — playing cards */
+.gin-scores { text-align: center; color: var(--muted); font-size: 0.85rem; margin: 0.15rem 0 0.6rem; }
+.gin-board { display: flex; flex-direction: column; gap: 0.8rem; align-items: stretch; }
+.gin-opp { text-align: center; color: var(--muted); font-size: 0.85rem; }
+.gin-piles { display: flex; gap: 1.2rem; justify-content: center; }
+.gin-pile { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; }
+.gin-pilelabel { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.gin-cards { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; }
+.gin-controls { display: flex; gap: 0.5rem; align-items: center; justify-content: center; flex-wrap: wrap; margin-top: 0.2rem; }
+.gin-note { color: var(--muted); font-size: 0.85rem; text-align: center; }
+.gin-btn { padding: 0.45rem 0.9rem; border-radius: 0.5rem; border: 1px solid var(--border); background: var(--panel-2); color: var(--fg); cursor: pointer; font-size: 0.9rem; }
+.gin-btn:disabled { opacity: 0.45; cursor: default; }
+.gin-btn:not(:disabled):hover { border-color: var(--accent); color: var(--accent); }
+.gin-card {
+  width: clamp(1.9rem, 8vw, 2.4rem);
+  aspect-ratio: 5 / 7;
+  border-radius: 0.35rem;
+  background: #f7f5ef;
+  color: #16161c;
+  border: 1px solid rgba(0, 0, 0, 0.35);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  cursor: default;
+}
+.gin-card.red { color: #c0392b; }
+.gin-card.selected { outline: 3px solid var(--accent); outline-offset: -1px; transform: translateY(-5px); cursor: pointer; }
+.gin-hand .gin-card { cursor: pointer; }
+.gin-card.back {
+  color: transparent; border-color: transparent;
+  background: repeating-linear-gradient(45deg, #6d5be0, #6d5be0 4px, #4a3cc0 4px, #4a3cc0 8px);
+}
+.gin-rank { font-size: 1rem; font-weight: 700; line-height: 1.05; }
+.gin-suit { font-size: 1.05rem; line-height: 1; }
+.gin-verify { font-size: 0.85rem; text-align: center; margin-top: 0.4rem; }
+.gin-verify.ok { color: #3fb950; }
+.gin-verify.muted { color: var(--muted); }
 
 /* battleship — stack the two grids so each keeps full width (side-by-side
    flex items with a percentage width collapse to nothing). Default stretch

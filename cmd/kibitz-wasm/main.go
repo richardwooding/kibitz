@@ -33,6 +33,7 @@ import (
 	"github.com/richardwooding/kibitz/internal/service/chess"
 	"github.com/richardwooding/kibitz/internal/service/connect4"
 	"github.com/richardwooding/kibitz/internal/service/dots"
+	"github.com/richardwooding/kibitz/internal/service/gin"
 	"github.com/richardwooding/kibitz/internal/service/gomoku"
 	"github.com/richardwooding/kibitz/internal/service/hex"
 	"github.com/richardwooding/kibitz/internal/service/reversi"
@@ -58,6 +59,7 @@ type command struct {
 	Edge     int8      `json:"edge"`               // dots edge id
 	Frm      int8      `json:"frm"`                // xiangqi from-square
 	To       int8      `json:"to"`                 // xiangqi to-square
+	GinCard  int8      `json:"ginCard"`            // gin discard/knock card
 	Sq       int8      `json:"sq"`                 // reversi square
 	Cell     uint8     `json:"cell"`               // battleship cell
 	Fleet    []uint8   `json:"fleet,omitempty"`    // battleship placement
@@ -83,6 +85,7 @@ type app struct {
 	dt     *dots.Service
 	wq     *weiqi.Service
 	xq     *xiangqi.Service
+	gn     *gin.Service
 	ck     *checkers.Service
 	rv     *reversi.Service
 	bs     *battleship.Service
@@ -102,6 +105,7 @@ type app struct {
 	dtB                 *dots.Service
 	wqB                 *weiqi.Service
 	xqB                 *xiangqi.Service
+	gnB                 *gin.Service
 	ckB                 *checkers.Service
 	rvB                 *reversi.Service
 	bsB                 *battleship.Service
@@ -186,6 +190,12 @@ var commands = map[string]func(command){
 
 	"xiangqi.move":   func(c command) { moveXiangqi(func(s *xiangqi.Service) error { return s.Move(c.Frm, c.To) }) },
 	"xiangqi.resign": func(command) { withXiangqi((*xiangqi.Service).Resign) },
+
+	"gin.drawStock":  func(command) { withGin((*gin.Service).DrawStock) },
+	"gin.takeUpcard": func(command) { withGin((*gin.Service).TakeUpcard) },
+	"gin.discard":    func(c command) { withGin(func(s *gin.Service) error { return s.Discard(c.GinCard) }) },
+	"gin.knock":      func(c command) { withGin(func(s *gin.Service) error { return s.Knock(c.GinCard) }) },
+	"gin.resign":     func(command) { withGin((*gin.Service).Resign) },
 
 	// Takeback (1-level undo of the last move) for every deterministic game.
 	"connect4.offerTakeback":  func(command) { withC4((*connect4.Service).OfferTakeback) },
@@ -318,8 +328,8 @@ func newServices() (ch *chat.Service, cs *chess.Service, bg *backgammon.Service,
 // start attaches services and begins pumping mux events to the UI.
 func start(client *session.Client, name string) {
 	ch, cs, bg, c4, gm, ck, rv, bs := newServices()
-	hx, dt, wq, xq := hex.New(), dots.New(), weiqi.New(), xiangqi.New()
-	mux := service.NewMux(client, ch, cs, bg, c4, gm, hx, dt, wq, xq, ck, rv, bs)
+	hx, dt, wq, xq, gn := hex.New(), dots.New(), weiqi.New(), xiangqi.New(), gin.New()
+	mux := service.NewMux(client, ch, cs, bg, c4, gm, hx, dt, wq, xq, gn, ck, rv, bs)
 	mux.SetName(name)      // no-op for a blank name; peers then see "#id"
 	mux.SetReconnectable() // survive transient drops; see reconnectNet
 
@@ -330,7 +340,7 @@ func start(client *session.Client, name string) {
 	current.mux = mux
 	current.client, current.chat, current.chess = client, ch, cs
 	current.bg, current.c4, current.gm = bg, c4, gm
-	current.hx, current.dt, current.wq, current.xq = hx, dt, wq, xq
+	current.hx, current.dt, current.wq, current.xq, current.gn = hx, dt, wq, xq, gn
 	current.ck, current.rv, current.bs = ck, rv, bs
 	current.mu.Unlock()
 
@@ -345,12 +355,12 @@ func start(client *session.Client, name string) {
 func startSolo(name string, vsBot bool, level string) {
 	host, guest, seat := solo.New()
 	chA, csA, bgA, c4A, gmA, ckA, rvA, bsA := newServices()
-	hxA, dtA, wqA, xqA := hex.New(), dots.New(), weiqi.New(), xiangqi.New()
-	muxA := service.NewMux(host, chA, csA, bgA, c4A, gmA, hxA, dtA, wqA, xqA, ckA, rvA, bsA)
+	hxA, dtA, wqA, xqA, gnA := hex.New(), dots.New(), weiqi.New(), xiangqi.New(), gin.New()
+	muxA := service.NewMux(host, chA, csA, bgA, c4A, gmA, hxA, dtA, wqA, xqA, gnA, ckA, rvA, bsA)
 	muxA.SetName(name)
 	chB, csB, bgB, c4B, gmB, ckB, rvB, bsB := newServices()
-	hxB, dtB, wqB, xqB := hex.New(), dots.New(), weiqi.New(), xiangqi.New()
-	muxB := service.NewMux(guest, chB, csB, bgB, c4B, gmB, hxB, dtB, wqB, xqB, ckB, rvB, bsB)
+	hxB, dtB, wqB, xqB, gnB := hex.New(), dots.New(), weiqi.New(), xiangqi.New(), gin.New()
+	muxB := service.NewMux(guest, chB, csB, bgB, c4B, gmB, hxB, dtB, wqB, xqB, gnB, ckB, rvB, bsB)
 	if vsBot {
 		muxB.SetName("Computer")
 	} else {
@@ -365,11 +375,11 @@ func startSolo(name string, vsBot bool, level string) {
 	current.soloHost, current.soloGuest = host, guest
 	current.chat, current.chess, current.bg = chA, csA, bgA
 	current.c4, current.gm = c4A, gmA
-	current.hx, current.dt, current.wq, current.xq = hxA, dtA, wqA, xqA
+	current.hx, current.dt, current.wq, current.xq, current.gn = hxA, dtA, wqA, xqA, gnA
 	current.ck, current.rv, current.bs = ckA, rvA, bsA
 	current.chatB, current.chessB, current.bgB = chB, csB, bgB
 	current.c4B, current.gmB = c4B, gmB
-	current.hxB, current.dtB, current.wqB, current.xqB = hxB, dtB, wqB, xqB
+	current.hxB, current.dtB, current.wqB, current.xqB, current.gnB = hxB, dtB, wqB, xqB, gnB
 	current.ckB, current.rvB, current.bsB = ckB, rvB, bsB
 	current.mu.Unlock()
 
@@ -406,7 +416,7 @@ func closePrev() {
 	current.mux = nil
 	current.chatB, current.chessB, current.bgB = nil, nil, nil
 	current.c4B, current.gmB = nil, nil
-	current.hxB, current.dtB, current.wqB, current.xqB = nil, nil, nil, nil
+	current.hxB, current.dtB, current.wqB, current.xqB, current.gnB = nil, nil, nil, nil, nil
 	current.ckB, current.rvB, current.bsB = nil, nil, nil
 	current.mu.Unlock()
 	// A clean Close (normal closure) tells the relay we left for good — no grace.
@@ -549,6 +559,9 @@ func startGame(id string) {
 	if current.xq != nil {
 		starters["xiangqi"] = current.xq.Start
 	}
+	if current.gn != nil {
+		starters["gin"] = current.gn.Start
+	}
 	if current.ck != nil {
 		starters["checkers"] = current.ck.Start
 	}
@@ -607,6 +620,8 @@ func pump(mux *service.Mux, gen int, isSolo, vsBot bool) {
 			emitWeiqiState(e)
 		case xiangqi.State:
 			emitXiangqiState(e)
+		case gin.State:
+			emitGinState(e)
 		case checkers.State:
 			emitCKState(e)
 		case checkers.DrawOffered:
@@ -853,6 +868,17 @@ func emitWeiqiState(e weiqi.State) {
 	})
 }
 
+func emitGinState(e gin.State) {
+	emit("gin.state", map[string]any{
+		"playing": e.Playing, "phase": e.Phase,
+		"p1Id": uint32(e.P1ID), "p2Id": uint32(e.P2ID), "turnId": uint32(e.TurnID),
+		"hand": e.Hand, "handCounts": e.HandCounts[:], "discard": e.Discard,
+		"stockCount": e.StockCount, "deadwood": e.Deadwood, "canKnock": e.CanKnock,
+		"scores": e.Scores[:], "outcome": e.Outcome, "verified": e.Verified,
+		"oppHand": e.OppHand,
+	})
+}
+
 func emitXiangqiState(e xiangqi.State) {
 	legal := make([][2]int8, len(e.Legal))
 	copy(legal, e.Legal)
@@ -885,7 +911,7 @@ func leave() {
 	current.solo = false
 	current.chat, current.chess, current.bg = nil, nil, nil
 	current.c4, current.gm = nil, nil
-	current.hx, current.dt, current.wq, current.xq = nil, nil, nil, nil
+	current.hx, current.dt, current.wq, current.xq, current.gn = nil, nil, nil, nil, nil
 	current.ck, current.rv, current.bs = nil, nil, nil
 	current.mu.Unlock()
 }
@@ -949,6 +975,13 @@ func withWeiqi(f func(*weiqi.Service) error) {
 func withXiangqi(f func(*xiangqi.Service) error) {
 	current.mu.Lock()
 	s := current.xq
+	current.mu.Unlock()
+	callService(s == nil, func() error { return f(s) })
+}
+
+func withGin(f func(*gin.Service) error) {
+	current.mu.Lock()
+	s := current.gn
 	current.mu.Unlock()
 	callService(s == nil, func() error { return f(s) })
 }
