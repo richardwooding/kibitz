@@ -89,13 +89,13 @@ func Drive(events <-chan any, s Services, delay time.Duration, level Level) {
 		case gomoku.State:
 			driveGomoku(s, e, level, pause)
 		case hex.State:
-			driveHex(s, e, pause)
+			driveHex(s, e, level, pause)
 		case dots.State:
-			driveDots(s, e, pause)
+			driveDots(s, e, level, pause)
 		case weiqi.State:
-			driveWeiqi(s, e, pause)
+			driveWeiqi(s, e, level, pause)
 		case xiangqi.State:
-			driveXiangqi(s, e, pause)
+			driveXiangqi(s, e, level, pause)
 		case reversi.State:
 			driveReversi(s, e, level, pause)
 		case checkers.State:
@@ -502,10 +502,23 @@ func gmPattern(count, open int) int {
 	return 1
 }
 
-// ---- hex / dots / weiqi / xiangqi (random legal move; extracted from Drive) --
+// ---- hex / dots / weiqi / xiangqi -----------------------------------------
+// Hard routes to each engine's BestMove (search/heuristic); Easy plays a random
+// legal move; Medium mixes the two via resolveLevel.
 
-func driveHex(s Services, e hex.State, pause func()) {
+func driveHex(s Services, e hex.State, level Level, pause func()) {
 	if !e.Playing || e.Outcome != "" || e.TurnID != s.Self || len(e.Legal) == 0 {
+		return
+	}
+	if resolveLevel(level, rand.Float64()) == Hard {
+		side := int8(1) // red = P1, blue = P2
+		if e.P2ID == s.Self {
+			side = 2
+		}
+		if row, col, ok := hex.BestMove(e.Board, side); ok {
+			pause()
+			_ = s.HEX.Place(row, col)
+		}
 		return
 	}
 	idx := int(e.Legal[rand.Intn(len(e.Legal))])
@@ -513,20 +526,41 @@ func driveHex(s Services, e hex.State, pause func()) {
 	_ = s.HEX.Place(int8(idx/hex.N), int8(idx%hex.N))
 }
 
-func driveDots(s Services, e dots.State, pause func()) {
+func driveDots(s Services, e dots.State, level Level, pause func()) {
 	if !e.Playing || e.Outcome != "" || e.TurnID != s.Self || len(e.Legal) == 0 {
+		return
+	}
+	if resolveLevel(level, rand.Float64()) == Hard {
+		if edge, ok := dots.BestMove(dots.Board{Edges: e.Edges, Owner: e.Boxes}, rand.Int()); ok {
+			pause()
+			_ = s.DOTS.DrawEdge(edge)
+		}
 		return
 	}
 	pause()
 	_ = s.DOTS.DrawEdge(e.Legal[rand.Intn(len(e.Legal))])
 }
 
-func driveWeiqi(s Services, e weiqi.State, pause func()) {
+func driveWeiqi(s Services, e weiqi.State, level Level, pause func()) {
 	if !e.Playing || e.Outcome != "" || e.TurnID != s.Self {
 		return
 	}
+	if resolveLevel(level, rand.Float64()) == Hard {
+		side := int8(1) // black = P1, white = P2
+		if e.P2ID == s.Self {
+			side = 2
+		}
+		row, col, pass := weiqi.BestMove(e.Board, side)
+		pause()
+		if pass {
+			_ = s.GO.Pass()
+		} else {
+			_ = s.GO.Place(row, col)
+		}
+		return
+	}
 	pause()
-	// Pass when out of legal points, or ~1-in-20 to keep games from dragging.
+	// Easy: random point, or pass when out of points / ~1-in-20 to avoid dragging.
 	if len(e.Legal) == 0 || rand.Intn(20) == 0 {
 		_ = s.GO.Pass()
 		return
@@ -535,8 +569,19 @@ func driveWeiqi(s Services, e weiqi.State, pause func()) {
 	_ = s.GO.Place(int8(m/weiqi.N), int8(m%weiqi.N))
 }
 
-func driveXiangqi(s Services, e xiangqi.State, pause func()) {
+func driveXiangqi(s Services, e xiangqi.State, level Level, pause func()) {
 	if !e.Playing || e.Outcome != "" || e.TurnID != s.Self || len(e.Legal) == 0 {
+		return
+	}
+	if resolveLevel(level, rand.Float64()) == Hard {
+		side := int8(1) // red = P1 (+1), black = P2 (-1)
+		if e.P2ID == s.Self {
+			side = -1
+		}
+		if from, to, ok := xiangqi.BestMove(e.Board, side); ok {
+			pause()
+			_ = s.XQ.Move(from, to)
+		}
 		return
 	}
 	mv := e.Legal[rand.Intn(len(e.Legal))]
