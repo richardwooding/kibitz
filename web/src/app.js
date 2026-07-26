@@ -142,6 +142,7 @@
       mod.setVisible(gid === id);
     }
     updateTakebackBar(lastState[id]);
+    $("game-pane").focus(); // move focus into the opened game (tabindex=-1)
   }
 
   function closeGame() {
@@ -151,6 +152,7 @@
     for (const mod of Object.values(games)) mod.setVisible(false);
     updateTakebackBar(null);
     renderPicker();
+    $("game-picker").focus(); // return focus to the picker (tabindex=-1)
   }
 
   // ---- shared takeback bar --------------------------------------------------
@@ -216,7 +218,15 @@
   // Rematch/Start buttons, matchup note). Returns the badge element to append.
   function makeCardOpenGame(card, id) {
     card.classList.add("clickable");
+    card.setAttribute("role", "button");
+    card.setAttribute("tabindex", "0");
     card.addEventListener("click", () => openGame(id));
+    card.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        openGame(id);
+      }
+    });
   }
 
   // Not-yet-live statuses: battleship's two-player note, or the default
@@ -478,6 +488,8 @@
     const muted = window.fx && window.fx.sound.isMuted();
     b.textContent = muted ? "🔇" : "🔊";
     b.title = muted ? "Unmute sound" : "Mute sound";
+    b.setAttribute("aria-label", muted ? "Unmute sound" : "Mute sound");
+    b.setAttribute("aria-pressed", String(!!muted));
   }
   $("btn-mute").addEventListener("click", () => {
     if (window.fx) window.fx.sound.toggleMute();

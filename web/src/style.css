@@ -54,6 +54,36 @@ button,
   user-select: none;
 }
 
+/* Accessibility: a visible keyboard-focus ring. Board cells, .diff-btn and gin
+   cards use `all: unset`, which strips the UA outline, so re-add it explicitly.
+   Board cells get an inset high-contrast ring so it shows on small squares. */
+:focus-visible {
+  outline: 2px solid var(--accent, #7c5cff);
+  outline-offset: 2px;
+}
+.board :focus-visible, .bg-board :focus-visible, .c4-board :focus-visible,
+.ck-board :focus-visible, .rv-board :focus-visible, .gm-board :focus-visible,
+.gp-board :focus-visible, .hx-board :focus-visible, .dots-board :focus-visible,
+.go-board :focus-visible, .xq-board :focus-visible, .bs-board :focus-visible,
+.gin-board :focus-visible, .diff-btn:focus-visible {
+  outline: 3px solid #f6f078;
+  outline-offset: -2px;
+  z-index: 3;
+}
+
+/* Screen-reader-only: present to assistive tech, invisible on screen. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 body {
   margin: 0;
   font-family: ui-sans-serif, system-ui, sans-serif;
@@ -231,7 +261,7 @@ input[type="text"] {
 .diff-btn {
   all: unset;
   cursor: pointer;
-  padding: 0.25rem 0.75rem;
+  padding: 0.45rem 0.9rem;
   border: 1px solid var(--border);
   border-radius: 0.5rem;
   font-size: 0.82rem;

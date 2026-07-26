@@ -73,12 +73,12 @@
         <button id="btn-create" disabled>▶ Start a table</button>
         <div id="join-divider" class="or-divider"><span>or join a friend</span></div>
         <div class="join-row">
-          <input id="join-phrase" type="text" placeholder="lion-42-maple"
+          <input id="join-phrase" type="text" placeholder="lion-42-maple" aria-label="Code phrase to join"
                  autocomplete="off" autocapitalize="none" spellcheck="false" disabled>
           <button id="btn-join" disabled>Join</button>
         </div>
         <label class="watch-toggle"><input type="checkbox" id="watch-toggle"> Just watch — don't take a seat</label>
-        <p class="note" id="home-status">loading core…</p>
+        <p class="note" id="home-status" role="status" aria-live="polite">loading core…</p>
         <div id="solo-divider" class="or-divider"><span>on your own?</span></div>
         <div class="difficulty" role="group" aria-label="Computer difficulty">
           <span class="difficulty-label">Computer:</span>
@@ -118,7 +118,7 @@
         <div class="lobby-share">
           <div class="phrase" id="lobby-phrase"></div>
           <div class="share-row">
-            <input id="lobby-url" type="text" readonly>
+            <input id="lobby-url" type="text" readonly aria-label="Table link">
             <button id="btn-copy">Copy play link</button>
           </div>
           <div class="share-row">
@@ -146,24 +146,25 @@
   </main>
 
   <!-- table: games + chat -->
-  <main id="view-table" class="view hidden">
+  <main id="view-table" class="view hidden" aria-label="Game table">
+    <h1 class="sr-only">Game table</h1>
     <div class="table-grid">
       <section class="board-pane">
         <div class="board-pane-head">
           <button id="btn-leave" class="ghost back">← Leave</button>
           <span id="solo-banner" class="solo-banner">Solo practice · you play both sides</span>
-          <span id="watching" class="watching hidden" title="Spectators watching this table"></span>
+          <span id="watching" class="watching hidden" title="Spectators watching this table" role="status" aria-live="polite"></span>
           <button id="btn-notify" class="icon-btn hidden" title="Notify me when it's my turn" aria-label="Enable turn notifications">🔔</button>
-          <button id="btn-mute" class="icon-btn" title="Mute sound" aria-label="Mute sound">🔊</button>
+          <button id="btn-mute" class="icon-btn" title="Mute sound" aria-label="Mute sound" aria-pressed="false">🔊</button>
         </div>
 
         <!-- picker: one card per available game -->
-        <div id="game-picker" class="game-picker"></div>
+        <div id="game-picker" class="game-picker" tabindex="-1"></div>
 
         <!-- open game pane -->
-        <div id="game-pane" class="hidden">
+        <div id="game-pane" class="hidden" tabindex="-1">
           <button id="btn-back" class="ghost back">← All games</button>
-          <div id="win-banner" class="win-banner"></div>
+          <div id="win-banner" class="win-banner" role="status" aria-live="polite"></div>
           <!-- Shared takeback controls: app.js shows these for the active game
                based on its canTakeback / takebackBy state (deterministic games). -->
           <div id="takeback-bar" class="game-actions">
@@ -172,7 +173,7 @@
           </div>
 
           <div id="game-chess" class="hidden">
-            <div id="status-line" class="status"></div>
+            <div id="status-line" class="status" role="status" aria-live="polite"></div>
             <div id="board" class="board"></div>
             <div class="game-actions">
               <button id="btn-resign" class="ghost">Resign</button>
@@ -184,7 +185,7 @@
           </div>
 
           <div id="game-bg" class="hidden">
-            <div id="bg-status" class="status"></div>
+            <div id="bg-status" class="status" role="status" aria-live="polite"></div>
             <div id="bg-board" class="bg-board"></div>
             <div class="game-actions">
               <button id="bg-roll">Roll</button>
@@ -197,7 +198,7 @@
           </div>
 
           <div id="game-c4" class="hidden">
-            <div id="c4-status" class="status"></div>
+            <div id="c4-status" class="status" role="status" aria-live="polite"></div>
             <div id="c4-board" class="c4-board"></div>
             <div class="game-actions">
               <button id="c4-resign" class="ghost">Resign</button>
@@ -207,7 +208,7 @@
           </div>
 
           <div id="game-gomoku" class="hidden">
-            <div id="gomoku-status" class="status"></div>
+            <div id="gomoku-status" class="status" role="status" aria-live="polite"></div>
             <div id="gomoku-board" class="gm-board"></div>
             <div class="game-actions">
               <button id="gomoku-resign" class="ghost">Resign</button>
@@ -217,7 +218,7 @@
           </div>
 
           <div id="game-gomokup" class="hidden">
-            <div id="gomokup-status" class="status"></div>
+            <div id="gomokup-status" class="status" role="status" aria-live="polite"></div>
             <div id="gomokup-players" class="gp-players"></div>
             <div id="gomokup-lobby" class="gp-lobby hidden"></div>
             <div id="gomokup-board" class="gp-board"></div>
@@ -229,7 +230,7 @@
           </div>
 
           <div id="game-hex" class="hidden">
-            <div id="hex-status" class="status"></div>
+            <div id="hex-status" class="status" role="status" aria-live="polite"></div>
             <div id="hex-board" class="hx-board"></div>
             <div class="game-actions">
               <button id="hex-resign" class="ghost">Resign</button>
@@ -239,7 +240,7 @@
           </div>
 
           <div id="game-dots" class="hidden">
-            <div id="dots-status" class="status"></div>
+            <div id="dots-status" class="status" role="status" aria-live="polite"></div>
             <div id="dots-board" class="dots-board"></div>
             <div class="game-actions">
               <button id="dots-resign" class="ghost">Resign</button>
@@ -249,7 +250,7 @@
           </div>
 
           <div id="game-weiqi" class="hidden">
-            <div id="weiqi-status" class="status"></div>
+            <div id="weiqi-status" class="status" role="status" aria-live="polite"></div>
             <div id="weiqi-board" class="go-board"></div>
             <div class="game-actions">
               <button id="weiqi-pass" class="ghost">Pass</button>
@@ -260,7 +261,7 @@
           </div>
 
           <div id="game-xiangqi" class="hidden">
-            <div id="xiangqi-status" class="status"></div>
+            <div id="xiangqi-status" class="status" role="status" aria-live="polite"></div>
             <div id="xiangqi-board" class="xq-board"></div>
             <div class="game-actions">
               <button id="xiangqi-resign" class="ghost">Resign</button>
@@ -270,7 +271,7 @@
           </div>
 
           <div id="game-checkers" class="hidden">
-            <div id="checkers-status" class="status"></div>
+            <div id="checkers-status" class="status" role="status" aria-live="polite"></div>
             <div id="checkers-board" class="ck-board"></div>
             <div class="game-actions">
               <button id="checkers-resign" class="ghost">Resign</button>
@@ -282,7 +283,7 @@
           </div>
 
           <div id="game-reversi" class="hidden">
-            <div id="reversi-status" class="status"></div>
+            <div id="reversi-status" class="status" role="status" aria-live="polite"></div>
             <div id="reversi-board" class="rv-board"></div>
             <div class="game-actions">
               <button id="reversi-resign" class="ghost">Resign</button>
@@ -292,7 +293,7 @@
           </div>
 
           <div id="game-bs" class="hidden">
-            <div id="bs-status" class="status"></div>
+            <div id="bs-status" class="status" role="status" aria-live="polite"></div>
 
             <div id="bs-placing" class="hidden">
               <div id="bs-ships" class="bs-ships"></div>
@@ -325,7 +326,7 @@
           </div>
 
           <div id="game-gin" class="hidden">
-            <div id="gin-status" class="status"></div>
+            <div id="gin-status" class="status" role="status" aria-live="polite"></div>
             <div id="gin-scores" class="gin-scores"></div>
             <div id="gin-board" class="gin-board"></div>
             <div class="game-actions">
@@ -334,11 +335,11 @@
           </div>
         </div>
       </section>
-      <aside class="side-pane">
+      <aside class="side-pane" aria-label="Chat and players">
         <div id="members" class="members"></div>
         <div id="chat-log" class="chat-log"></div>
         <form id="chat-form">
-          <input id="chat-input" type="text" placeholder="say something…" autocomplete="off" maxlength="4000">
+          <input id="chat-input" type="text" placeholder="say something…" aria-label="Chat message" autocomplete="off" maxlength="4000">
         </form>
       </aside>
     </div>
@@ -356,7 +357,7 @@
     </footer>
   </main>
 
-  <div id="toast" class="toast hidden"></div>
+  <div id="toast" class="toast hidden" role="alert" aria-live="assertive"></div>
   <div id="reconnect-banner" class="reconnect-banner hidden" role="status" aria-live="polite">
     <span class="reconnect-dot"></span>Reconnecting…
   </div>

@@ -8,7 +8,7 @@
 // its own, only caching of what the page already requests.
 //
 // Bump CACHE when the shell asset set changes to evict old caches on activate.
-const CACHE = "kibitz-shell-v9";
+const CACHE = "kibitz-shell-v10";
 
 // The small shell precached on install so an installed app opens offline. The
 // ~9MB WASM core is intentionally NOT precached — it caches on first fetch.
