@@ -8,7 +8,7 @@
 // its own, only caching of what the page already requests.
 //
 // Bump CACHE when the shell asset set changes to evict old caches on activate.
-const CACHE = "kibitz-shell-v6";
+const CACHE = "kibitz-shell-v7";
 
 // The small shell precached on install so an installed app opens offline. The
 // ~9MB WASM core is intentionally NOT precached — it caches on first fetch.
@@ -20,6 +20,7 @@ const SHELL = [
   "bgboard.js",
   "c4board.js",
   "gomokuboard.js",
+  "gomokupboard.js",
   "hexboard.js",
   "dotsboard.js",
   "weiqiboard.js",

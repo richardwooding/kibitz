@@ -221,13 +221,13 @@
     // Battleship's secret placement doesn't fit pass-and-play (but is fine vs the
     // computer); Gin's dealerless shuffle needs two live players and has no bot,
     // so it's two-player-only in every solo mode.
-    const twoPlayerOnly = (state.solo && !state.vsBot && id === "battleship") ||
-      (state.solo && id === "gin");
-    if (twoPlayerOnly) {
-      badge.textContent = "two players";
+    const networkedOnly = (state.solo && !state.vsBot && id === "battleship") ||
+      (state.solo && (id === "gin" || id === "gomokup"));
+    if (networkedOnly) {
+      badge.textContent = id === "gomokup" ? "2–4 players" : "two players";
       const note = document.createElement("div");
       note.className = "game-matchup";
-      note.textContent = "Invite a friend to play";
+      note.textContent = id === "gomokup" ? "Invite friends to play (2–4)" : "Invite a friend to play";
       card.appendChild(note);
     } else {
       badge.textContent = "not started";

@@ -21,14 +21,14 @@
   <meta property="og:site_name" content="kibitz">
   <meta property="og:url" content="https://kibitz-play.fly.dev/">
   <meta property="og:title" content="kibitz — play a friend, end-to-end encrypted">
-  <meta property="og:description" content="Twelve games and chat over one end-to-end-encrypted session, paired with a code phrase through a relay that can't read a thing. Chess, backgammon, checkers, reversi, Connect Four, Gomoku, Go, Xiangqi, Hex, Dots and Boxes, provably-fair Battleship, and Gin Rummy with a dealerless shuffle.">
+  <meta property="og:description" content="Thirteen games and chat over one end-to-end-encrypted session, paired with a code phrase through a relay that can't read a thing. Chess, backgammon, checkers, reversi, Connect Four, Gomoku, Go, Xiangqi, Hex, Dots and Boxes, provably-fair Battleship, Gin Rummy with a dealerless shuffle, and Gomoku Party for 2–4 players.">
   <meta property="og:image" content="https://kibitz-play.fly.dev/og.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta property="og:image:alt" content="kibitz — play a friend, end-to-end encrypted">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="kibitz — play a friend, end-to-end encrypted">
-  <meta name="twitter:description" content="Twelve games and chat over one end-to-end-encrypted session, paired by a code phrase through a blind relay.">
+  <meta name="twitter:description" content="Thirteen games and chat over one end-to-end-encrypted session, paired by a code phrase through a blind relay.">
   <meta name="twitter:image" content="https://kibitz-play.fly.dev/og.png">
 
   <link rel="stylesheet" href="style.css">
@@ -50,12 +50,12 @@
           </svg>
           <span class="brand-name">kibitz</span>
         </span>
-        <p class="eyebrow">end-to-end encrypted · twelve games · chat</p>
+        <p class="eyebrow">end-to-end encrypted · thirteen games · chat</p>
         <h1>Pull up a chair,<br><span class="grad">play a friend.</span></h1>
-        <p class="tagline" id="home-tagline">Chess, backgammon, checkers, reversi, Connect Four, Gomoku, Go, Xiangqi, Hex, Dots and Boxes, provably-fair Battleship, and Gin Rummy with a dealerless shuffle — with a chat alongside — over one encrypted session. Nobody, not even the server, can read a move, a card, or a message.</p>
+        <p class="tagline" id="home-tagline">Chess, backgammon, checkers, reversi, Connect Four, Gomoku, Go, Xiangqi, Hex, Dots and Boxes, provably-fair Battleship, Gin Rummy with a dealerless shuffle, and Gomoku Party for two-to-four players — with a chat alongside — over one encrypted session. Nobody, not even the server, can read a move, a card, or a message.</p>
         <ul class="trust" aria-label="What you get">
           <li><span class="trust-ico">🔒</span> End-to-end encrypted</li>
-          <li><span class="trust-ico">♟</span> Twelve games</li>
+          <li><span class="trust-ico">♟</span> Thirteen games</li>
           <li><span class="trust-ico">👀</span> Spectators welcome</li>
         </ul>
       </div>
@@ -216,6 +216,17 @@
             <ol id="gomoku-moves" class="move-list"></ol>
           </div>
 
+          <div id="game-gomokup" class="hidden">
+            <div id="gomokup-status" class="status"></div>
+            <div id="gomokup-players" class="gp-players"></div>
+            <div id="gomokup-board" class="gp-board"></div>
+            <div class="game-actions">
+              <button id="gomokup-resign" class="ghost">Resign</button>
+            </div>
+            <div class="moves-head"><span>Moves</span></div>
+            <ol id="gomokup-moves" class="move-list"></ol>
+          </div>
+
           <div id="game-hex" class="hidden">
             <div id="hex-status" class="status"></div>
             <div id="hex-board" class="hx-board"></div>
@@ -357,6 +368,7 @@
   <script src="bgboard.js"></script>
   <script src="c4board.js"></script>
   <script src="gomokuboard.js"></script>
+  <script src="gomokupboard.js"></script>
   <script src="hexboard.js"></script>
   <script src="dotsboard.js"></script>
   <script src="weiqiboard.js"></script>

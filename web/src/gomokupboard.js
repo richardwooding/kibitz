@@ -1,0 +1,157 @@
+// gomokupboard.js — Gomoku Party: five-in-a-row for 2–4 players on a shared
+// 19×19 board with rotating turns. Each seat has a color; click an empty point
+// on your turn to place. Networked-only (no solo). Hidden nothing — every end
+// runs the same board and verifies a position hash, so no one can cheat.
+(() => {
+  "use strict";
+
+  const SIZE = 19;
+  // Seat colors, in seat order — matches the service's 🔴🔵🟢🟡 notation glyphs.
+  const COLORS = ["#e5484d", "#4c8bf5", "#30a46c", "#f5d90a"];
+  const NAMES = ["red", "blue", "green", "yellow"];
+
+  window.GameModules = window.GameModules || {};
+  window.GameModules.gomokup = { label: "🌈 Gomoku Party", paneId: "game-gomokup", create };
+
+  function create(ctx) {
+    const { $, send } = ctx;
+    let g = null;
+    let visible = false;
+
+    const seats = () => (g && g.seats) || [];
+    const mySeat = () => seats().indexOf(ctx.self());
+    const isPlayer = () => mySeat() >= 0;
+    const myTurn = () => g && g.playing && g.turnId === ctx.self();
+    const over = () => g && g.outcome !== "";
+
+    // ---- status + outcome ---------------------------------------------------
+
+    function outcomeText() {
+      if (g.draw) return "Draw — the board filled";
+      if (g.winnerId) {
+        return g.winnerId === ctx.self() ? "You win! 🎉" : `${ctx.name(g.winnerId)} wins`;
+      }
+      return "Game abandoned";
+    }
+
+    function statusText() {
+      if (over()) return outcomeText();
+      if (myTurn()) return "Your turn — place a stone";
+      return `${ctx.name(g.turnId)}'s turn`;
+    }
+
+    function dot(color) {
+      const d = document.createElement("span");
+      d.className = "gp-dot";
+      d.style.background = color;
+      return d;
+    }
+
+    // ---- player roster ------------------------------------------------------
+
+    function renderPlayers() {
+      const el = $("gomokup-players");
+      if (!el) return;
+      el.innerHTML = "";
+      seats().forEach((id, i) => {
+        const row = document.createElement("span");
+        row.className = "gp-player";
+        if (!over() && id === g.turnId) row.classList.add("on-turn");
+        if (g.gone && g.gone[i]) row.classList.add("gone");
+        row.append(dot(COLORS[i] || "#888"));
+        const nm = document.createElement("span");
+        nm.textContent = id === ctx.self() ? `${ctx.name(id)} (you)` : ctx.name(id);
+        row.appendChild(nm);
+        el.appendChild(row);
+      });
+    }
+
+    // ---- board --------------------------------------------------------------
+
+    function render() {
+      if (!visible || !g) return;
+      ctx.renderMoves($("gomokup-moves"), g.history);
+      const statusEl = $("gomokup-status");
+      if (!g.playing && !over()) {
+        statusEl.textContent = "Waiting for the host to start…";
+        renderPlayers();
+        return;
+      }
+      statusEl.textContent = statusText();
+      renderPlayers();
+      $("gomokup-resign").classList.toggle("hidden", !isPlayer() || over());
+      renderBoard(myTurn() && !over());
+    }
+
+    function renderBoard(canPlay) {
+      const el = $("gomokup-board");
+      el.classList.toggle("my-turn", canPlay);
+      el.innerHTML = "";
+      const win = new Set(g.winCells || []);
+      for (let idx = 0; idx < SIZE * SIZE; idx++) {
+        el.appendChild(cellFor(idx, win, canPlay));
+      }
+    }
+
+    function cellFor(idx, win, canPlay) {
+      const cell = document.createElement("button");
+      cell.type = "button";
+      cell.className = "gp-cell";
+      const v = g.board[idx];
+      if (v !== 0) {
+        const stone = document.createElement("span");
+        stone.className = "gp-stone";
+        stone.style.background = COLORS[v - 1] || "#888";
+        cell.appendChild(stone);
+      }
+      if (win.has(idx)) cell.classList.add("win");
+      if (idx === g.last) cell.classList.add("last");
+      if (canPlay && v === 0) {
+        const row = Math.floor(idx / SIZE), col = idx % SIZE;
+        cell.classList.add("open");
+        cell.addEventListener("click", () => send({ type: "gomokup.place", row, col }));
+      }
+      return cell;
+    }
+
+    const resignBtn = $("gomokup-resign");
+    if (resignBtn) {
+      resignBtn.addEventListener("click", () => {
+        if (confirm("Resign Gomoku Party?")) send({ type: "gomokup.resign" });
+      });
+    }
+
+    function won() {
+      if (g.draw || !isPlayer()) return null;
+      if (g.winnerId) return g.winnerId === ctx.self();
+      return null; // abandoned
+    }
+
+    return {
+      onEvent(type, e) {
+        if (type !== "gomokup.state") return;
+        const prev = g;
+        g = e;
+        if (prev && prev.board && g.board && g.last >= 0 &&
+            prev.board[g.last] === 0 && g.board[g.last] !== 0 && window.fx) {
+          window.fx.sound.drop();
+        }
+        render();
+        if (prev && prev.playing && !overOf(prev) && over() && window.fx) {
+          window.fx.celebrate($("game-gomokup"), won(),
+            window.fx.result(won(), { draw: g.draw, spectator: g.outcome }));
+        }
+      },
+      setVisible(v) { visible = v; if (v) render(); },
+      card() {
+        if (!g || !g.playing) return { status: "idle" };
+        if (over()) return { status: "over", detail: over() ? outcomeText() : "" };
+        return { status: "live", myTurn: myTurn() };
+      },
+    };
+
+    function overOf(s) { return s && s.outcome !== ""; }
+  }
+
+  void NAMES; // reserved for aria labels
+})();

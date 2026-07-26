@@ -35,6 +35,7 @@ import (
 	"github.com/richardwooding/kibitz/internal/service/dots"
 	"github.com/richardwooding/kibitz/internal/service/gin"
 	"github.com/richardwooding/kibitz/internal/service/gomoku"
+	"github.com/richardwooding/kibitz/internal/service/gomokup"
 	"github.com/richardwooding/kibitz/internal/service/hex"
 	"github.com/richardwooding/kibitz/internal/service/reversi"
 	"github.com/richardwooding/kibitz/internal/service/weiqi"
@@ -86,6 +87,7 @@ type app struct {
 	wq     *weiqi.Service
 	xq     *xiangqi.Service
 	gn     *gin.Service
+	gp     *gomokup.Service // Gomoku Party (2–4 players) — networked-only, no solo twin
 	ck     *checkers.Service
 	rv     *reversi.Service
 	bs     *battleship.Service
@@ -177,6 +179,9 @@ var commands = map[string]func(command){
 
 	"gomoku.place":  func(c command) { moveGM(func(s *gomoku.Service) error { return s.Place(c.Row, c.Col) }) },
 	"gomoku.resign": func(command) { withGM((*gomoku.Service).Resign) },
+
+	"gomokup.place":  func(c command) { moveGP(func(s *gomokup.Service) error { return s.Place(c.Row, c.Col) }) },
+	"gomokup.resign": func(command) { withGP((*gomokup.Service).Resign) },
 
 	"hex.place":  func(c command) { moveHex(func(s *hex.Service) error { return s.Place(c.Row, c.Col) }) },
 	"hex.resign": func(command) { withHex((*hex.Service).Resign) },
@@ -331,7 +336,8 @@ func newServices() (ch *chat.Service, cs *chess.Service, bg *backgammon.Service,
 func start(client *session.Client, name string) {
 	ch, cs, bg, c4, gm, ck, rv, bs := newServices()
 	hx, dt, wq, xq, gn := hex.New(), dots.New(), weiqi.New(), xiangqi.New(), gin.New()
-	mux := service.NewMux(client, ch, cs, bg, c4, gm, hx, dt, wq, xq, gn, ck, rv, bs)
+	gp := gomokup.New() // Gomoku Party — networked-only (>2 players)
+	mux := service.NewMux(client, ch, cs, bg, c4, gm, hx, dt, wq, xq, gn, gp, ck, rv, bs)
 	mux.SetName(name)      // no-op for a blank name; peers then see "#id"
 	mux.SetReconnectable() // survive transient drops; see reconnectNet
 
@@ -343,6 +349,7 @@ func start(client *session.Client, name string) {
 	current.client, current.chat, current.chess = client, ch, cs
 	current.bg, current.c4, current.gm = bg, c4, gm
 	current.hx, current.dt, current.wq, current.xq, current.gn = hx, dt, wq, xq, gn
+	current.gp = gp
 	current.ck, current.rv, current.bs = ck, rv, bs
 	current.mu.Unlock()
 
@@ -416,6 +423,7 @@ func closePrev() {
 	c, host, guest := current.client, current.soloHost, current.soloGuest
 	current.client, current.soloHost, current.soloGuest = nil, nil, nil
 	current.mux = nil
+	current.gp = nil // networked-only; absent in solo
 	current.chatB, current.chessB, current.bgB = nil, nil, nil
 	current.c4B, current.gmB = nil, nil
 	current.hxB, current.dtB, current.wqB, current.xqB, current.gnB = nil, nil, nil, nil, nil
@@ -486,6 +494,14 @@ func moveGM(f func(*gomoku.Service) error) {
 	a, b, s := current.gm, current.gmB, current.solo
 	current.mu.Unlock()
 	routeMove(a, b, s, f)
+}
+
+// moveGP routes a Gomoku Party action. Networked-only: end A, no solo twin.
+func moveGP(f func(*gomokup.Service) error) {
+	current.mu.Lock()
+	a := current.gp
+	current.mu.Unlock()
+	routeMove(a, (*gomokup.Service)(nil), false, f)
 }
 
 func moveHex(f func(*hex.Service) error) {
@@ -564,6 +580,9 @@ func startGame(id string) {
 	if current.gn != nil {
 		starters["gin"] = current.gn.Start
 	}
+	if current.gp != nil {
+		starters["gomokup"] = current.gp.Start
+	}
 	if current.ck != nil {
 		starters["checkers"] = current.ck.Start
 	}
@@ -614,6 +633,8 @@ func pump(mux *service.Mux, gen int, isSolo, vsBot bool) {
 			emitC4State(e)
 		case gomoku.State:
 			emitGomokuState(e)
+		case gomokup.State:
+			emitGomokupState(e)
 		case hex.State:
 			emitHexState(e)
 		case dots.State:
@@ -836,6 +857,19 @@ func emitGomokuState(e gomoku.State) {
 	})
 }
 
+func emitGomokupState(e gomokup.State) {
+	seats := make([]uint32, len(e.Seats))
+	for i, id := range e.Seats {
+		seats[i] = uint32(id)
+	}
+	emit("gomokup.state", map[string]any{
+		"board": e.Board[:], "seats": seats, "gone": e.Gone,
+		"turnId": uint32(e.TurnID), "winnerId": uint32(e.WinnerID),
+		"outcome": e.Outcome, "draw": e.Draw, "winCells": e.WinCells,
+		"last": e.Last, "playing": e.Playing, "history": e.History,
+	})
+}
+
 func emitHexState(e hex.State) {
 	emit("hex.state", map[string]any{
 		"canTakeback": e.CanTakeback, "takebackBy": uint32(e.TakebackBy),
@@ -950,6 +984,13 @@ func withC4(f func(*connect4.Service) error) {
 func withGM(f func(*gomoku.Service) error) {
 	current.mu.Lock()
 	s := current.gm
+	current.mu.Unlock()
+	callService(s == nil, func() error { return f(s) })
+}
+
+func withGP(f func(*gomokup.Service) error) {
+	current.mu.Lock()
+	s := current.gp
 	current.mu.Unlock()
 	callService(s == nil, func() error { return f(s) })
 }
