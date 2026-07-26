@@ -183,7 +183,11 @@
     const canStart = state.role === "host" || state.role === "player";
     // A spectator can't start games — if none is live yet, say so rather than
     // showing a grid of unstartable cards.
-    if (state.role === "spectator" && !Object.values(games).some((m) => m.card().status === "live")) {
+    const anyOpenable = Object.values(games).some((m) => {
+      const st = m.card().status;
+      return st === "live" || st === "lobby";
+    });
+    if (state.role === "spectator" && !anyOpenable) {
       const hint = document.createElement("p");
       hint.className = "note picker-hint";
       hint.textContent = "👁 You're watching — waiting for the players to start a game.";
@@ -240,6 +244,11 @@
     badge.className = "game-badge " + info.status;
     if (info.status === "live") {
       badge.textContent = info.myTurn ? "● your turn" : "○ in play";
+      makeCardOpenGame(card, id);
+    } else if (info.status === "lobby") {
+      // A table is open for seating — anyone (incl. spectators) may open the
+      // pane to take a seat, so the card is clickable regardless of canStart.
+      badge.textContent = info.detail || "● seating";
       makeCardOpenGame(card, id);
     } else if (info.status === "over") {
       badge.textContent = info.detail || "finished";

@@ -53,7 +53,8 @@
       const el = $("gomokup-players");
       if (!el) return;
       el.innerHTML = "";
-      seats().forEach((id, i) => {
+      const claimed = seats();
+      claimed.forEach((id, i) => {
         const row = document.createElement("span");
         row.className = "gp-player";
         if (!over() && id === g.turnId) row.classList.add("on-turn");
@@ -64,6 +65,51 @@
         row.appendChild(nm);
         el.appendChild(row);
       });
+      if (g.lobby) {
+        for (let i = claimed.length; i < (g.maxSeats || 4); i++) {
+          const slot = document.createElement("span");
+          slot.className = "gp-player gp-empty";
+          slot.textContent = "＋ open seat";
+          el.appendChild(slot);
+        }
+      }
+    }
+
+    // ---- lobby --------------------------------------------------------------
+
+    function lobbyBtn(text, onClick, primary) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "gp-lobby-btn" + (primary ? " primary" : "");
+      b.textContent = text;
+      b.addEventListener("click", onClick);
+      return b;
+    }
+
+    function note(text) {
+      const d = document.createElement("div");
+      d.className = "gp-note";
+      d.textContent = text;
+      return d;
+    }
+
+    function renderLobbyControls() {
+      const el = $("gomokup-lobby");
+      if (!el) return;
+      el.innerHTML = "";
+      const claimed = seats();
+      if (isPlayer()) {
+        el.appendChild(lobbyBtn("Leave seat", () => send({ type: "gomokup.leaveSeat" })));
+      } else if (claimed.length < (g.maxSeats || 4)) {
+        el.appendChild(lobbyBtn("Take a seat", () => send({ type: "gomokup.takeSeat" })));
+      } else {
+        el.appendChild(note("Table full — you're watching"));
+      }
+      if (g.canBegin) {
+        el.appendChild(lobbyBtn("Begin game ▶", () => send({ type: "gomokup.begin" }), true));
+      } else {
+        el.appendChild(note(claimed.length < 2 ? "Need at least two seated to begin…" : "Waiting for the host to begin…"));
+      }
     }
 
     // ---- board --------------------------------------------------------------
@@ -72,13 +118,21 @@
       if (!visible || !g) return;
       ctx.renderMoves($("gomokup-moves"), g.history);
       const statusEl = $("gomokup-status");
+      const lobby = !!g.lobby;
+      $("gomokup-lobby").classList.toggle("hidden", !lobby);
+      $("gomokup-board").classList.toggle("hidden", lobby);
+      renderPlayers();
+      if (lobby) {
+        statusEl.textContent = "Open table — take a seat to play (2–4 players)";
+        renderLobbyControls();
+        $("gomokup-resign").classList.add("hidden");
+        return;
+      }
       if (!g.playing && !over()) {
-        statusEl.textContent = "Waiting for the host to start…";
-        renderPlayers();
+        statusEl.textContent = "Waiting for the host to open a table…";
         return;
       }
       statusEl.textContent = statusText();
-      renderPlayers();
       $("gomokup-resign").classList.toggle("hidden", !isPlayer() || over());
       renderBoard(myTurn() && !over());
     }
@@ -144,8 +198,10 @@
       },
       setVisible(v) { visible = v; if (v) render(); },
       card() {
-        if (!g || !g.playing) return { status: "idle" };
-        if (over()) return { status: "over", detail: over() ? outcomeText() : "" };
+        if (!g) return { status: "idle" };
+        if (g.lobby) return { status: "lobby" };
+        if (!g.playing) return { status: "idle" };
+        if (over()) return { status: "over", detail: outcomeText() };
         return { status: "live", myTurn: myTurn() };
       },
     };

@@ -710,6 +710,39 @@ button.back { margin-bottom: 0.7rem; }
   border: 1px solid rgba(0, 0, 0, 0.4);
   flex: none;
 }
+.gp-player.gp-empty {
+  opacity: 0.55;
+  border: 1px dashed var(--border, #333);
+  font-style: italic;
+}
+/* gomoku party lobby: take-a-seat controls */
+.gp-lobby {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 1rem;
+  margin: 0.4rem 0;
+  border: 1px solid var(--border, #333);
+  border-radius: 12px;
+  background: var(--panel-2, #16161c);
+}
+.gp-lobby-btn {
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--border, #333);
+  background: var(--panel, #1c1c24);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.gp-lobby-btn.primary {
+  border-color: var(--accent, #7c5cff);
+  background: color-mix(in srgb, var(--accent, #7c5cff) 24%, transparent);
+  font-weight: 600;
+}
+.gp-lobby-btn:hover { border-color: var(--accent, #7c5cff); }
+.gp-note { opacity: 0.75; font-size: 0.92rem; }
 
 /* hex — an 11×11 rhombus of hexagons; each row is sheared right by half a cell */
 .hx-board {

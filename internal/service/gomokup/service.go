@@ -4,10 +4,12 @@
 // hash is computed identically on send and receive), but backed by game.Ring
 // (N ordered seats + a rotating turn) instead of the two-seat game.Table.
 //
-// Seating is host-authoritative: the host accumulates keyed members, builds the
-// seat list at Start, and broadcasts it; every end adopts it verbatim. Play is
-// peer-to-peer both-sides-validate; a mover's color is derived from its seat,
-// never trusted from the wire.
+// Seating goes through a take-a-seat / watch LOBBY: the host opens a table, any
+// participant (player or spectator) claims or releases a seat (up to MaxSeats),
+// and the host begins once ≥2 are seated. Seating is host-authoritative (the
+// host owns the claimed list and broadcasts it; every end adopts it verbatim).
+// Play is peer-to-peer both-sides-validate; a mover's color is derived from its
+// seat, never trusted from the wire.
 package gomokup
 
 import (
@@ -29,16 +31,20 @@ const ID = "gomokup"
 const MaxSeats = 4
 
 const (
-	kindNewGame  uint8 = 1
-	kindStartReq uint8 = 2
+	kindNewGame  uint8 = 1 // host→all: begin play with a seat list + opening turn
+	kindStartReq uint8 = 2 // non-host→host: please open a table
 	kindPlace    uint8 = 3
 	kindResign   uint8 = 4
+	kindOpen     uint8 = 5 // host→all: a table is open for seating (carries claimed)
+	kindSeats    uint8 = 6 // host→all: authoritative claimed-seat list
+	kindSeatReq  uint8 = 7 // participant→host: take a seat
+	kindLeaveReq uint8 = 8 // participant→host: leave my seat
 )
 
 type msg struct {
 	Kind      uint8    `cbor:"1,keyasint"`
-	Seats     []uint32 `cbor:"2,keyasint,omitempty"` // new-game seat list, seat order
-	Turn      uint8    `cbor:"3,keyasint,omitempty"` // opening seat index
+	Seats     []uint32 `cbor:"2,keyasint,omitempty"` // seat/claimed list
+	Turn      uint8    `cbor:"3,keyasint,omitempty"` // opening seat index (begin)
 	Row       int8     `cbor:"4,keyasint,omitempty"`
 	Col       int8     `cbor:"5,keyasint,omitempty"`
 	StateHash []byte   `cbor:"6,keyasint,omitempty"`
@@ -54,21 +60,26 @@ type snapshot struct {
 	Last    int16    `cbor:"7,keyasint"`
 	History []string `cbor:"8,keyasint,omitempty"`
 	Gone    []bool   `cbor:"9,keyasint,omitempty"`
+	Lobby   bool     `cbor:"10,keyasint,omitempty"`
+	Claimed []uint32 `cbor:"11,keyasint,omitempty"`
 }
 
 // State is emitted after every change; the UI renders it directly.
 type State struct {
 	Playing  bool
+	Lobby    bool // in the take-a-seat lobby (not yet playing)
 	Board    Board
-	Seats    []wire.ParticipantID // ordered seats; index = color-1
-	Gone     []bool               // per-seat: left/resigned
-	TurnID   wire.ParticipantID   // 0 when over/idle
+	Seats    []wire.ParticipantID // lobby: claimed seats; playing: the seats (index = color-1)
+	Gone     []bool               // per-seat: left/resigned (playing)
+	TurnID   wire.ParticipantID   // 0 when over/idle/lobby
 	WinnerID wire.ParticipantID   // 0 = none/abandoned/draw
 	Draw     bool
 	Outcome  string // "", "seat N wins", "abandoned", "draw" (UI shows names)
 	WinCells []int16
 	Last     int16    // last placed stone's index, -1 when none
 	History  []string // ordered notation, "🔴 h8"
+	MaxSeats int      // seat cap
+	CanBegin bool     // this end is the host and ≥2 are seated
 }
 
 // stoneGlyph is the notation marker per seat color (index 0..MaxSeats-1).
@@ -79,6 +90,11 @@ var (
 	ErrNoGame   = errors.New("gomokup: no game in progress")
 	ErrNotSeat  = errors.New("gomokup: not a player in this game")
 	ErrNoResign = errors.New("gomokup: no game to resign")
+
+	errNotHost    = errors.New("gomokup: only the host can do that")
+	errNotLobby   = errors.New("gomokup: no open table")
+	errTooFew     = errors.New("gomokup: need at least two seated players")
+	errInProgress = errors.New("gomokup: a game is in progress")
 )
 
 // Service implements service.Service; the mutex covers game state between the
@@ -88,6 +104,8 @@ type Service struct {
 
 	mu      sync.Mutex
 	ring    game.Ring
+	lobby   bool                 // an open table awaiting seats
+	claimed []wire.ParticipantID // host-authoritative claimed seats (mirrored on all ends)
 	board   Board
 	ph      game.Phase
 	winner  int8 // 0 none/abandoned, else winning seat+1
@@ -103,55 +121,124 @@ func (s *Service) Version() int { return 1 }
 
 func (s *Service) Attach(ctx service.Context) { s.SetContext(ctx) }
 
-// OnPromote resets host-only seat bookkeeping when this end is promoted to host
-// (migration); a promoted host re-seeds Members from new joins.
+// OnPromote resets rematch bookkeeping when this end is promoted to host.
 func (s *Service) OnPromote() {
 	s.mu.Lock()
 	s.ring.OnPromote()
 	s.mu.Unlock()
 }
 
-func (s *Service) MemberKeyed(id wire.ParticipantID, _ session.Role) {
-	if !s.Ctx().Host {
-		return
-	}
-	s.mu.Lock()
-	s.ring.NoteKeyed(id) // every keyed member is seatable (up to MaxSeats)
-	s.mu.Unlock()
-}
+// MemberKeyed is a no-op: seating is by explicit lobby claim, not by keying.
+// (Kept to satisfy the MemberObserver interface alongside MemberLeft.)
+func (s *Service) MemberKeyed(wire.ParticipantID, session.Role) {}
 
 func (s *Service) MemberLeft(id wire.ParticipantID) {
 	s.mu.Lock()
+	host := s.Ctx().Host
+	if host {
+		s.claimed = removeID(s.claimed, id)
+	}
 	winnerSeat, over := s.ring.NoteLeft(id, s.ph)
 	if over {
 		s.endLocked(winnerSeat)
 	}
+	inLobby := s.lobby
+	seats := idsToU32(s.claimed)
 	s.mu.Unlock()
-	if over {
+
+	switch {
+	case over:
 		s.emitState()
+	case host && inLobby:
+		_ = s.broadcastSeats(seats) // a claimant left the lobby → free the seat everywhere
 	}
 }
 
-// Start launches a game or rematch (host seats; players ask via startReq).
+// --- lobby: open / seat / begin ---------------------------------------------
+
+// Start opens a table (host) or asks the host to open one (non-host).
 func (s *Service) Start() error {
 	if !s.Ctx().Host {
-		body, err := wire.Marshal(msg{Kind: kindStartReq})
-		if err != nil {
-			return err
-		}
-		return s.Ctx().Send.SendTo(s.Ctx().HostID, ID, body)
+		return s.sendToHost(kindStartReq)
 	}
-	return s.hostStart(s.Ctx().Self)
+	return s.hostOpen()
 }
 
-func (s *Service) hostStart(from wire.ParticipantID) error {
+// hostOpen enters the seating lobby. It carries the claimed list across a
+// rematch (leavers already dropped); a fresh table seeds the host into seat 0.
+func (s *Service) hostOpen() error {
 	s.mu.Lock()
-	if err := s.ring.AuthorizeStart(s.Ctx().Host, from, s.Ctx().Self, s.ph); err != nil {
+	if s.ph == game.Playing {
 		s.mu.Unlock()
-		return err
+		return errInProgress
 	}
-	seats := s.ring.Seat(s.Ctx().Self)
-	turn := s.ring.Turn
+	s.clearBoardLocked()
+	s.ph = game.Idle
+	s.lobby = true
+	if len(s.claimed) == 0 {
+		s.claimed = []wire.ParticipantID{s.Ctx().Self}
+	}
+	seats := idsToU32(s.claimed)
+	s.mu.Unlock()
+	return s.broadcast(kindOpen, seats)
+}
+
+// TakeSeat / LeaveSeat claim or release this end's seat in the open lobby.
+func (s *Service) TakeSeat() error {
+	if !s.Ctx().Host {
+		return s.sendToHost(kindSeatReq)
+	}
+	return s.hostClaim(s.Ctx().Self)
+}
+
+func (s *Service) LeaveSeat() error {
+	if !s.Ctx().Host {
+		return s.sendToHost(kindLeaveReq)
+	}
+	return s.hostRelease(s.Ctx().Self)
+}
+
+func (s *Service) hostClaim(id wire.ParticipantID) error {
+	s.mu.Lock()
+	if !s.lobby {
+		s.mu.Unlock()
+		return errNotLobby
+	}
+	if len(s.claimed) < MaxSeats && !containsID(s.claimed, id) {
+		s.claimed = append(s.claimed, id)
+	}
+	seats := idsToU32(s.claimed)
+	s.mu.Unlock()
+	return s.broadcastSeats(seats)
+}
+
+func (s *Service) hostRelease(id wire.ParticipantID) error {
+	s.mu.Lock()
+	if !s.lobby {
+		s.mu.Unlock()
+		return errNotLobby
+	}
+	s.claimed = removeID(s.claimed, id)
+	seats := idsToU32(s.claimed)
+	s.mu.Unlock()
+	return s.broadcastSeats(seats)
+}
+
+// Begin starts play from the claimed seats (host only, ≥2 seated).
+func (s *Service) Begin() error {
+	s.mu.Lock()
+	if !s.Ctx().Host {
+		s.mu.Unlock()
+		return errNotHost
+	}
+	if !s.lobby || len(s.claimed) < 2 {
+		s.mu.Unlock()
+		return errTooFew
+	}
+	seats := append([]wire.ParticipantID(nil), s.claimed...)
+	turn := s.ring.Games % len(seats)
+	s.ring.SetSeats(seats, turn)
+	s.ring.Games++
 	s.resetLocked()
 	s.mu.Unlock()
 
@@ -166,16 +253,7 @@ func (s *Service) hostStart(from wire.ParticipantID) error {
 	return nil
 }
 
-// resetLocked clears the board for a new game; the ring's Seats/Turn/Gone were
-// set by Seat (host) or SetSeats (joiner) just before.
-func (s *Service) resetLocked() {
-	s.board = Board{}
-	s.ph = game.Playing
-	s.winner = 0
-	s.draw = false
-	s.last = -1
-	s.history = nil
-}
+// --- play -------------------------------------------------------------------
 
 func (s *Service) notePlaceLocked(seat int, row, col int8) {
 	glyph := "⚫"
@@ -254,26 +332,69 @@ func (s *Service) HandleFrame(from wire.ParticipantID, body []byte) error {
 	}
 	switch m.Kind {
 	case kindNewGame:
-		if from != s.Ctx().HostID {
-			return fmt.Errorf("gomokup: new game from non-host %d", from)
-		}
-		s.mu.Lock()
-		s.ring.SetSeats(u32ToIDs(m.Seats), int(m.Turn))
-		s.resetLocked()
-		s.mu.Unlock()
-		s.emitState()
-		return nil
+		return s.handleNewGame(from, m)
 	case kindStartReq:
-		if !s.Ctx().Host {
-			return nil
+		if s.Ctx().Host {
+			return s.hostOpen()
 		}
-		return s.hostStart(from)
+		return nil
+	case kindSeatReq:
+		if s.Ctx().Host {
+			return s.hostClaim(from)
+		}
+		return nil
+	case kindLeaveReq:
+		if s.Ctx().Host {
+			return s.hostRelease(from)
+		}
+		return nil
+	case kindOpen:
+		return s.handleOpen(from, m)
+	case kindSeats:
+		return s.handleSeats(from, m)
 	case kindPlace:
 		return s.handlePlace(from, m)
 	case kindResign:
 		return s.handleResign(from)
 	}
 	return fmt.Errorf("gomokup: unknown message kind %d", m.Kind)
+}
+
+func (s *Service) handleNewGame(from wire.ParticipantID, m msg) error {
+	if from != s.Ctx().HostID {
+		return fmt.Errorf("gomokup: new game from non-host %d", from)
+	}
+	s.mu.Lock()
+	s.ring.SetSeats(u32ToIDs(m.Seats), int(m.Turn))
+	s.resetLocked()
+	s.mu.Unlock()
+	s.emitState()
+	return nil
+}
+
+func (s *Service) handleOpen(from wire.ParticipantID, m msg) error {
+	if from != s.Ctx().HostID {
+		return nil
+	}
+	s.mu.Lock()
+	s.clearBoardLocked()
+	s.ph = game.Idle
+	s.lobby = true
+	s.claimed = u32ToIDs(m.Seats)
+	s.mu.Unlock()
+	s.emitState()
+	return nil
+}
+
+func (s *Service) handleSeats(from wire.ParticipantID, m msg) error {
+	if from != s.Ctx().HostID {
+		return nil
+	}
+	s.mu.Lock()
+	s.claimed = u32ToIDs(m.Seats)
+	s.mu.Unlock()
+	s.emitState()
+	return nil
 }
 
 func (s *Service) handlePlace(from wire.ParticipantID, m msg) error {
@@ -318,6 +439,7 @@ func (s *Service) handleResign(from wire.ParticipantID) error {
 // endLocked marks the game over with the given winning seat (-1 = abandoned).
 func (s *Service) endLocked(winnerSeat int) {
 	s.ph = game.Over
+	s.lobby = false
 	if winnerSeat >= 0 {
 		s.winner = int8(winnerSeat) + 1
 	} else {
@@ -328,13 +450,13 @@ func (s *Service) endLocked(winnerSeat int) {
 func (s *Service) Snapshot() ([]byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.ph == game.Idle {
+	if s.ph == game.Idle && !s.lobby {
 		return nil, nil
 	}
 	return wire.Marshal(snapshot{
 		Board: s.board, Seats: idsToU32(s.ring.Seats), Turn: uint8(s.ring.Turn),
 		Phase: uint8(s.ph), Winner: s.winner, Draw: s.draw, Last: s.last,
-		History: s.history, Gone: s.ring.Gone,
+		History: s.history, Gone: s.ring.Gone, Lobby: s.lobby, Claimed: idsToU32(s.claimed),
 	})
 }
 
@@ -344,8 +466,16 @@ func (s *Service) Restore(blob []byte) error {
 		return fmt.Errorf("gomokup: restore: %w", err)
 	}
 	s.mu.Lock()
-	if s.ph != game.Idle { // late-joiner catch-up only
+	if s.ph != game.Idle || s.lobby { // late-joiner catch-up only
 		s.mu.Unlock()
+		return nil
+	}
+	s.claimed = u32ToIDs(snap.Claimed)
+	if snap.Lobby {
+		s.lobby = true
+		s.ph = game.Idle
+		s.mu.Unlock()
+		s.emitState()
 		return nil
 	}
 	s.board = snap.Board
@@ -371,6 +501,23 @@ func (s *Service) State() State {
 }
 
 // --- internals ---------------------------------------------------------------
+
+// clearBoardLocked resets the board (not the phase or lobby flags).
+func (s *Service) clearBoardLocked() {
+	s.board = Board{}
+	s.winner = 0
+	s.draw = false
+	s.last = -1
+	s.history = nil
+}
+
+// resetLocked begins a fresh game: board cleared, playing, lobby closed. The
+// ring's Seats/Turn/Gone were set just before (Begin host / handleNewGame joiner).
+func (s *Service) resetLocked() {
+	s.clearBoardLocked()
+	s.ph = game.Playing
+	s.lobby = false
+}
 
 func (s *Service) checkTurnLocked(who wire.ParticipantID) (int, error) {
 	if s.ph != game.Playing {
@@ -418,17 +565,20 @@ func (s *Service) emitState() {
 }
 
 func (s *Service) stateLocked() State {
-	if s.ph == game.Idle {
-		return State{Last: -1}
+	if s.ph == game.Idle && !s.lobby {
+		return State{Last: -1, MaxSeats: MaxSeats}
 	}
-	st := State{
-		Playing: true,
-		Board:   s.board,
-		Seats:   append([]wire.ParticipantID(nil), s.ring.Seats...),
-		Gone:    append([]bool(nil), s.ring.Gone...),
-		Last:    s.last,
-		History: append([]string(nil), s.history...),
+	st := State{MaxSeats: MaxSeats, Last: s.last, History: append([]string(nil), s.history...)}
+	if s.lobby {
+		st.Lobby = true
+		st.Seats = append([]wire.ParticipantID(nil), s.claimed...)
+		st.CanBegin = s.Ctx().Host && len(s.claimed) >= 2
+		return st
 	}
+	st.Playing = true
+	st.Board = s.board
+	st.Seats = append([]wire.ParticipantID(nil), s.ring.Seats...)
+	st.Gone = append([]bool(nil), s.ring.Gone...)
 	switch {
 	case s.ph == game.Over && s.draw:
 		st.Outcome = "draw"
@@ -446,6 +596,30 @@ func (s *Service) stateLocked() State {
 	return st
 }
 
+// --- message + slice helpers -------------------------------------------------
+
+func (s *Service) sendToHost(kind uint8) error {
+	body, err := wire.Marshal(msg{Kind: kind})
+	if err != nil {
+		return err
+	}
+	return s.Ctx().Send.SendTo(s.Ctx().HostID, ID, body)
+}
+
+func (s *Service) broadcast(kind uint8, seats []uint32) error {
+	body, err := wire.Marshal(msg{Kind: kind, Seats: seats})
+	if err != nil {
+		return err
+	}
+	if err := s.Ctx().Send.Broadcast(ID, body); err != nil {
+		return err
+	}
+	s.emitState()
+	return nil
+}
+
+func (s *Service) broadcastSeats(seats []uint32) error { return s.broadcast(kindSeats, seats) }
+
 func idsToU32(ids []wire.ParticipantID) []uint32 {
 	out := make([]uint32, len(ids))
 	for i, id := range ids {
@@ -460,4 +634,22 @@ func u32ToIDs(us []uint32) []wire.ParticipantID {
 		out[i] = wire.ParticipantID(u)
 	}
 	return out
+}
+
+func containsID(ids []wire.ParticipantID, id wire.ParticipantID) bool {
+	for _, x := range ids {
+		if x == id {
+			return true
+		}
+	}
+	return false
+}
+
+func removeID(ids []wire.ParticipantID, id wire.ParticipantID) []wire.ParticipantID {
+	for i, x := range ids {
+		if x == id {
+			return append(ids[:i], ids[i+1:]...)
+		}
+	}
+	return ids
 }

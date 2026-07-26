@@ -180,8 +180,11 @@ var commands = map[string]func(command){
 	"gomoku.place":  func(c command) { moveGM(func(s *gomoku.Service) error { return s.Place(c.Row, c.Col) }) },
 	"gomoku.resign": func(command) { withGM((*gomoku.Service).Resign) },
 
-	"gomokup.place":  func(c command) { moveGP(func(s *gomokup.Service) error { return s.Place(c.Row, c.Col) }) },
-	"gomokup.resign": func(command) { withGP((*gomokup.Service).Resign) },
+	"gomokup.place":     func(c command) { moveGP(func(s *gomokup.Service) error { return s.Place(c.Row, c.Col) }) },
+	"gomokup.resign":    func(command) { withGP((*gomokup.Service).Resign) },
+	"gomokup.takeSeat":  func(command) { withGP((*gomokup.Service).TakeSeat) },
+	"gomokup.leaveSeat": func(command) { withGP((*gomokup.Service).LeaveSeat) },
+	"gomokup.begin":     func(command) { withGP((*gomokup.Service).Begin) },
 
 	"hex.place":  func(c command) { moveHex(func(s *hex.Service) error { return s.Place(c.Row, c.Col) }) },
 	"hex.resign": func(command) { withHex((*hex.Service).Resign) },
@@ -867,6 +870,7 @@ func emitGomokupState(e gomokup.State) {
 		"turnId": uint32(e.TurnID), "winnerId": uint32(e.WinnerID),
 		"outcome": e.Outcome, "draw": e.Draw, "winCells": e.WinCells,
 		"last": e.Last, "playing": e.Playing, "history": e.History,
+		"lobby": e.Lobby, "maxSeats": e.MaxSeats, "canBegin": e.CanBegin,
 	})
 }
 

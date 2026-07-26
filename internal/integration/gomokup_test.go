@@ -7,6 +7,7 @@ import (
 	"github.com/richardwooding/kibitz/internal/service"
 	"github.com/richardwooding/kibitz/internal/service/gomokup"
 	"github.com/richardwooding/kibitz/internal/session"
+	"github.com/richardwooding/kibitz/internal/wire"
 )
 
 type gpTable struct {
@@ -77,26 +78,63 @@ func gpWait(t *testing.T, tb *gpTable, match func(gomokup.State) bool) gomokup.S
 	panic("unreachable")
 }
 
-// TestGomokuPartyThreeHanded plays a full 3-player Gomoku Party game over the
-// relay: turns rotate host→p1→p2, the host completes five-in-a-row, and all
-// three ends converge on the same winner with no desync — proving the N-seat
-// model + both-sides-validate work for more than two players.
-func TestGomokuPartyThreeHanded(t *testing.T) {
+func seatsHave(st gomokup.State, id wire.ParticipantID) bool {
+	for _, s := range st.Seats {
+		if s == id {
+			return true
+		}
+	}
+	return false
+}
+
+// openAndSeat opens the lobby (host), has each joiner take a seat, and waits for
+// every end to see all three seated. Returns once the lobby holds host+p1+p2.
+func openAndSeat(t *testing.T, host, p1, p2 *gpTable) {
+	t.Helper()
+	if err := host.gp.Start(); err != nil { // opens the lobby (host auto-seats)
+		t.Fatalf("open: %v", err)
+	}
+	for _, tb := range []*gpTable{host, p1, p2} {
+		gpWait(t, tb, func(s gomokup.State) bool { return s.Lobby })
+	}
+	if err := p1.gp.TakeSeat(); err != nil {
+		t.Fatalf("p1 take seat: %v", err)
+	}
+	if err := p2.gp.TakeSeat(); err != nil {
+		t.Fatalf("p2 take seat: %v", err)
+	}
+	for _, tb := range []*gpTable{host, p1, p2} {
+		gpWait(t, tb, func(s gomokup.State) bool {
+			return s.Lobby && len(s.Seats) == 3 &&
+				seatsHave(s, host.client.Self()) && seatsHave(s, p1.client.Self()) && seatsHave(s, p2.client.Self())
+		})
+	}
+}
+
+// TestGomokuPartyLobbyThreeHanded exercises the full lobby → play path: the host
+// opens a table, two joiners take seats (host auto-seated), the host begins, and
+// a 3-player game plays to a five-in-a-row win with all ends converged.
+func TestGomokuPartyLobbyThreeHanded(t *testing.T) {
 	url := startRelay(t)
 	host, phrase := hostGP(t, url)
 	p1 := joinGP(t, url, phrase)
 	p2 := joinGP(t, url, phrase)
-
-	// The host must have keyed BOTH joiners before Start (so all three are seated).
 	gpWaitRoster(t, host, 3)
 	gpDrain(host)
 	gpDrain(p1)
 	gpDrain(p2)
 
-	pollStart(t, host.gp.Start)
+	openAndSeat(t, host, p1, p2)
 
-	// Seats are [host, p1, p2]; the host opens. Host builds a five on row 0 while
-	// the others fill separate rows (no block, no earlier win).
+	if err := host.gp.Begin(); err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	for _, tb := range []*gpTable{host, p1, p2} {
+		gpWait(t, tb, func(s gomokup.State) bool { return s.Playing && len(s.Seats) == 3 })
+	}
+
+	// Seats are [host, p1, p2]; host opens. Host builds a five on row 0 while the
+	// others fill separate rows.
 	type mv struct {
 		tb   *gpTable
 		r, c int8
@@ -106,7 +144,7 @@ func TestGomokuPartyThreeHanded(t *testing.T) {
 		{host, 0, 1}, {p1, 5, 1}, {p2, 10, 1},
 		{host, 0, 2}, {p1, 5, 2}, {p2, 10, 2},
 		{host, 0, 3}, {p1, 5, 3}, {p2, 10, 3},
-		{host, 0, 4}, // host's fifth in a row → win
+		{host, 0, 4}, // host's fifth → win
 	}
 	for _, m := range seq {
 		self := uint32(m.tb.client.Self())
@@ -115,7 +153,6 @@ func TestGomokuPartyThreeHanded(t *testing.T) {
 			t.Fatalf("place (%d,%d): %v", m.r, m.c, err)
 		}
 	}
-
 	for _, tb := range []*gpTable{host, p1, p2} {
 		st := gpWait(t, tb, func(s gomokup.State) bool { return s.Outcome != "" })
 		if uint32(st.WinnerID) != uint32(host.client.Self()) {
@@ -124,34 +161,69 @@ func TestGomokuPartyThreeHanded(t *testing.T) {
 		if len(st.WinCells) != 5 {
 			t.Fatalf("win cells = %v, want 5", st.WinCells)
 		}
-		if len(st.Seats) != 3 {
-			t.Fatalf("seats = %v, want 3", st.Seats)
-		}
+	}
+}
+
+// TestGomokuPartyLobbyLeaveAndGate: a claimant can release a seat (freeing it on
+// every end), and the host cannot begin with fewer than two seated.
+func TestGomokuPartyLobbyLeaveAndGate(t *testing.T) {
+	url := startRelay(t)
+	host, phrase := hostGP(t, url)
+	p1 := joinGP(t, url, phrase)
+	p2 := joinGP(t, url, phrase)
+	gpWaitRoster(t, host, 3)
+	gpDrain(host)
+	gpDrain(p1)
+	gpDrain(p2)
+
+	if err := host.gp.Start(); err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	for _, tb := range []*gpTable{host, p1, p2} {
+		gpWait(t, tb, func(s gomokup.State) bool { return s.Lobby && len(s.Seats) == 1 })
+	}
+
+	// p1 takes a seat, then leaves — the seat frees on every end.
+	if err := p1.gp.TakeSeat(); err != nil {
+		t.Fatalf("take: %v", err)
+	}
+	for _, tb := range []*gpTable{host, p1, p2} {
+		gpWait(t, tb, func(s gomokup.State) bool { return len(s.Seats) == 2 })
+	}
+	if err := p1.gp.LeaveSeat(); err != nil {
+		t.Fatalf("leave: %v", err)
+	}
+	for _, tb := range []*gpTable{host, p1, p2} {
+		gpWait(t, tb, func(s gomokup.State) bool { return len(s.Seats) == 1 })
+	}
+
+	// With only the host seated, Begin is refused.
+	if err := host.gp.Begin(); err == nil {
+		t.Fatal("begin with one seated should fail")
 	}
 }
 
 // TestGomokuPartyLeaveEndsGame: with three seated players, one leaving mid-game
-// ends the game as abandoned (no single winner) on every remaining end — the
-// v1 rule that avoids racing move/leave ordering across ends.
+// ends the game as abandoned on every remaining end.
 func TestGomokuPartyLeaveEndsGame(t *testing.T) {
 	url := startRelay(t)
 	host, phrase := hostGP(t, url)
 	p1 := joinGP(t, url, phrase)
 	p2 := joinGP(t, url, phrase)
-
 	gpWaitRoster(t, host, 3)
 	gpDrain(host)
 	gpDrain(p1)
 	gpDrain(p2)
-	pollStart(t, host.gp.Start)
 
-	// One opening move so a game is genuinely in progress.
+	openAndSeat(t, host, p1, p2)
+	if err := host.gp.Begin(); err != nil {
+		t.Fatalf("begin: %v", err)
+	}
 	gpWait(t, host, func(s gomokup.State) bool { return s.Playing && uint32(s.TurnID) == uint32(host.client.Self()) })
 	if err := host.gp.Place(0, 0); err != nil {
 		t.Fatalf("place: %v", err)
 	}
 
-	// p2 departs → the game ends abandoned for the two who remain.
 	if err := p2.client.Close(); err != nil {
 		t.Fatal(err)
 	}
