@@ -222,6 +222,12 @@
   // Not-yet-live statuses: battleship's two-player note, or the default
   // "not started" card with its Start button.
   function applyIdleBadge(id, badge, card, canStart) {
+    // Gomoku Party vs the computer: pick 2–4 players (you + 1–3 bots).
+    if (state.solo && state.vsBot && id === "gomokup") {
+      badge.textContent = "vs computer";
+      card.appendChild(gomokupBotChooser());
+      return;
+    }
     // Battleship's secret placement doesn't fit pass-and-play (but is fine vs the
     // computer); Gin's dealerless shuffle needs two live players and has no bot,
     // so it's two-player-only in every solo mode.
@@ -279,6 +285,28 @@
       }
     }
     return card;
+  }
+
+  // gomokupBotChooser: a "Players: 2 / 3 / 4" row that starts a solo Gomoku
+  // Party against (n-1) bots at the current difficulty.
+  function gomokupBotChooser() {
+    const wrap = document.createElement("div");
+    wrap.className = "game-matchup gp-bot-choose";
+    const label = document.createElement("span");
+    label.textContent = "Players:";
+    wrap.appendChild(label);
+    for (const n of [2, 3, 4]) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "start-btn";
+      b.textContent = String(n);
+      b.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        send({ type: "solo", mode: "bot", game: "gomokup", seats: n, level: difficulty, name: myName() });
+      });
+      wrap.appendChild(b);
+    }
+    return wrap;
   }
 
   function actionButton(label, gameID) {

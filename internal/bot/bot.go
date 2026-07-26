@@ -20,6 +20,7 @@ import (
 	"github.com/richardwooding/kibitz/internal/service/connect4"
 	"github.com/richardwooding/kibitz/internal/service/dots"
 	"github.com/richardwooding/kibitz/internal/service/gomoku"
+	"github.com/richardwooding/kibitz/internal/service/gomokup"
 	"github.com/richardwooding/kibitz/internal/service/hex"
 	"github.com/richardwooding/kibitz/internal/service/reversi"
 	"github.com/richardwooding/kibitz/internal/service/weiqi"
@@ -62,6 +63,7 @@ type Services struct {
 	BG    *backgammon.Service
 	C4    *connect4.Service
 	GM    *gomoku.Service
+	GP    *gomokup.Service
 	HEX   *hex.Service
 	DOTS  *dots.Service
 	GO    *weiqi.Service
@@ -88,6 +90,8 @@ func Drive(events <-chan any, s Services, delay time.Duration, level Level) {
 			driveConnect4(s, e, level, pause)
 		case gomoku.State:
 			driveGomoku(s, e, level, pause)
+		case gomokup.State:
+			driveGomokup(s, e, level, pause)
 		case hex.State:
 			driveHex(s, e, level, pause)
 		case dots.State:
@@ -500,6 +504,169 @@ func gmPattern(count, open int) int {
 		return 10
 	}
 	return 1
+}
+
+// ---- gomoku party (N seats) -----------------------------------------------
+
+// driveGomokup drives a bot end of a Gomoku Party game: in the lobby it takes a
+// seat if it hasn't; on its turn it places a stone. It never begins the game —
+// that's the (human) host. Seat/color is derived from the seat list, so it works
+// for any N.
+func driveGomokup(s Services, e gomokup.State, level Level, pause func()) {
+	if e.Lobby {
+		if !seatIndex(e.Seats, s.Self, nil) {
+			pause()
+			_ = s.GP.TakeSeat()
+		}
+		return
+	}
+	if !e.Playing || e.Outcome != "" || e.TurnID != s.Self {
+		return
+	}
+	seat := -1
+	seatIndex(e.Seats, s.Self, &seat)
+	if seat < 0 {
+		return
+	}
+	if row, col, ok := gpPick(resolveLevel(level, rand.Float64()), e.Board, int8(seat)+1, len(e.Seats)); ok {
+		pause()
+		_ = s.GP.Place(row, col)
+	}
+}
+
+// seatIndex reports whether id is seated; if out != nil it also writes the seat
+// index (or -1 if absent).
+func seatIndex(seats []wire.ParticipantID, id wire.ParticipantID, out *int) bool {
+	for i, s := range seats {
+		if s == id {
+			if out != nil {
+				*out = i
+			}
+			return true
+		}
+	}
+	if out != nil {
+		*out = -1
+	}
+	return false
+}
+
+func gpPick(level Level, b gomokup.Board, color int8, nSeats int) (int8, int8, bool) {
+	if level == Hard {
+		return gpHard(b, color, nSeats)
+	}
+	return gpRandom(b)
+}
+
+func gpRandom(b gomokup.Board) (int8, int8, bool) {
+	var empty []int
+	for i := 0; i < len(b); i++ {
+		if b[i] == 0 {
+			empty = append(empty, i)
+		}
+	}
+	if len(empty) == 0 {
+		return 0, 0, false
+	}
+	i := empty[rand.Intn(len(empty))]
+	return int8(i / gomokup.Size), int8(i % gomokup.Size), true
+}
+
+// gpHard scores each candidate cell by the threat it makes for the bot plus the
+// biggest threat it denies any single opponent — completing and blocking
+// fours/open-threes across N colors without a tree search.
+func gpHard(b gomokup.Board, color int8, nSeats int) (int8, int8, bool) {
+	best, bestScore := -1, -1
+	for _, idx := range gpCandidates(b) {
+		block := 0
+		for c := int8(1); c <= int8(nSeats); c++ {
+			if c == color {
+				continue
+			}
+			if v := gpEval(b, idx, c); v > block {
+				block = v
+			}
+		}
+		if score := gpEval(b, idx, color) + block; score > bestScore {
+			bestScore, best = score, idx
+		}
+	}
+	if best < 0 {
+		return 0, 0, false
+	}
+	return int8(best / gomokup.Size), int8(best % gomokup.Size), true
+}
+
+func gpCandidates(b gomokup.Board) []int {
+	var out []int
+	any := false
+	for i := 0; i < len(b); i++ {
+		if b[i] != 0 {
+			any = true
+			continue
+		}
+		if gpNearStone(b, i) {
+			out = append(out, i)
+		}
+	}
+	if !any {
+		return []int{(gomokup.Size/2)*gomokup.Size + gomokup.Size/2}
+	}
+	return out
+}
+
+func gpNearStone(b gomokup.Board, idx int) bool {
+	row, col := idx/gomokup.Size, idx%gomokup.Size
+	for dr := -2; dr <= 2; dr++ {
+		for dc := -2; dc <= 2; dc++ {
+			if (dr != 0 || dc != 0) && gpCell(b, row+dr, col+dc) > 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func gpCell(b gomokup.Board, r, c int) int8 {
+	if r < 0 || r >= gomokup.Size || c < 0 || c >= gomokup.Size {
+		return -1
+	}
+	return b[r*gomokup.Size+c]
+}
+
+// gpEval scores placing `who` at idx: the run it would make across the four
+// lines, weighted by length and open ends (reuses gmPattern — colour-agnostic).
+func gpEval(b gomokup.Board, idx int, who int8) int {
+	row, col := idx/gomokup.Size, idx%gomokup.Size
+	dirs := [4][2]int{{1, 0}, {0, 1}, {1, 1}, {1, -1}}
+	score := 0
+	for _, d := range dirs {
+		score += gpDirScore(b, row, col, d[0], d[1], who)
+	}
+	return score
+}
+
+func gpDirScore(b gomokup.Board, row, col, dr, dc int, who int8) int {
+	count, open := 1, 0
+	r, c := row+dr, col+dc
+	for gpCell(b, r, c) == who {
+		count++
+		r += dr
+		c += dc
+	}
+	if gpCell(b, r, c) == 0 {
+		open++
+	}
+	r, c = row-dr, col-dc
+	for gpCell(b, r, c) == who {
+		count++
+		r -= dr
+		c -= dc
+	}
+	if gpCell(b, r, c) == 0 {
+		open++
+	}
+	return gmPattern(count, open)
 }
 
 // ---- hex / dots / weiqi / xiangqi -----------------------------------------

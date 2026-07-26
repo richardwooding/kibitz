@@ -743,6 +743,8 @@ button.back { margin-bottom: 0.7rem; }
 }
 .gp-lobby-btn:hover { border-color: var(--accent, #7c5cff); }
 .gp-note { opacity: 0.75; font-size: 0.92rem; }
+.gp-bot-choose { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+.gp-bot-choose .start-btn { min-width: 2.2rem; }
 
 /* hex — an 11×11 rhombus of hexagons; each row is sheared right by half a cell */
 .hx-board {

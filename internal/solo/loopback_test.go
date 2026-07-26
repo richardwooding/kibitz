@@ -7,8 +7,71 @@ import (
 
 	"github.com/richardwooding/kibitz/internal/service"
 	"github.com/richardwooding/kibitz/internal/service/connect4"
+	"github.com/richardwooding/kibitz/internal/session"
 	"github.com/richardwooding/kibitz/internal/solo"
 )
+
+func recvFrame(t *testing.T, e *solo.Endpoint) session.Frame {
+	t.Helper()
+	select {
+	case ev := <-e.Events():
+		fr, ok := ev.(session.Frame)
+		if !ok {
+			t.Fatalf("want Frame, got %T", ev)
+		}
+		return fr
+	case <-time.After(time.Second):
+		t.Fatal("no frame delivered")
+		panic("unreachable")
+	}
+}
+
+// TestPartyBroadcastAndRouting: an N-end party fans a Broadcast to every other
+// end (same seq) and routes SendTo to exactly the addressed end; seat() emits
+// one MemberKeyed per guest to the host.
+func TestPartyBroadcastAndRouting(t *testing.T) {
+	host, guests, seat := solo.NewParty(2)
+	if len(guests) != 2 {
+		t.Fatalf("guests = %d, want 2", len(guests))
+	}
+
+	seat()
+	for i := 0; i < 2; i++ {
+		if _, ok := (<-host.Events()).(session.MemberKeyed); !ok {
+			t.Fatal("seat() should emit a MemberKeyed per guest")
+		}
+	}
+
+	// Host broadcast reaches both guests with the same sequence.
+	if err := host.Broadcast("svc", []byte("hi")); err != nil {
+		t.Fatal(err)
+	}
+	var seq uint64
+	for i, g := range guests {
+		fr := recvFrame(t, g)
+		if fr.From != host.Self() || string(fr.Envelope.Body) != "hi" {
+			t.Fatalf("guest %d got %+v", i, fr)
+		}
+		if i == 0 {
+			seq = fr.Envelope.Seq
+		} else if fr.Envelope.Seq != seq {
+			t.Fatalf("broadcast seq differs across recipients: %d vs %d", fr.Envelope.Seq, seq)
+		}
+	}
+
+	// A guest's SendTo(host) reaches only the host; the other guest sees nothing.
+	if err := guests[0].SendTo(host.Self(), "svc", []byte("yo")); err != nil {
+		t.Fatal(err)
+	}
+	if fr := recvFrame(t, host); fr.From != guests[0].Self() || string(fr.Envelope.Body) != "yo" {
+		t.Fatalf("host got %+v, want a Direct from guest 0", fr)
+	}
+	select {
+	case ev := <-guests[1].Events():
+		t.Fatalf("guest 1 received a Direct not addressed to it: %+v", ev)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
 
 // TestLoopbackConnect4 plays a full Connect Four game across the two loopback
 // ends — the real both-sides-validate service on each side — and asserts they

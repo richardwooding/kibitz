@@ -12,9 +12,94 @@ import (
 	"github.com/richardwooding/kibitz/internal/service/checkers"
 	"github.com/richardwooding/kibitz/internal/service/chess"
 	"github.com/richardwooding/kibitz/internal/service/connect4"
+	"github.com/richardwooding/kibitz/internal/service/gomokup"
 	"github.com/richardwooding/kibitz/internal/service/reversi"
 	"github.com/richardwooding/kibitz/internal/solo"
 )
+
+func waitUntil(t *testing.T, d time.Duration, what string, pred func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(d)
+	for time.Now().Before(deadline) {
+		if pred() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("condition %q not met within %s", what, d)
+}
+
+func gpStones(b gomokup.Board) int {
+	n := 0
+	for _, v := range b {
+		if v != 0 {
+			n++
+		}
+	}
+	return n
+}
+
+// TestGpPickCompletesAndBlocks: the Hard heuristic completes its own open four
+// and, lacking one, blocks an opponent's open four — the decisive moves.
+func TestGpPickCompletesAndBlocks(t *testing.T) {
+	var mine gomokup.Board
+	for c := 5; c <= 8; c++ {
+		mine[10*gomokup.Size+c] = 1 // my four, cols 5–8 on row 10
+	}
+	r, c, ok := gpPick(Hard, mine, 1, 3)
+	if !ok || int(r) != 10 || (int(c) != 4 && int(c) != 9) {
+		t.Fatalf("complete four = (%d,%d),%v; want row 10 col 4 or 9", r, c, ok)
+	}
+
+	var theirs gomokup.Board
+	for c := 5; c <= 8; c++ {
+		theirs[3*gomokup.Size+c] = 2 // opponent's four, row 3
+	}
+	r, c, ok = gpPick(Hard, theirs, 1, 3) // I'm color 1 with nothing → block color 2
+	if !ok || int(r) != 3 || (int(c) != 4 && int(c) != 9) {
+		t.Fatalf("block four = (%d,%d),%v; want row 3 col 4 or 9", r, c, ok)
+	}
+}
+
+// TestGomokupBotSelfPlay: a host end plus two bot ends over the N-way loopback
+// play a full 3-handed Gomoku Party — bots take seats in the lobby, the host
+// begins, and all three ends converge on the same terminal board with no desync.
+func TestGomokupBotSelfPlay(t *testing.T) {
+	host, guests, seat := solo.NewParty(2)
+	hostGP := gomokup.New()
+	hostMux := service.NewMux(host, chat.New(), hostGP)
+	go Drive(hostMux.Events(), Services{Self: host.Self(), GP: hostGP}, time.Millisecond, Hard)
+	gps := []*gomokup.Service{hostGP}
+	for _, g := range guests {
+		gp := gomokup.New()
+		m := service.NewMux(g, chat.New(), gp)
+		go Drive(m.Events(), Services{Self: g.Self(), GP: gp}, time.Millisecond, Hard)
+		gps = append(gps, gp)
+	}
+	seat()
+
+	if err := hostGP.Start(); err != nil { // open the lobby → bots take seats
+		t.Fatal(err)
+	}
+	waitUntil(t, 3*time.Second, "three seated", func() bool { return len(hostGP.State().Seats) >= 3 })
+	if err := hostGP.Begin(); err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	waitUntil(t, 25*time.Second, "game over", func() bool { return hostGP.State().Outcome != "" })
+	waitUntil(t, 3*time.Second, "ends converge", func() bool {
+		a := hostGP.State()
+		for _, gp := range gps[1:] {
+			b := gp.State()
+			if a.Outcome != b.Outcome || a.Board != b.Board {
+				return false
+			}
+		}
+		return true
+	})
+	if gpStones(hostGP.State().Board) < 5 {
+		t.Fatalf("suspiciously short game: %d stones", gpStones(hostGP.State().Board))
+	}
+}
 
 type end struct {
 	c4  *connect4.Service

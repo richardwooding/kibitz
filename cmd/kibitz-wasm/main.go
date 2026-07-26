@@ -67,6 +67,7 @@ type command struct {
 	Name     string    `json:"name,omitempty"`     // screen name for create/join
 	Mode     string    `json:"mode,omitempty"`     // solo mode: "bot" | "hotseat"
 	Level    string    `json:"level,omitempty"`    // solo bot difficulty: "easy" | "hard"
+	Seats    int       `json:"seats,omitempty"`    // gomokup solo: total players (2–4), rest are bots
 	PushKey  string    `json:"pushKey,omitempty"`  // host: shared session VAPID keypair blob
 	Endpoint string    `json:"endpoint,omitempty"` // this client's Web Push endpoint
 	Spectate bool      `json:"spectate,omitempty"` // join intent: watch instead of play
@@ -98,6 +99,7 @@ type app struct {
 	// try end A, then end B (exactly one is on turn). See internal/solo.
 	solo                bool
 	soloHost, soloGuest *solo.Endpoint
+	soloParty           []*solo.Endpoint // gomokup solo: the bot guest ends (closed on teardown)
 	chatB               *chat.Service
 	chessB              *chess.Service
 	bgB                 *backgammon.Service
@@ -142,9 +144,15 @@ func emitError(msg string) {
 
 // commands maps UI intents to actions. Handlers run on their own goroutine.
 var commands = map[string]func(command){
-	"create":     func(c command) { create(c.Name) },
-	"join":       func(c command) { join(c.Phrase, c.Name, c.Spectate) },
-	"solo":       func(c command) { startSolo(c.Name, c.Mode == "bot", c.Level) },
+	"create": func(c command) { create(c.Name) },
+	"join":   func(c command) { join(c.Phrase, c.Name, c.Spectate) },
+	"solo": func(c command) {
+		if c.Game == "gomokup" {
+			startSoloGomokup(c.Name, c.Seats, c.Level)
+		} else {
+			startSolo(c.Name, c.Mode == "bot", c.Level)
+		}
+	},
 	"leave":      func(command) { leave() },
 	"game.start": func(c command) { startGame(c.Game) },
 
@@ -416,6 +424,78 @@ func startSolo(name string, vsBot bool, level string) {
 	seat() // seat the guest on the host → roster announce → UI joins
 }
 
+// startSoloGomokup runs a relay-free Gomoku Party against 1–3 bots: one host end
+// (the user, seat 0) plus (seats-1) bot ends wired through an N-way loopback.
+// The bots take seats in the lobby and the table auto-begins, so the user just
+// picks a count and plays. Only gomokup is available in this focused session.
+func startSoloGomokup(name string, seats int, level string) {
+	if seats < 2 {
+		seats = 2
+	}
+	if seats > gomokup.MaxSeats {
+		seats = gomokup.MaxSeats
+	}
+	host, guests, seat := solo.NewParty(seats - 1)
+	chatHost, gpHost := chat.New(), gomokup.New()
+	muxHost := service.NewMux(host, chatHost, gpHost)
+	muxHost.SetName(name)
+
+	lvl := bot.Easy
+	switch level {
+	case "hard":
+		lvl = bot.Hard
+	case "medium":
+		lvl = bot.Medium
+	}
+
+	closePrev()
+	current.mu.Lock()
+	myGen := current.gen
+	current.solo = true
+	current.mux = nil
+	current.soloHost = host
+	current.soloParty = guests
+	current.chat, current.gp = chatHost, gpHost
+	// A gomokup solo session plays only gomokup — clear any other game services
+	// left from a prior session so their picker cards aren't stale-startable.
+	current.chess, current.bg, current.c4, current.gm = nil, nil, nil, nil
+	current.hx, current.dt, current.wq, current.xq, current.gn = nil, nil, nil, nil, nil
+	current.ck, current.rv, current.bs = nil, nil, nil
+	current.mu.Unlock()
+
+	go pump(muxHost, myGen, true, true) // host end drives the UI (solo, vs bots)
+	for i, g := range guests {
+		gpB := gomokup.New()
+		muxB := service.NewMux(g, chat.New(), gpB)
+		muxB.SetName(fmt.Sprintf("Computer %d", i+1))
+		go bot.Drive(muxB.Events(), bot.Services{Self: g.Self(), GP: gpB}, 500*time.Millisecond, lvl)
+	}
+	seat() // seat all bot ends on the host → roster announce
+	go autoBeginGomokup(myGen, gpHost, seats)
+}
+
+// autoBeginGomokup opens the solo table (so the bots take their seats) and begins
+// once everyone is seated, so the user needn't work the lobby. It abandons if the
+// session is replaced (generation bumped).
+func autoBeginGomokup(gen int, gp *gomokup.Service, seats int) {
+	_ = gp.Start() // open the lobby → bots claim seats
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		current.mu.Lock()
+		stale := current.gen != gen
+		current.mu.Unlock()
+		if stale {
+			return
+		}
+		if len(gp.State().Seats) >= seats {
+			_ = gp.Begin()
+			return
+		}
+		time.Sleep(30 * time.Millisecond)
+	}
+	_ = gp.Begin() // best effort: begin with whoever seated
+}
+
 // closePrev tears down any prior session (networked client or solo loopback).
 func closePrev() {
 	current.mu.Lock()
@@ -424,9 +504,11 @@ func closePrev() {
 	// exits quietly instead of trying to reconnect a session the user replaced.
 	current.gen++
 	c, host, guest := current.client, current.soloHost, current.soloGuest
+	party := current.soloParty
 	current.client, current.soloHost, current.soloGuest = nil, nil, nil
+	current.soloParty = nil
 	current.mux = nil
-	current.gp = nil // networked-only; absent in solo
+	current.gp = nil
 	current.chatB, current.chessB, current.bgB = nil, nil, nil
 	current.c4B, current.gmB = nil, nil
 	current.hxB, current.dtB, current.wqB, current.xqB, current.gnB = nil, nil, nil, nil, nil
@@ -443,6 +525,9 @@ func closePrev() {
 	}
 	if guest != nil {
 		guest.Close()
+	}
+	for _, g := range party {
+		g.Close()
 	}
 }
 
