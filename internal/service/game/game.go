@@ -75,6 +75,13 @@ type Table struct {
 	Seats    Seats
 	Opponent wire.ParticipantID // host side: the first RolePlayer to key in
 	Games    int                // completed games; drives rematch seat swap
+	// Departed remembers every participant whose session leave this end has
+	// seen. The relay orders frames per sender only, so a leave can overtake
+	// a newGame or snapshot already in flight from the host — the seat pair
+	// then arrives still naming the departed player. ApplyDeparted re-checks
+	// freshly installed seats against this set. Participant IDs are never
+	// reused within a session, so a recorded departure is final.
+	Departed map[wire.ParticipantID]bool
 }
 
 // NoteKeyed records the first player to complete the handshake (host side).
@@ -89,6 +96,10 @@ func (t *Table) NoteKeyed(id wire.ParticipantID, role session.Role) {
 // game, the remaining side wins by forfeit. Reports (winningSide, true) when
 // a forfeit applies.
 func (t *Table) NoteLeft(id wire.ParticipantID, ph Phase) (Side, bool) {
+	if t.Departed == nil {
+		t.Departed = map[wire.ParticipantID]bool{}
+	}
+	t.Departed[id] = true
 	if id == t.Opponent {
 		t.Opponent = 0
 	}
@@ -100,6 +111,22 @@ func (t *Table) NoteLeft(id wire.ParticipantID, ph Phase) (Side, bool) {
 		return 0, false
 	}
 	return side.Opponent(), true
+}
+
+// ApplyDeparted reports a forfeit for a just-installed seat pair whose player
+// already left the session (see Departed) — exactly what NoteLeft would have
+// reported had the seats been in place when the leave arrived. Call it after
+// installing Seats (from a newGame or snapshot); the caller decides, by its
+// own phase, whether the forfeit applies. If both seats departed, P1's leave
+// wins the tie deterministically so every end converges on the same result.
+func (t *Table) ApplyDeparted() (Side, bool) {
+	if t.Departed[t.Seats.P1] {
+		return P2, true
+	}
+	if t.Departed[t.Seats.P2] {
+		return P1, true
+	}
+	return 0, false
 }
 
 // AuthorizeStart validates a start attempt. The host is the only authority

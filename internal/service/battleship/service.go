@@ -145,8 +145,7 @@ func (s *Service) MemberLeft(id wire.ParticipantID) {
 	s.mu.Lock()
 	winner, forfeit := s.table.NoteLeft(id, s.lifecycleLocked())
 	if forfeit {
-		s.winner = int8(winner)
-		s.ph = phaseOver
+		s.forfeitLocked(winner)
 	}
 	s.mu.Unlock()
 	if forfeit {
@@ -212,6 +211,26 @@ func (s *Service) resetLocked(seats game.Seats) {
 	s.winner = -1
 	s.cheatBy = 0
 	s.history = nil
+	s.applyDepartedLocked()
+}
+
+// forfeitLocked ends the live game with winner by walkover.
+func (s *Service) forfeitLocked(winner game.Side) {
+	s.winner = int8(winner)
+	s.ph = phaseOver
+}
+
+// applyDepartedLocked ends a just-installed live game whose seat pair still
+// names a player that already left the session — the leave can overtake the
+// newGame or snapshot that carried the seats (the relay orders frames per
+// sender only; see Table.Departed).
+func (s *Service) applyDepartedLocked() {
+	if s.lifecycleLocked() != game.Playing {
+		return
+	}
+	if winner, forfeit := s.table.ApplyDeparted(); forfeit {
+		s.forfeitLocked(winner)
+	}
 }
 
 // noteShotLocked appends "B5 hit" / "C3 miss" / "D4 sunk" for a resolved shot.
@@ -662,6 +681,7 @@ func (s *Service) Restore(blob []byte) error {
 			copy(s.reveals[side][:], snap.Reveals[side])
 		}
 	}
+	s.applyDepartedLocked()
 	s.mu.Unlock()
 	s.emitState()
 	return nil

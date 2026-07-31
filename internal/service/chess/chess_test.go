@@ -257,3 +257,46 @@ func TestPlayerLeavingForfeits(t *testing.T) {
 		t.Fatalf("state %+v", st)
 	}
 }
+
+// A session leave has no cross-sender ordering against the host's newGame
+// broadcast, so it can arrive first — while this end still has no seats to
+// check. The seat pair that then lands still names the departed player; the
+// game must end by forfeit immediately, not sit live forever.
+func TestNewGameAfterLeaveForfeits(t *testing.T) {
+	spec := New() // spectator end that saw the leave before the newGame
+	spec.Attach(service.Context{Send: &fakeSender{}, Emit: func(any) {}, Self: 5, HostID: 1, Host: false})
+	spec.MemberLeft(2)
+	body, err := wire.Marshal(msg{Kind: kindNewGame, WhiteID: 1, BlackID: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := spec.HandleFrame(1, body); err != nil {
+		t.Fatal(err)
+	}
+	st := spec.State()
+	if st.Outcome != "1-0" || st.TurnID != 0 {
+		t.Fatalf("outcome=%q turn=%d, want 1-0/0 (black departed)", st.Outcome, st.TurnID)
+	}
+}
+
+// The same race via snapshot: a late joiner restores a Playing snapshot that
+// was captured before the host processed the leave. Also pins the Restore
+// seats mirror — without it forfeit detection never works on restored ends.
+func TestRestoreAfterLeaveForfeits(t *testing.T) {
+	p := newPair(t)
+	p.moveAs(t, p.host, "e2e4")
+	blob, err := p.host.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	late := New()
+	late.Attach(service.Context{Send: &fakeSender{}, Emit: func(any) {}, Self: 5, HostID: 1, Host: false})
+	late.MemberLeft(2) // the leave beat the snapshot here
+	if err := late.Restore(blob); err != nil {
+		t.Fatal(err)
+	}
+	st := late.State()
+	if st.Outcome != "1-0" || st.TurnID != 0 {
+		t.Fatalf("outcome=%q turn=%d, want 1-0/0 (black departed)", st.Outcome, st.TurnID)
+	}
+}

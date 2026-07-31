@@ -180,9 +180,7 @@ func (s *Service) MemberLeft(id wire.ParticipantID) {
 	s.mu.Lock()
 	winner, forfeit := s.table.NoteLeft(id, gamePhase(s.ph))
 	if forfeit {
-		s.outcome = "opponent left"
-		s.scoreForfeit(winner)
-		s.ph = phOver
+		s.forfeitLocked(winner)
 	}
 	s.mu.Unlock()
 	if forfeit {
@@ -192,6 +190,26 @@ func (s *Service) MemberLeft(id wire.ParticipantID) {
 
 func (s *Service) scoreForfeit(winner game.Side) {
 	s.scores[winner] += 25
+}
+
+// forfeitLocked ends the live hand with winner by walkover.
+func (s *Service) forfeitLocked(winner game.Side) {
+	s.outcome = "opponent left"
+	s.scoreForfeit(winner)
+	s.ph = phOver
+}
+
+// applyDepartedLocked ends a just-installed live hand whose seat pair still
+// names a player that already left the session — the leave can overtake the
+// shuffle frame that carried the seats (the relay orders frames per sender
+// only; see Table.Departed).
+func (s *Service) applyDepartedLocked() {
+	if gamePhase(s.ph) != game.Playing {
+		return
+	}
+	if winner, forfeit := s.table.ApplyDeparted(); forfeit {
+		s.forfeitLocked(winner)
+	}
 }
 
 // gamePhase maps our phase to game.Phase for the table's forfeit logic.
@@ -288,6 +306,7 @@ func (s *Service) resetHandLocked(seats game.Seats, key mentalpoker.Key) {
 	s.knockSeat = game.P1
 	s.revealHands = [2][]int8{}
 	s.revealExp = [2][]byte{}
+	s.applyDepartedLocked()
 }
 
 func gameSeats(m msg) game.Seats {

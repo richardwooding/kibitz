@@ -133,17 +133,21 @@ func TestGomokuPartyLobbyThreeHanded(t *testing.T) {
 		gpWait(t, tb, func(s gomokup.State) bool { return s.Playing && len(s.Seats) == 3 })
 	}
 
-	// Seats are [host, p1, p2]; host opens. Host builds a five on row 0 while the
-	// others fill separate rows.
+	// The host always holds seat 0, but p1's and p2's claim directs race to the
+	// host, so seats 1 and 2 are arrival order — play in the authoritative seat
+	// order. Host builds a five on row 0 while the others fill separate rows.
+	seats := host.gp.State().Seats
+	byID := map[wire.ParticipantID]*gpTable{p1.client.Self(): p1, p2.client.Self(): p2}
+	second, third := byID[seats[1]], byID[seats[2]]
 	type mv struct {
 		tb   *gpTable
 		r, c int8
 	}
 	seq := []mv{
-		{host, 0, 0}, {p1, 5, 0}, {p2, 10, 0},
-		{host, 0, 1}, {p1, 5, 1}, {p2, 10, 1},
-		{host, 0, 2}, {p1, 5, 2}, {p2, 10, 2},
-		{host, 0, 3}, {p1, 5, 3}, {p2, 10, 3},
+		{host, 0, 0}, {second, 5, 0}, {third, 10, 0},
+		{host, 0, 1}, {second, 5, 1}, {third, 10, 1},
+		{host, 0, 2}, {second, 5, 2}, {third, 10, 2},
+		{host, 0, 3}, {second, 5, 3}, {third, 10, 3},
 		{host, 0, 4}, // host's fifth → win
 	}
 	for _, m := range seq {

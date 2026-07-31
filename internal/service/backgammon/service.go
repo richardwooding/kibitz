@@ -239,6 +239,27 @@ func (s *Service) resetGameLocked(white, black wire.ParticipantID) {
 	s.dice = [2]int8{}
 	s.haveCommit, s.haveResponse, s.myReveal = false, false, nil
 	s.history = nil
+	s.applyDepartedLocked()
+}
+
+// forfeitLocked ends the live game with winner by walkover.
+// game.P1 == White by seating convention.
+func (s *Service) forfeitLocked(winner game.Side) {
+	s.result = &Result{Winner: Color(winner), Points: 1}
+	s.ph = phaseOver
+}
+
+// applyDepartedLocked ends a just-installed live game whose seat pair still
+// names a player that already left the session — the leave can overtake the
+// newGame or snapshot that carried the seats (the relay orders frames per
+// sender only; see Table.Departed).
+func (s *Service) applyDepartedLocked() {
+	if s.lifecycleLocked() != game.Playing {
+		return
+	}
+	if winner, forfeit := s.table.ApplyDeparted(); forfeit {
+		s.forfeitLocked(winner)
+	}
 }
 
 // noteTurnLocked records a played turn as "⚪ 63: 24/18 13/10" (mover disc,
@@ -297,9 +318,7 @@ func (s *Service) MemberLeft(id wire.ParticipantID) {
 	s.mu.Lock()
 	winner, forfeit := s.table.NoteLeft(id, s.lifecycleLocked())
 	if forfeit {
-		// game.P1 == White by seating convention.
-		s.result = &Result{Winner: Color(winner), Points: 1}
-		s.ph = phaseOver
+		s.forfeitLocked(winner)
 	}
 	s.mu.Unlock()
 	if forfeit {
@@ -688,6 +707,8 @@ func (s *Service) Restore(blob []byte) error {
 	s.board = snap.Board
 	s.whiteID = wire.ParticipantID(snap.WhiteID)
 	s.blackID = wire.ParticipantID(snap.BlackID)
+	// Seats mirror on every client so forfeit detection works off-host too.
+	s.table.Seats = game.Seats{P1: s.whiteID, P2: s.blackID}
 	s.turnColor = snap.TurnColor
 	s.ph = phase(snap.Phase)
 	s.dice = snap.Dice
@@ -704,6 +725,7 @@ func (s *Service) Restore(blob []byte) error {
 	if snap.Winner >= 0 {
 		s.result = &Result{Winner: Color(snap.Winner), Points: int(snap.Points)}
 	}
+	s.applyDepartedLocked()
 	s.mu.Unlock()
 	s.emitState()
 	return nil

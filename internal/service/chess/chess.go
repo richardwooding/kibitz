@@ -160,6 +160,7 @@ func (s *Service) hostStart(from wire.ParticipantID) error {
 	s.drawnFrom = 0
 	s.prevSnap = nil
 	s.offerBy = 0
+	s.applyDepartedLocked()
 	s.mu.Unlock()
 
 	body, err := wire.Marshal(msg{Kind: kindNewGame, WhiteID: uint32(seats.P1), BlackID: uint32(seats.P2)})
@@ -185,16 +186,34 @@ func (s *Service) phaseLocked() game.Phase {
 	}
 }
 
+// forfeitLocked ends the live game by resigning the departed side's color —
+// the opponent walked away mid-game, so they forfeit.
+func (s *Service) forfeitLocked(winner game.Side) {
+	if winner == game.P2 { // white (P1) left
+		s.game.Resign(chesslib.White)
+	} else {
+		s.game.Resign(chesslib.Black)
+	}
+}
+
+// applyDepartedLocked ends a just-installed live game whose seat pair still
+// names a player that already left the session — the leave can overtake the
+// newGame or snapshot that carried the seats (the relay orders frames per
+// sender only; see Table.Departed).
+func (s *Service) applyDepartedLocked() {
+	if s.phaseLocked() != game.Playing {
+		return
+	}
+	if winner, forfeit := s.table.ApplyDeparted(); forfeit {
+		s.forfeitLocked(winner)
+	}
+}
+
 func (s *Service) MemberLeft(id wire.ParticipantID) {
 	s.mu.Lock()
 	winner, forfeit := s.table.NoteLeft(id, s.phaseLocked())
 	if forfeit {
-		// Opponent walked away mid-game: they forfeit.
-		if winner == game.P2 { // white (P1) left
-			s.game.Resign(chesslib.White)
-		} else {
-			s.game.Resign(chesslib.Black)
-		}
+		s.forfeitLocked(winner)
 	}
 	s.mu.Unlock()
 	if forfeit {
@@ -392,6 +411,7 @@ func (s *Service) handleNewGame(from wire.ParticipantID, m msg) error {
 	s.drawnFrom = 0
 	s.prevSnap = nil
 	s.offerBy = 0
+	s.applyDepartedLocked()
 	s.mu.Unlock()
 	s.emitState()
 	return nil
@@ -626,9 +646,12 @@ func (s *Service) Restore(blob []byte) error {
 	s.game = g
 	s.whiteID = wire.ParticipantID(snap.WhiteID)
 	s.blackID = wire.ParticipantID(snap.BlackID)
+	// Seats mirror on every client so forfeit detection works off-host too.
+	s.table.Seats = game.Seats{P1: s.whiteID, P2: s.blackID}
 	s.lastUCI = snap.LastUCI
 	s.drawnFrom = wire.ParticipantID(snap.DrawnFrom)
 	s.prevSnap = snap.Prev
+	s.applyDepartedLocked()
 	s.mu.Unlock()
 	s.emitState()
 	return nil

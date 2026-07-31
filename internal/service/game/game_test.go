@@ -76,6 +76,29 @@ func TestNextSeatsAlternates(t *testing.T) {
 	}
 }
 
+// A leave can overtake the newGame that seats the leaver (the relay orders
+// frames per sender only). NoteLeft then sees no seat — ApplyDeparted must
+// report the forfeit once the stale seat pair lands.
+func TestApplyDepartedForfeitsRacedSeats(t *testing.T) {
+	var tb Table
+	tb.NoteKeyed(2, session.RolePlayer)
+	if _, forfeit := tb.NoteLeft(2, Idle); forfeit {
+		t.Fatal("pre-seat leave forfeited")
+	}
+	// Seats land from the host's newGame frame, still naming the leaver
+	// (exactly how joiners install them — NextSeats is host-side only).
+	tb.Seats = Seats{P1: 1, P2: 2}
+	winner, forfeit := tb.ApplyDeparted()
+	if !forfeit || winner != P1 {
+		t.Fatalf("forfeit=%v winner=%v, want true,P1", forfeit, winner)
+	}
+	// No departures among the seated pair: no forfeit.
+	tb.Seats = Seats{P1: 1, P2: 3}
+	if _, forfeit := tb.ApplyDeparted(); forfeit {
+		t.Fatal("forfeit without a departed seat")
+	}
+}
+
 func TestNoteLeftForfeit(t *testing.T) {
 	var tb Table
 	tb.NoteKeyed(2, session.RolePlayer)
