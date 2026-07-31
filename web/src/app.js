@@ -137,6 +137,7 @@
     state.activeGame = id;
     $("game-picker").classList.add("hidden");
     $("game-pane").classList.remove("hidden");
+    $("btn-leave").classList.add("hidden"); // in a game, "All games" is the only back control
     for (const [gid, mod] of Object.entries(games)) {
       $(mod.paneId).classList.toggle("hidden", gid !== id);
       mod.setVisible(gid === id);
@@ -149,6 +150,7 @@
     state.activeGame = null;
     $("game-pane").classList.add("hidden");
     $("game-picker").classList.remove("hidden");
+    $("btn-leave").classList.remove("hidden");
     for (const mod of Object.values(games)) mod.setVisible(false);
     updateTakebackBar(null);
     renderPicker();
