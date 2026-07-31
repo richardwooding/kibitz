@@ -17,6 +17,13 @@ type Ring struct {
 	Turn  int                  // index into Seats whose turn it is
 	Max   int                  // seat cap
 	Games int                  // completed games; rotates who opens each rematch
+	// Departed remembers every participant whose session leave this end has
+	// seen. The relay orders frames per sender only, so a leave can overtake a
+	// newGame or snapshot already in flight from the host — the seat list then
+	// arrives still naming the departed player. ApplyDeparted re-checks a
+	// freshly installed seat list against this set. Participant IDs are never
+	// reused within a session, so a recorded departure is final.
+	Departed map[wire.ParticipantID]bool
 }
 
 // NewRing returns a Ring that seats up to max players.
@@ -88,10 +95,37 @@ func (r *Ring) lastActive() int {
 // (winnerSeat, true) with the sole survivor, or (-1, true) when two or more
 // remain (abandoned). A non-playing or non-seated leave returns (-1, false).
 func (r *Ring) NoteLeft(id wire.ParticipantID, ph Phase) (int, bool) {
+	if r.Departed == nil {
+		r.Departed = map[wire.ParticipantID]bool{}
+	}
+	r.Departed[id] = true
 	if ph != Playing {
 		return -1, false
 	}
 	return r.markGone(id)
+}
+
+// ApplyDeparted marks Gone any seat whose player already left the session
+// (see Departed) and reports the end-of-game result exactly as NoteLeft
+// would have: (winnerSeat, true) for a sole survivor, (-1, true) when two or
+// more remain, (-1, false) when no seat was newly marked. Call it after
+// installing a seat list (SetSeats from a newGame or snapshot); the caller
+// decides, by its own phase, whether "over" ends a live game.
+func (r *Ring) ApplyDeparted() (int, bool) {
+	marked := false
+	for i, id := range r.Seats {
+		if !r.Gone[i] && r.Departed[id] {
+			r.Gone[i] = true
+			marked = true
+		}
+	}
+	if !marked {
+		return -1, false
+	}
+	if r.ActiveCount() == 1 {
+		return r.lastActive(), true
+	}
+	return -1, true
 }
 
 // Concede ends a live game for a seated player who voluntarily forfeits — same

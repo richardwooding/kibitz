@@ -85,6 +85,46 @@ func TestRingConcede(t *testing.T) {
 	}
 }
 
+// A leave can overtake the newGame that seats the leaver (the relay orders
+// frames per sender only). NoteLeft then sees no seat — ApplyDeparted must
+// end the game once the stale seat list lands.
+func TestRingApplyDepartedEndsRacedNewGame(t *testing.T) {
+	r := NewRing(4)
+	if winner, over := r.NoteLeft(pid(3), Idle); over || winner != -1 {
+		t.Fatalf("pre-seat leave: %d,%v, want -1,false", winner, over)
+	}
+	r.SetSeats([]wire.ParticipantID{pid(1), pid(2), pid(3)}, 0)
+	winner, over := r.ApplyDeparted()
+	if !over || winner != -1 {
+		t.Fatalf("3-player with departed seat: %d,%v, want -1,true (abandoned)", winner, over)
+	}
+	if !r.Gone[2] || r.Gone[0] || r.Gone[1] {
+		t.Fatalf("gone=%v, want only seat 2 marked", r.Gone)
+	}
+}
+
+func TestRingApplyDepartedSoleSurvivorWins(t *testing.T) {
+	r := NewRing(4)
+	r.NoteLeft(pid(2), Idle)
+	r.SetSeats([]wire.ParticipantID{pid(1), pid(2)}, 0)
+	if winner, over := r.ApplyDeparted(); !over || winner != 0 {
+		t.Fatalf("2-player with departed seat: %d,%v, want 0,true", winner, over)
+	}
+}
+
+func TestRingApplyDepartedNoopWithoutDepartures(t *testing.T) {
+	r := NewRing(4)
+	r.SetSeats([]wire.ParticipantID{pid(1), pid(2), pid(3)}, 0)
+	if winner, over := r.ApplyDeparted(); over || winner != -1 {
+		t.Fatalf("no departures: %d,%v, want -1,false", winner, over)
+	}
+	// Already-Gone seats are not re-marked: a second pass reports nothing new.
+	r.NoteLeft(pid(3), Playing)
+	if _, over := r.ApplyDeparted(); over {
+		t.Fatal("second pass re-marked an already-gone seat")
+	}
+}
+
 func TestRingOnPromoteResetsGames(t *testing.T) {
 	r := NewRing(4)
 	r.Games = 3

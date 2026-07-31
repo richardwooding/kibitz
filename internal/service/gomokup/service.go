@@ -240,6 +240,7 @@ func (s *Service) Begin() error {
 	s.ring.SetSeats(seats, turn)
 	s.ring.Games++
 	s.resetLocked()
+	s.applyDepartedLocked()
 	s.mu.Unlock()
 
 	body, err := wire.Marshal(msg{Kind: kindNewGame, Seats: idsToU32(seats), Turn: uint8(turn)})
@@ -367,6 +368,7 @@ func (s *Service) handleNewGame(from wire.ParticipantID, m msg) error {
 	s.mu.Lock()
 	s.ring.SetSeats(u32ToIDs(m.Seats), int(m.Turn))
 	s.resetLocked()
+	s.applyDepartedLocked()
 	s.mu.Unlock()
 	s.emitState()
 	return nil
@@ -488,6 +490,7 @@ func (s *Service) Restore(blob []byte) error {
 	s.draw = snap.Draw
 	s.last = snap.Last
 	s.history = snap.History
+	s.applyDepartedLocked()
 	s.mu.Unlock()
 	s.emitState()
 	return nil
@@ -517,6 +520,19 @@ func (s *Service) resetLocked() {
 	s.clearBoardLocked()
 	s.ph = game.Playing
 	s.lobby = false
+}
+
+// applyDepartedLocked ends a just-installed live game whose seat list still
+// names players that already left the session — their leave has no cross-
+// sender ordering against the newGame/snapshot that carried the seats, so it
+// can arrive first and find no ring to mark (see Ring.Departed).
+func (s *Service) applyDepartedLocked() {
+	if s.ph != game.Playing {
+		return
+	}
+	if winnerSeat, over := s.ring.ApplyDeparted(); over {
+		s.endLocked(winnerSeat)
+	}
 }
 
 func (s *Service) checkTurnLocked(who wire.ParticipantID) (int, error) {
