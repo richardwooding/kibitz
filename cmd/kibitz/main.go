@@ -41,7 +41,7 @@ func dashboardConfigFromEnv() (dashboard.Config, bool) {
 	}
 	return dashboard.Config{
 		ClientID: id, ClientSecret: secret, CookieKey: []byte(key),
-		Allow: users, BaseURL: base,
+		Allow: users, BaseURL: base, AppName: "kibitz",
 	}, true
 }
 
