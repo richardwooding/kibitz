@@ -25,7 +25,10 @@ func TestSessionIDGolden(t *testing.T) {
 // Pin the deployed role bytes: they ride the encrypted handshake and the ctl
 // roster as raw uint8s, so every kibitz build must agree on them. The
 // equality with parley's generic constants trips if a parley upgrade ever
-// renumbers its defaults out from under us.
+// renumbers its defaults out from under us — and it is also what makes
+// parley's DefaultSuccessorPolicy (RoleHost/RoleMember) match kibitz's
+// deployed host-migration election (host/player) without a custom
+// WithSuccessor policy.
 func TestRoleBytesPinned(t *testing.T) {
 	if uint8(RolePlayer) != 2 || uint8(RoleSpectator) != 3 {
 		t.Fatalf("role bytes changed: player=%d spectator=%d", RolePlayer, RoleSpectator)
