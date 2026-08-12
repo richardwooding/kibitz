@@ -6,8 +6,8 @@ import (
 
 	"github.com/richardwooding/ginrummy"
 	"github.com/richardwooding/kibitz/internal/service/game"
-	"github.com/richardwooding/kibitz/internal/wire"
 	"github.com/richardwooding/mentalpoker"
+	"github.com/richardwooding/parley/wire"
 )
 
 func bigFromBytes(b []byte) *big.Int { return new(big.Int).SetBytes(b) }

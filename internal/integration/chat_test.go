@@ -4,10 +4,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/richardwooding/kibitz/internal/proto"
 	"github.com/richardwooding/kibitz/internal/service"
 	"github.com/richardwooding/kibitz/internal/service/chat"
-	"github.com/richardwooding/kibitz/internal/session"
-	"github.com/richardwooding/kibitz/internal/wire"
+	"github.com/richardwooding/parley/session"
+	"github.com/richardwooding/parley/wire"
 )
 
 // table is one fully-attached end: session client + mux + chat.
@@ -19,7 +20,7 @@ type table struct {
 
 func hostTable(t *testing.T, url string) (*table, string) {
 	t.Helper()
-	c, phrase, err := session.Host(testCtx(t), url)
+	c, phrase, err := session.Host(testCtx(t), url, session.WithProtocol(proto.Label))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +31,7 @@ func hostTable(t *testing.T, url string) (*table, string) {
 
 func joinTable(t *testing.T, url, phrase string) *table {
 	t.Helper()
-	c, err := session.Join(testCtx(t), url, phrase, false)
+	c, err := session.Join(testCtx(t), url, phrase, false, session.WithProtocol(proto.Label))
 	if err != nil {
 		t.Fatal(err)
 	}

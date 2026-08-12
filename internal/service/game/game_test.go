@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/richardwooding/kibitz/internal/session"
+	"github.com/richardwooding/parley/session"
 )
 
 func TestSeats(t *testing.T) {

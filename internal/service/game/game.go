@@ -9,8 +9,8 @@ package game
 import (
 	"errors"
 
-	"github.com/richardwooding/kibitz/internal/session"
-	"github.com/richardwooding/kibitz/internal/wire"
+	"github.com/richardwooding/parley/session"
+	"github.com/richardwooding/parley/wire"
 )
 
 // Side identifies a seat, not a color: P1 is whichever role moves first in

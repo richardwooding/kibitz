@@ -4,8 +4,8 @@
 package service
 
 import (
-	"github.com/richardwooding/kibitz/internal/session"
-	"github.com/richardwooding/kibitz/internal/wire"
+	"github.com/richardwooding/parley/session"
+	"github.com/richardwooding/parley/wire"
 )
 
 // Sender is how services transmit. *session.Client satisfies it.

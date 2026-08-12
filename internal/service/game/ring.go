@@ -1,6 +1,6 @@
 package game
 
-import "github.com/richardwooding/kibitz/internal/wire"
+import "github.com/richardwooding/parley/wire"
 
 // Ring is the N-player turn runtime — an ordered seat list with a rotating turn
 // — for games seating 2..Max players. It is the multi-seat sibling of Table

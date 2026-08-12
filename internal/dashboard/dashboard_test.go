@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/richardwooding/kibitz/internal/relay"
+	"github.com/richardwooding/parley/relay"
 )
 
 type fakeSrc struct{}

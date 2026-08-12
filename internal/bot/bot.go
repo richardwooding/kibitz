@@ -25,7 +25,7 @@ import (
 	"github.com/richardwooding/kibitz/internal/service/reversi"
 	"github.com/richardwooding/kibitz/internal/service/weiqi"
 	"github.com/richardwooding/kibitz/internal/service/xiangqi"
-	"github.com/richardwooding/kibitz/internal/wire"
+	"github.com/richardwooding/parley/wire"
 	"github.com/richardwooding/shipcommit"
 )
 

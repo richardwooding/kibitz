@@ -4,9 +4,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/richardwooding/kibitz/internal/proto"
 	"github.com/richardwooding/kibitz/internal/service"
 	"github.com/richardwooding/kibitz/internal/service/checkers"
-	"github.com/richardwooding/kibitz/internal/session"
+	"github.com/richardwooding/parley/session"
 )
 
 type ckTable struct {
@@ -41,14 +42,14 @@ func ckWait(t *testing.T, tb *ckTable, match func(checkers.State) bool) checkers
 
 func TestCheckersOverRelay(t *testing.T) {
 	url := startRelay(t)
-	hc, phrase, err := session.Host(testCtx(t), url)
+	hc, phrase, err := session.Host(testCtx(t), url, session.WithProtocol(proto.Label))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = hc.Close() })
 	host := newCKTable(t, hc)
 
-	jc, err := session.Join(testCtx(t), url, phrase, false)
+	jc, err := session.Join(testCtx(t), url, phrase, false, session.WithProtocol(proto.Label))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +87,7 @@ func TestCheckersOverRelay(t *testing.T) {
 	}
 
 	// Late joiner syncs.
-	lc, err := session.Join(testCtx(t), url, phrase, false)
+	lc, err := session.Join(testCtx(t), url, phrase, false, session.WithProtocol(proto.Label))
 	if err != nil {
 		t.Fatal(err)
 	}

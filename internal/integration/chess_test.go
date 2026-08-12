@@ -4,10 +4,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/richardwooding/kibitz/internal/proto"
 	"github.com/richardwooding/kibitz/internal/service"
 	"github.com/richardwooding/kibitz/internal/service/chat"
 	"github.com/richardwooding/kibitz/internal/service/chess"
-	"github.com/richardwooding/kibitz/internal/session"
+	"github.com/richardwooding/parley/session"
 )
 
 // chessTable is a fully-loaded end: session + mux + chat + chess.
@@ -19,7 +20,7 @@ type chessTable struct {
 
 func hostChess(t *testing.T, url string) (*chessTable, string) {
 	t.Helper()
-	c, phrase, err := session.Host(testCtx(t), url)
+	c, phrase, err := session.Host(testCtx(t), url, session.WithProtocol(proto.Label))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +31,7 @@ func hostChess(t *testing.T, url string) (*chessTable, string) {
 
 func joinChess(t *testing.T, url, phrase string) *chessTable {
 	t.Helper()
-	c, err := session.Join(testCtx(t), url, phrase, false)
+	c, err := session.Join(testCtx(t), url, phrase, false, session.WithProtocol(proto.Label))
 	if err != nil {
 		t.Fatal(err)
 	}

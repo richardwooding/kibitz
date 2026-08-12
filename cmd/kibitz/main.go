@@ -17,8 +17,8 @@ import (
 
 	"github.com/richardwooding/kibitz/internal/dashboard"
 	"github.com/richardwooding/kibitz/internal/pushfwd"
-	"github.com/richardwooding/kibitz/internal/relay"
 	"github.com/richardwooding/kibitz/web"
+	"github.com/richardwooding/parley/relay"
 )
 
 // dashboardConfigFromEnv reads the admin dashboard's config from environment

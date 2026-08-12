@@ -4,9 +4,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/richardwooding/kibitz/internal/proto"
 	"github.com/richardwooding/kibitz/internal/service"
 	"github.com/richardwooding/kibitz/internal/service/connect4"
-	"github.com/richardwooding/kibitz/internal/session"
+	"github.com/richardwooding/parley/session"
 )
 
 // TestHostMigration: when the host leaves, the surviving player is promoted to
@@ -17,7 +18,7 @@ func TestHostMigration(t *testing.T) {
 	url := startRelay(t)
 
 	// Host + one player, each with a connect4 mux.
-	host, phrase, err := session.Host(testCtx(t), url)
+	host, phrase, err := session.Host(testCtx(t), url, session.WithProtocol(proto.Label))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -25,7 +26,7 @@ func TestHostMigration(t *testing.T) {
 	hostMux := service.NewMux(host, hostC4)
 	go drainMux(hostMux)
 
-	player, err := session.Join(testCtx(t), url, phrase, false)
+	player, err := session.Join(testCtx(t), url, phrase, false, session.WithProtocol(proto.Label))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +65,7 @@ func TestHostMigration(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	// A new opponent joins — routed to the NEW host, keyed as a player.
-	newbie, err := session.Join(testCtx(t), url, phrase, false)
+	newbie, err := session.Join(testCtx(t), url, phrase, false, session.WithProtocol(proto.Label))
 	if err != nil {
 		t.Fatalf("new opponent join after migration: %v", err)
 	}

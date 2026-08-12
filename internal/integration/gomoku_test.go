@@ -4,9 +4,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/richardwooding/kibitz/internal/proto"
 	"github.com/richardwooding/kibitz/internal/service"
 	"github.com/richardwooding/kibitz/internal/service/gomoku"
-	"github.com/richardwooding/kibitz/internal/session"
+	"github.com/richardwooding/parley/session"
 )
 
 type gmTable struct {
@@ -17,7 +18,7 @@ type gmTable struct {
 
 func hostGM(t *testing.T, url string) (*gmTable, string) {
 	t.Helper()
-	c, phrase, err := session.Host(testCtx(t), url)
+	c, phrase, err := session.Host(testCtx(t), url, session.WithProtocol(proto.Label))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +34,7 @@ func hostGM(t *testing.T, url string) (*gmTable, string) {
 
 func joinGM(t *testing.T, url, phrase string) *gmTable {
 	t.Helper()
-	c, err := session.Join(testCtx(t), url, phrase, false)
+	c, err := session.Join(testCtx(t), url, phrase, false, session.WithProtocol(proto.Label))
 	if err != nil {
 		t.Fatal(err)
 	}

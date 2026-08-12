@@ -4,9 +4,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/richardwooding/kibitz/internal/proto"
 	"github.com/richardwooding/kibitz/internal/service"
 	"github.com/richardwooding/kibitz/internal/service/dots"
-	"github.com/richardwooding/kibitz/internal/session"
+	"github.com/richardwooding/parley/session"
 )
 
 type dotsTable struct {
@@ -17,7 +18,7 @@ type dotsTable struct {
 
 func hostDots(t *testing.T, url string) (*dotsTable, string) {
 	t.Helper()
-	c, phrase, err := session.Host(testCtx(t), url)
+	c, phrase, err := session.Host(testCtx(t), url, session.WithProtocol(proto.Label))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +34,7 @@ func hostDots(t *testing.T, url string) (*dotsTable, string) {
 
 func joinDots(t *testing.T, url, phrase string) *dotsTable {
 	t.Helper()
-	c, err := session.Join(testCtx(t), url, phrase, false)
+	c, err := session.Join(testCtx(t), url, phrase, false, session.WithProtocol(proto.Label))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -7,8 +7,9 @@ import (
 
 	"github.com/coder/websocket"
 
-	"github.com/richardwooding/kibitz/internal/phrase"
-	"github.com/richardwooding/kibitz/internal/wire"
+	"github.com/richardwooding/kibitz/internal/proto"
+	"github.com/richardwooding/parley/phrase"
+	"github.com/richardwooding/parley/wire"
 )
 
 // rawClient speaks bare wire protocol with no session engine on top — used
@@ -66,5 +67,5 @@ func readAs[T any](t *testing.T, r *rawClient, want wire.MsgType) T {
 }
 
 func phraseSessionID(p string) wire.SessionID {
-	return phrase.SessionID(p)
+	return phrase.SessionID(proto.Label, p)
 }

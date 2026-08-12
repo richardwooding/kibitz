@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/richardwooding/kibitz/internal/service"
-	"github.com/richardwooding/kibitz/internal/wire"
+	"github.com/richardwooding/parley/wire"
 )
 
 // nullSender satisfies service.Sender; a joiner-side service under test has

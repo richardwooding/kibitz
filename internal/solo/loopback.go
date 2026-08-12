@@ -13,8 +13,8 @@ package solo
 import (
 	"sync"
 
-	"github.com/richardwooding/kibitz/internal/session"
-	"github.com/richardwooding/kibitz/internal/wire"
+	"github.com/richardwooding/parley/session"
+	"github.com/richardwooding/parley/wire"
 )
 
 const eventBuffer = 256

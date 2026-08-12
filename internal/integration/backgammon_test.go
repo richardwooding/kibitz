@@ -4,10 +4,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/richardwooding/kibitz/internal/proto"
 	"github.com/richardwooding/kibitz/internal/service"
 	"github.com/richardwooding/kibitz/internal/service/backgammon"
 	"github.com/richardwooding/kibitz/internal/service/chat"
-	"github.com/richardwooding/kibitz/internal/session"
+	"github.com/richardwooding/parley/session"
 )
 
 type bgTable struct {
@@ -18,7 +19,7 @@ type bgTable struct {
 
 func hostBG(t *testing.T, url string) (*bgTable, string) {
 	t.Helper()
-	c, phrase, err := session.Host(testCtx(t), url)
+	c, phrase, err := session.Host(testCtx(t), url, session.WithProtocol(proto.Label))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,7 +30,7 @@ func hostBG(t *testing.T, url string) (*bgTable, string) {
 
 func joinBG(t *testing.T, url, phrase string) *bgTable {
 	t.Helper()
-	c, err := session.Join(testCtx(t), url, phrase, false)
+	c, err := session.Join(testCtx(t), url, phrase, false, session.WithProtocol(proto.Label))
 	if err != nil {
 		t.Fatal(err)
 	}

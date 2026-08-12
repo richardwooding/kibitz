@@ -5,8 +5,8 @@ import (
 
 	"github.com/richardwooding/ginrummy"
 	"github.com/richardwooding/kibitz/internal/service/game"
-	"github.com/richardwooding/kibitz/internal/wire"
 	"github.com/richardwooding/mentalpoker"
+	"github.com/richardwooding/parley/wire"
 )
 
 // snapshot is the PUBLIC state for late joiners / spectators — no keys, no

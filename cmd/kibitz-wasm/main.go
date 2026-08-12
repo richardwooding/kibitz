@@ -25,6 +25,7 @@ import (
 	qrcode "github.com/skip2/go-qrcode"
 
 	"github.com/richardwooding/kibitz/internal/bot"
+	"github.com/richardwooding/kibitz/internal/proto"
 	"github.com/richardwooding/kibitz/internal/service"
 	"github.com/richardwooding/kibitz/internal/service/backgammon"
 	"github.com/richardwooding/kibitz/internal/service/battleship"
@@ -40,8 +41,8 @@ import (
 	"github.com/richardwooding/kibitz/internal/service/reversi"
 	"github.com/richardwooding/kibitz/internal/service/weiqi"
 	"github.com/richardwooding/kibitz/internal/service/xiangqi"
-	"github.com/richardwooding/kibitz/internal/session"
 	"github.com/richardwooding/kibitz/internal/solo"
+	"github.com/richardwooding/parley/session"
 )
 
 // command is every UI→core message; unused fields stay empty.
@@ -290,7 +291,7 @@ func shareURL(phrase string) string {
 func create(name string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	client, phrase, err := session.Host(ctx, relayURL())
+	client, phrase, err := session.Host(ctx, relayURL(), session.WithProtocol(proto.Label))
 	if err != nil {
 		emitError("couldn't start a table: " + err.Error())
 		return
@@ -318,7 +319,7 @@ func join(phrase, name string, spectate bool) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	client, err := session.Join(ctx, relayURL(), phrase, spectate)
+	client, err := session.Join(ctx, relayURL(), phrase, spectate, session.WithProtocol(proto.Label))
 	if err != nil {
 		msg := "couldn't join: " + err.Error()
 		if strings.Contains(err.Error(), "not found") {

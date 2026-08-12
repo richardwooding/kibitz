@@ -7,8 +7,8 @@ import (
 
 	"github.com/richardwooding/kibitz/internal/service"
 	"github.com/richardwooding/kibitz/internal/service/connect4"
-	"github.com/richardwooding/kibitz/internal/session"
 	"github.com/richardwooding/kibitz/internal/solo"
+	"github.com/richardwooding/parley/session"
 )
 
 func recvFrame(t *testing.T, e *solo.Endpoint) session.Frame {

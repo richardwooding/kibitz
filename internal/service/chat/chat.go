@@ -10,7 +10,7 @@ import (
 	"sync"
 
 	"github.com/richardwooding/kibitz/internal/service"
-	"github.com/richardwooding/kibitz/internal/wire"
+	"github.com/richardwooding/parley/wire"
 )
 
 const (

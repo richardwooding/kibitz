@@ -23,7 +23,7 @@ import (
 
 	_ "embed"
 
-	"github.com/richardwooding/kibitz/internal/relay"
+	"github.com/richardwooding/parley/relay"
 )
 
 var (

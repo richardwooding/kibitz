@@ -4,10 +4,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/richardwooding/kibitz/internal/proto"
 	"github.com/richardwooding/kibitz/internal/service"
 	"github.com/richardwooding/kibitz/internal/service/gomokup"
-	"github.com/richardwooding/kibitz/internal/session"
-	"github.com/richardwooding/kibitz/internal/wire"
+	"github.com/richardwooding/parley/session"
+	"github.com/richardwooding/parley/wire"
 )
 
 type gpTable struct {
@@ -18,7 +19,7 @@ type gpTable struct {
 
 func hostGP(t *testing.T, url string) (*gpTable, string) {
 	t.Helper()
-	c, phrase, err := session.Host(testCtx(t), url)
+	c, phrase, err := session.Host(testCtx(t), url, session.WithProtocol(proto.Label))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,7 +30,7 @@ func hostGP(t *testing.T, url string) (*gpTable, string) {
 
 func joinGP(t *testing.T, url, phrase string) *gpTable {
 	t.Helper()
-	c, err := session.Join(testCtx(t), url, phrase, false)
+	c, err := session.Join(testCtx(t), url, phrase, false, session.WithProtocol(proto.Label))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/richardwooding/kibitz/internal/session"
-	"github.com/richardwooding/kibitz/internal/wire"
+	"github.com/richardwooding/parley/session"
+	"github.com/richardwooding/parley/wire"
 )
 
 // CtlID is the reserved control service, present in every session. The host

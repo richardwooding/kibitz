@@ -24,9 +24,11 @@ swaps/rotates seats.
 There's also an opt-in GitHub-OAuth admin dashboard (internal/dashboard, at
 /dashboard) that stays dormant unless the DASHBOARD_* env vars are set.
 
-**Game rules engines and protocol primitives are extracted into standalone
-modules** (richardwooding/{backgammon,checkers,reversi,weiqi,xiangqi,
-fairdice,mentalpoker,ginrummy,shipcommit}); the kibitz service packages
+**The E2EE session core and the game rules engines/protocol primitives are
+extracted into standalone modules** — richardwooding/parley (wire, crypto,
+session, relay, phrase; kibitz passes the "kibitz/v1" label from
+`internal/proto` everywhere) and richardwooding/{backgammon,checkers,reversi,
+weiqi,xiangqi,fairdice,mentalpoker,ginrummy,shipcommit}; the kibitz service packages
 consume them — the game engines via type/const/var aliases so
 `internal/service/<game>/service.go`, the WASM bridge, and the integration
 tests reference the local package name (weiqi/xiangqi also bridge a few
@@ -43,7 +45,7 @@ make test                        # go test -race ./...
 make wasm                        # build browser core into web/dist (+ assets + wasm_exec.js)
 make serve                       # make wasm && go run ./cmd/kibitz → http://localhost:8080
 make lint                        # go vet + golangci-lint (CI runs golangci-lint latest — errcheck and unused are strict)
-go test ./internal/wire/ -run TestRoundTrip -v   # one test
+go test ./internal/service/gomokup/ -run TestNewGame -v   # one test
 GOOS=js GOARCH=wasm go build -o /dev/null ./cmd/kibitz-wasm   # WASM compile check (CI runs this)
 ```
 
@@ -57,21 +59,30 @@ phrase itself), participant counts, and opaque encrypted frames. All services
 (chat, games) are client-side; there is no server-side game logic anywhere.
 Never add relay features that require reading frame payloads.
 
-**Zero `syscall/js` outside `cmd/kibitz-wasm`.** `internal/{wire,crypto,
-session,service/...}` compile natively AND to WASM. The headless integration
-tests in `internal/integration` (relay + native clients) exercise the exact
-code the browser runs — that only stays true while this invariant holds.
-Platform splits use build-tagged files (`dial_js.go` / `dial_native.go`).
+**Zero `syscall/js` outside `cmd/kibitz-wasm`.** parley's wire/crypto/
+session/phrase and kibitz's `internal/service/...` compile natively AND to
+WASM. The headless integration tests in `internal/integration` (relay +
+native clients) exercise the exact code the browser runs — that only stays
+true while this invariant holds.
 
-- **Wire protocol** (`internal/wire`): every WS binary message is
+- **The session core lives in richardwooding/parley** (packages wire/
+  crypto/session/relay/phrase — see below); kibitz consumes it directly.
+  parley parameterizes the application domain label: kibitz passes
+  `proto.Label` = "kibitz/v1" (`internal/proto`) to `session.WithProtocol`
+  and `phrase.SessionID` at EVERY call site — a missed label silently forks
+  the protocol (self-consistent tests still pass), so `internal/proto`'s
+  golden test pins the deployed derivation and new call sites must follow
+  the pattern.
+- **Wire protocol** (`parley/wire`): every WS binary message is
   `[version 0x01][MsgType][CBOR body]`. The relay understands only the
   MsgType layer (create/join/direct/broadcast/membership/ping/error).
   CBOR structs use `cbor:"N,keyasint"` integer keys — never bare string keys.
-- **Crypto** (`internal/crypto`): schollz/pake/v3 (curve "siec", croc's
+- **Crypto** (`parley/crypto`): schollz/pake/v3 (curve "siec", croc's
   default) joiner↔host per pair; HKDF-SHA256 → pairwise key; host wraps a
   random 32-byte group key to each joiner; XChaCha20-Poly1305 for all AEAD
   with AD = SessionID ∥ version ∥ senderID (kills cross-session/sender
-  replay). SessionID = SHA-256("kibitz/v1/session-id" ∥ phrase)[:16].
+  replay). SessionID = SHA-256("kibitz/v1" ∥ "/session-id" ∥ NUL ∥ phrase)[:16]
+  (label from `internal/proto`, derivation in parley/phrase).
   Wrong phrase → group-key unwrap fails cleanly. The group key is rotated on any
   leave so the leaver is locked out of later traffic (forward secrecy across
   membership changes): a member-leave re-wraps a fresh key to survivors via

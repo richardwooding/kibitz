@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/richardwooding/kibitz/internal/service"
-	"github.com/richardwooding/kibitz/internal/session"
-	"github.com/richardwooding/kibitz/internal/wire"
+	"github.com/richardwooding/parley/session"
+	"github.com/richardwooding/parley/wire"
 )
 
 // fakeSender captures broadcasts so two services can be wired back-to-back

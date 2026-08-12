@@ -3,8 +3,8 @@ package service
 import (
 	"sync/atomic"
 
-	"github.com/richardwooding/kibitz/internal/session"
-	"github.com/richardwooding/kibitz/internal/wire"
+	"github.com/richardwooding/parley/session"
+	"github.com/richardwooding/parley/wire"
 )
 
 // Conn is the transport a Mux drives: one keyed session end. *session.Client

@@ -3,7 +3,7 @@ package game
 import (
 	"testing"
 
-	"github.com/richardwooding/kibitz/internal/wire"
+	"github.com/richardwooding/parley/wire"
 )
 
 func pid(n uint32) wire.ParticipantID { return wire.ParticipantID(n) }

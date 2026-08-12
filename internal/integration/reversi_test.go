@@ -4,9 +4,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/richardwooding/kibitz/internal/proto"
 	"github.com/richardwooding/kibitz/internal/service"
 	"github.com/richardwooding/kibitz/internal/service/reversi"
-	"github.com/richardwooding/kibitz/internal/session"
+	"github.com/richardwooding/parley/session"
 )
 
 type rvTable struct {
@@ -44,14 +45,14 @@ func rvWait(t *testing.T, tb *rvTable, match func(reversi.State) bool) reversi.S
 // and checks both ends agree on the final score.
 func TestReversiFullGameOverRelay(t *testing.T) {
 	url := startRelay(t)
-	hc, phrase, err := session.Host(testCtx(t), url)
+	hc, phrase, err := session.Host(testCtx(t), url, session.WithProtocol(proto.Label))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = hc.Close() })
 	host := newRVTable(t, hc)
 
-	jc, err := session.Join(testCtx(t), url, phrase, false)
+	jc, err := session.Join(testCtx(t), url, phrase, false, session.WithProtocol(proto.Label))
 	if err != nil {
 		t.Fatal(err)
 	}

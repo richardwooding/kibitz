@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/richardwooding/kibitz/internal/service"
-	"github.com/richardwooding/kibitz/internal/wire"
+	"github.com/richardwooding/parley/wire"
 )
 
 // waitNames pulls Roster events until every wanted id→name pair is present.

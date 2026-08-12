@@ -5,7 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/richardwooding/kibitz/internal/session"
+	"github.com/richardwooding/kibitz/internal/proto"
+	"github.com/richardwooding/parley/session"
 )
 
 func waitRoster(t *testing.T, ev <-chan any, pred func(Roster) bool) Roster {
@@ -34,14 +35,14 @@ func TestCtlPropagatesPushKeyAndEndpoint(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	host, phrase, err := session.Host(ctx, url)
+	host, phrase, err := session.Host(ctx, url, session.WithProtocol(proto.Label))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = host.Close() }()
 	hostMux := NewMux(host, &probe{})
 
-	joiner, err := session.Join(ctx, url, phrase, false)
+	joiner, err := session.Join(ctx, url, phrase, false, session.WithProtocol(proto.Label))
 	if err != nil {
 		t.Fatal(err)
 	}

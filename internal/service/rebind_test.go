@@ -7,9 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/richardwooding/kibitz/internal/relay"
-	"github.com/richardwooding/kibitz/internal/session"
-	"github.com/richardwooding/kibitz/internal/wire"
+	"github.com/richardwooding/kibitz/internal/proto"
+	"github.com/richardwooding/parley/relay"
+	"github.com/richardwooding/parley/session"
+	"github.com/richardwooding/parley/wire"
 )
 
 // probe is a minimal Service: it re-emits each frame's body on the mux stream,
@@ -64,13 +65,13 @@ func TestMuxRebindResumesRouting(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	host, phrase, err := session.Host(ctx, url)
+	host, phrase, err := session.Host(ctx, url, session.WithProtocol(proto.Label))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = host.Close() }()
 
-	joiner, err := session.Join(ctx, url, phrase, false)
+	joiner, err := session.Join(ctx, url, phrase, false, session.WithProtocol(proto.Label))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -8,7 +8,9 @@ relay is blind**. Anyone can run a relay; nobody should have to trust one.
 1. The host's browser generates the code phrase (`lion-42-maple`, ~2²⁷
    combinations) and a random 32-byte **group key**. The phrase never leaves
    the clients — the relay sees only `SessionID =
-   SHA-256("kibitz/v1/session-id" ∥ phrase)[:16]`.
+   SHA-256("kibitz/v1" ∥ "/session-id" ∥ NUL ∥ phrase)[:16]` (implemented in
+   richardwooding/parley, parameterized by kibitz's "kibitz/v1" label and
+   pinned by `internal/proto`'s golden test).
 2. Each joiner runs a **PAKE** (schollz/pake/v3, SPAKE2-like, curve `siec` —
    the same construction croc uses) with the host through relay-forwarded
    opaque frames. Both ends derive a pairwise key via HKDF-SHA256 bound to the
