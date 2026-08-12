@@ -22,6 +22,10 @@ github.com/richardwooding/reversi v0.1.0 h1:DkjlCMNo98Jd98Eytn3wPex0aF+3ns3P8wiY
 github.com/richardwooding/reversi v0.1.0/go.mod h1:QneiokZxcVUlcsGsrkEubKhHSZMuI8fLbyK3mLzwVPY=
 github.com/richardwooding/shipcommit v0.1.0 h1:z/QLiFOfGznAEdtyz8Y65daPZP8o/ZZzfkNJFm9thko=
 github.com/richardwooding/shipcommit v0.1.0/go.mod h1:fQVC1B/EwAvPawL8vjGn3CV2gdeVrP10t0RdCy1nlng=
+github.com/richardwooding/weiqi v0.1.0 h1:4fcTHn+5tcHlaRRTv0Y3hzwTc9L4fSBnSu8+RqfRPzQ=
+github.com/richardwooding/weiqi v0.1.0/go.mod h1:0AGsON/EckUEYXvl5kFws1e0alJUgTnzpfq1bJwTGIU=
+github.com/richardwooding/xiangqi v0.1.1 h1:xye7nqN+W+7pdModsUC2XF/cmp7e2wIcU80AQEzgBQs=
+github.com/richardwooding/xiangqi v0.1.1/go.mod h1:vXR3RqnRs1L3KO8eapqqIG8S3MggbE8h6IatzGcTdWU=
 github.com/schollz/pake/v3 v3.1.1 h1:lyoU5uNQ3thfjEzrahgxWWBm6+pbI1F2KAZ3gs6LIV8=
 github.com/schollz/pake/v3 v3.1.1/go.mod h1:420+m3AakXcS0n7Uwc7eRs2CosQ2YfE/vKcIkilvqZc=
 github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e h1:MRM5ITcdelLK2j1vwZ3Je0FKVCfqOLp5zO6trqMLYs0=

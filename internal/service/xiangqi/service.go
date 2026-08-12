@@ -12,10 +12,52 @@ import (
 	"fmt"
 	"sync"
 
+	xqengine "github.com/richardwooding/xiangqi"
+
 	"github.com/richardwooding/kibitz/internal/service"
 	"github.com/richardwooding/kibitz/internal/service/game"
 	"github.com/richardwooding/kibitz/internal/session"
 	"github.com/richardwooding/kibitz/internal/wire"
+)
+
+// The xiangqi rules engine lives in its own module
+// (github.com/richardwooding/xiangqi); re-export the API this service uses.
+type Board = xqengine.Board
+
+const (
+	General  = xqengine.General
+	Advisor  = xqengine.Advisor
+	Elephant = xqengine.Elephant
+	Horse    = xqengine.Horse
+	Chariot  = xqengine.Chariot
+	Cannon   = xqengine.Cannon
+	Soldier  = xqengine.Soldier
+	Red      = xqengine.Red
+	Black    = xqengine.Black
+)
+
+var (
+	ErrOffBoard      = xqengine.ErrOffBoard
+	ErrNotYourPiece  = xqengine.ErrNotYourPiece
+	ErrIllegalMove   = xqengine.ErrIllegalMove
+	ErrLeavesInCheck = xqengine.ErrLeavesInCheck
+	Start            = xqengine.Start
+	Apply            = xqengine.Apply
+	InCheck          = xqengine.InCheck
+	LegalMoves       = xqengine.LegalMoves
+	Validate         = xqengine.Validate
+	Winner           = xqengine.Winner
+	Coord            = xqengine.Coord
+	Glyph            = xqengine.Glyph
+)
+
+// Unexported bridges keep in-package call sites (service, bot) unchanged.
+var (
+	rankOf = xqengine.RankOf
+	fileOf = xqengine.FileOf
+	idxOf  = xqengine.IdxOf
+	sign   = xqengine.Sign
+	abs8   = xqengine.Abs8
 )
 
 // ID is the service identifier on the wire and in the picker.

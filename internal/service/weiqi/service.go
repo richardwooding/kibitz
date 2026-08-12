@@ -12,10 +12,39 @@ import (
 	"fmt"
 	"sync"
 
+	wqengine "github.com/richardwooding/weiqi"
+
 	"github.com/richardwooding/kibitz/internal/service"
 	"github.com/richardwooding/kibitz/internal/service/game"
 	"github.com/richardwooding/kibitz/internal/session"
 	"github.com/richardwooding/kibitz/internal/wire"
+)
+
+// The Go rules engine lives in its own module
+// (github.com/richardwooding/weiqi); re-export the API this service uses.
+type Board = wqengine.Board
+
+const (
+	N    = wqengine.N
+	Komi = wqengine.Komi
+)
+
+var (
+	ErrOffBoard = wqengine.ErrOffBoard
+	ErrOccupied = wqengine.ErrOccupied
+	ErrSuicide  = wqengine.ErrSuicide
+	ErrKo       = wqengine.ErrKo
+)
+
+// Unexported bridges keep in-package call sites (service, bot) unchanged.
+var (
+	inBounds     = wqengine.InBounds
+	opponent     = wqengine.Opponent
+	neighbors    = wqengine.Neighbors
+	collectGroup = wqengine.CollectGroup
+	applyMove    = wqengine.ApplyMove
+	legalMoves   = wqengine.LegalMoves
+	finalScore   = wqengine.FinalScore
 )
 
 // ID is the service identifier on the wire. The UI shows the label "Go".
