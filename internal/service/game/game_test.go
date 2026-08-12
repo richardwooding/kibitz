@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/richardwooding/parley/session"
+	"github.com/richardwooding/kibitz/internal/proto"
 )
 
 func TestSeats(t *testing.T) {
@@ -25,12 +25,12 @@ func TestSeats(t *testing.T) {
 
 func TestNoteKeyedRecordsFirstPlayerOnly(t *testing.T) {
 	var tb Table
-	tb.NoteKeyed(5, session.RoleSpectator)
+	tb.NoteKeyed(5, proto.RoleSpectator)
 	if tb.Opponent != 0 {
 		t.Fatal("spectator recorded as opponent")
 	}
-	tb.NoteKeyed(2, session.RolePlayer)
-	tb.NoteKeyed(3, session.RolePlayer) // shouldn't happen, but must not displace
+	tb.NoteKeyed(2, proto.RolePlayer)
+	tb.NoteKeyed(3, proto.RolePlayer) // shouldn't happen, but must not displace
 	if tb.Opponent != 2 {
 		t.Fatalf("opponent = %d", tb.Opponent)
 	}
@@ -44,7 +44,7 @@ func TestAuthorizeStart(t *testing.T) {
 	if err := tb.AuthorizeStart(true, 1, 1, Idle); !errors.Is(err, ErrNoOpponent) {
 		t.Fatalf("no opponent: %v", err)
 	}
-	tb.NoteKeyed(2, session.RolePlayer)
+	tb.NoteKeyed(2, proto.RolePlayer)
 	if err := tb.AuthorizeStart(true, 1, 1, Playing); !errors.Is(err, ErrInProgress) {
 		t.Fatalf("mid-game: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestAuthorizeStart(t *testing.T) {
 
 func TestNextSeatsAlternates(t *testing.T) {
 	var tb Table
-	tb.NoteKeyed(2, session.RolePlayer)
+	tb.NoteKeyed(2, proto.RolePlayer)
 	s1 := tb.NextSeats(1)
 	if s1 != (Seats{P1: 1, P2: 2}) {
 		t.Fatalf("game 1 seats %+v", s1)
@@ -81,7 +81,7 @@ func TestNextSeatsAlternates(t *testing.T) {
 // report the forfeit once the stale seat pair lands.
 func TestApplyDepartedForfeitsRacedSeats(t *testing.T) {
 	var tb Table
-	tb.NoteKeyed(2, session.RolePlayer)
+	tb.NoteKeyed(2, proto.RolePlayer)
 	if _, forfeit := tb.NoteLeft(2, Idle); forfeit {
 		t.Fatal("pre-seat leave forfeited")
 	}
@@ -101,7 +101,7 @@ func TestApplyDepartedForfeitsRacedSeats(t *testing.T) {
 
 func TestNoteLeftForfeit(t *testing.T) {
 	var tb Table
-	tb.NoteKeyed(2, session.RolePlayer)
+	tb.NoteKeyed(2, proto.RolePlayer)
 	tb.NextSeats(1)
 
 	// Spectator leaving mid-game: no forfeit.
@@ -117,7 +117,7 @@ func TestNoteLeftForfeit(t *testing.T) {
 		t.Fatal("departed opponent still recorded")
 	}
 	// Player leaving when idle: no forfeit.
-	tb.NoteKeyed(3, session.RolePlayer)
+	tb.NoteKeyed(3, proto.RolePlayer)
 	if _, forfeit := tb.NoteLeft(3, Idle); forfeit {
 		t.Fatal("idle leave forfeited")
 	}

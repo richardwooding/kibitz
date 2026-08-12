@@ -20,7 +20,7 @@ type chessTable struct {
 
 func hostChess(t *testing.T, url string) (*chessTable, string) {
 	t.Helper()
-	c, phrase, err := session.Host(testCtx(t), url, session.WithProtocol(proto.Label))
+	c, phrase, err := session.Host(testCtx(t), url, proto.Options()...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,7 +31,7 @@ func hostChess(t *testing.T, url string) (*chessTable, string) {
 
 func joinChess(t *testing.T, url, phrase string) *chessTable {
 	t.Helper()
-	c, err := session.Join(testCtx(t), url, phrase, false, session.WithProtocol(proto.Label))
+	c, err := session.Join(testCtx(t), url, phrase, proto.Options()...)
 	if err != nil {
 		t.Fatal(err)
 	}

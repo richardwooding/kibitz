@@ -58,7 +58,7 @@ func TestEncryptedEcho(t *testing.T) {
 	url := startRelay(t)
 	ctx := testCtx(t)
 
-	host, phrase, err := session.Host(ctx, url, session.WithProtocol(proto.Label))
+	host, phrase, err := session.Host(ctx, url, proto.Options()...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,17 +67,17 @@ func TestEncryptedEcho(t *testing.T) {
 		t.Fatalf("host self=%d role=%d", host.Self(), host.Role())
 	}
 
-	joiner, err := session.Join(ctx, url, phrase, false, session.WithProtocol(proto.Label))
+	joiner, err := session.Join(ctx, url, phrase, proto.Options()...)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = joiner.Close() }()
-	if joiner.Role() != session.RolePlayer {
+	if joiner.Role() != proto.RolePlayer {
 		t.Fatalf("first joiner role = %d, want player", joiner.Role())
 	}
 
 	keyed := waitFor[session.MemberKeyed](t, host)
-	if keyed.ID != joiner.Self() || keyed.Role != session.RolePlayer {
+	if keyed.ID != joiner.Self() || keyed.Role != proto.RolePlayer {
 		t.Fatalf("host saw keyed %+v", keyed)
 	}
 
@@ -107,7 +107,7 @@ func TestWrongPhraseRejected(t *testing.T) {
 	url := startRelay(t)
 	ctx := testCtx(t)
 
-	host, phrase, err := session.Host(ctx, url, session.WithProtocol(proto.Label))
+	host, phrase, err := session.Host(ctx, url, proto.Options()...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestWrongPhraseRejected(t *testing.T) {
 	// package. Here, assert the not-found path is clean.
 	shortCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	_, err = session.Join(shortCtx, url, phrase+"x", false, session.WithProtocol(proto.Label))
+	_, err = session.Join(shortCtx, url, phrase+"x", proto.Options()...)
 	if err == nil {
 		t.Fatal("join with wrong phrase succeeded")
 	}
@@ -138,27 +138,27 @@ func TestSecondJoinerIsSpectator(t *testing.T) {
 	url := startRelay(t)
 	ctx := testCtx(t)
 
-	host, phrase, err := session.Host(ctx, url, session.WithProtocol(proto.Label))
+	host, phrase, err := session.Host(ctx, url, proto.Options()...)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = host.Close() }()
 
-	j1, err := session.Join(ctx, url, phrase, false, session.WithProtocol(proto.Label))
+	j1, err := session.Join(ctx, url, phrase, proto.Options()...)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = j1.Close() }()
-	j2, err := session.Join(ctx, url, phrase, false, session.WithProtocol(proto.Label))
+	j2, err := session.Join(ctx, url, phrase, proto.Options()...)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = j2.Close() }()
 
-	if j1.Role() != session.RolePlayer {
+	if j1.Role() != proto.RolePlayer {
 		t.Fatalf("j1 role %d", j1.Role())
 	}
-	if j2.Role() != session.RoleSpectator {
+	if j2.Role() != proto.RoleSpectator {
 		t.Fatalf("j2 role %d", j2.Role())
 	}
 
@@ -181,27 +181,27 @@ func TestSpectateJoinKeepsPlayerSeat(t *testing.T) {
 	url := startRelay(t)
 	ctx := testCtx(t)
 
-	host, phrase, err := session.Host(ctx, url, session.WithProtocol(proto.Label))
+	host, phrase, err := session.Host(ctx, url, proto.Options()...)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = host.Close() }()
 
-	watcher, err := session.Join(ctx, url, phrase, true, session.WithProtocol(proto.Label)) // watches, joins first
+	watcher, err := session.Join(ctx, url, phrase, append(proto.Options(), session.WithObserver())...) // watches, joins first
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = watcher.Close() }()
-	player, err := session.Join(ctx, url, phrase, false, session.WithProtocol(proto.Label)) // plays, joins second
+	player, err := session.Join(ctx, url, phrase, proto.Options()...) // plays, joins second
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = player.Close() }()
 
-	if watcher.Role() != session.RoleSpectator {
+	if watcher.Role() != proto.RoleSpectator {
 		t.Fatalf("early watcher role = %d, want spectator", watcher.Role())
 	}
-	if player.Role() != session.RolePlayer {
+	if player.Role() != proto.RolePlayer {
 		t.Fatalf("player role = %d, want player (seat must survive the watcher)", player.Role())
 	}
 }
@@ -214,11 +214,11 @@ func TestHostLeaveKeepsSessionOpen(t *testing.T) {
 	url := startRelay(t)
 	ctx := testCtx(t)
 
-	host, phrase, err := session.Host(ctx, url, session.WithProtocol(proto.Label))
+	host, phrase, err := session.Host(ctx, url, proto.Options()...)
 	if err != nil {
 		t.Fatal(err)
 	}
-	joiner, err := session.Join(ctx, url, phrase, false, session.WithProtocol(proto.Label))
+	joiner, err := session.Join(ctx, url, phrase, proto.Options()...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +252,7 @@ func TestEavesdropperCannotReadTraffic(t *testing.T) {
 	url := startRelay(t)
 	ctx := testCtx(t)
 
-	host, phrase, err := session.Host(ctx, url, session.WithProtocol(proto.Label))
+	host, phrase, err := session.Host(ctx, url, proto.Options()...)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -291,7 +291,7 @@ func shareURL(phrase string) string {
 func create(name string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	client, phrase, err := session.Host(ctx, relayURL(), session.WithProtocol(proto.Label))
+	client, phrase, err := session.Host(ctx, relayURL(), proto.Options()...)
 	if err != nil {
 		emitError("couldn't start a table: " + err.Error())
 		return
@@ -319,7 +319,11 @@ func join(phrase, name string, spectate bool) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	client, err := session.Join(ctx, relayURL(), phrase, spectate, session.WithProtocol(proto.Label))
+	opts := proto.Options()
+	if spectate {
+		opts = append(opts, session.WithObserver())
+	}
+	client, err := session.Join(ctx, relayURL(), phrase, opts...)
 	if err != nil {
 		msg := "couldn't join: " + err.Error()
 		if strings.Contains(err.Error(), "not found") {
@@ -1155,9 +1159,9 @@ func roleName(r session.Role) string {
 	switch r {
 	case session.RoleHost:
 		return "host"
-	case session.RolePlayer:
+	case proto.RolePlayer:
 		return "player"
-	case session.RoleSpectator:
+	case proto.RoleSpectator:
 		return "spectator"
 	default:
 		return "unknown"

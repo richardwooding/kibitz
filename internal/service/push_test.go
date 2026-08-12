@@ -35,14 +35,14 @@ func TestCtlPropagatesPushKeyAndEndpoint(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	host, phrase, err := session.Host(ctx, url, session.WithProtocol(proto.Label))
+	host, phrase, err := session.Host(ctx, url, proto.Options()...)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = host.Close() }()
 	hostMux := NewMux(host, &probe{})
 
-	joiner, err := session.Join(ctx, url, phrase, false, session.WithProtocol(proto.Label))
+	joiner, err := session.Join(ctx, url, phrase, proto.Options()...)
 	if err != nil {
 		t.Fatal(err)
 	}

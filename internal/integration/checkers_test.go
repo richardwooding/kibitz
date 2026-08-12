@@ -42,14 +42,14 @@ func ckWait(t *testing.T, tb *ckTable, match func(checkers.State) bool) checkers
 
 func TestCheckersOverRelay(t *testing.T) {
 	url := startRelay(t)
-	hc, phrase, err := session.Host(testCtx(t), url, session.WithProtocol(proto.Label))
+	hc, phrase, err := session.Host(testCtx(t), url, proto.Options()...)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = hc.Close() })
 	host := newCKTable(t, hc)
 
-	jc, err := session.Join(testCtx(t), url, phrase, false, session.WithProtocol(proto.Label))
+	jc, err := session.Join(testCtx(t), url, phrase, proto.Options()...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestCheckersOverRelay(t *testing.T) {
 	}
 
 	// Late joiner syncs.
-	lc, err := session.Join(testCtx(t), url, phrase, false, session.WithProtocol(proto.Label))
+	lc, err := session.Join(testCtx(t), url, phrase, proto.Options()...)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/richardwooding/kibitz/internal/proto"
 	"github.com/richardwooding/kibitz/internal/service"
-	"github.com/richardwooding/parley/session"
 	"github.com/richardwooding/parley/wire"
 )
 
@@ -118,7 +118,7 @@ func newPair(t *testing.T) *pair {
 		Send: p.plOut, Emit: func(e any) { p.playerEv = append(p.playerEv, e) },
 		Self: 2, HostID: 1, Host: false,
 	})
-	p.host.MemberKeyed(2, session.RolePlayer)
+	p.host.MemberKeyed(2, proto.RolePlayer)
 	if err := p.host.Start(); err != nil {
 		t.Fatalf("start: %v", err)
 	}

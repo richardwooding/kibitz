@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/richardwooding/kibitz/internal/proto"
 	"github.com/richardwooding/kibitz/internal/service"
-	"github.com/richardwooding/parley/session"
 	"github.com/richardwooding/parley/wire"
 	"github.com/richardwooding/shipcommit"
 )
@@ -42,7 +42,7 @@ func newRig(t *testing.T) *rig {
 		Send: r.playerOut, Emit: func(e any) { playerEv = append(playerEv, e) },
 		Self: 2, HostID: 1, Host: false,
 	})
-	r.host.MemberKeyed(2, session.RolePlayer)
+	r.host.MemberKeyed(2, proto.RolePlayer)
 	if err := r.host.Start(); err != nil {
 		t.Fatalf("start: %v", err)
 	}

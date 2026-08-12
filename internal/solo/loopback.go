@@ -13,6 +13,7 @@ package solo
 import (
 	"sync"
 
+	"github.com/richardwooding/kibitz/internal/proto"
 	"github.com/richardwooding/parley/session"
 	"github.com/richardwooding/parley/wire"
 )
@@ -77,9 +78,9 @@ type Endpoint struct {
 func New() (host, guest *Endpoint, seat func()) {
 	h := newHub()
 	host = h.add(1, 1, session.RoleHost)
-	guest = h.add(2, 1, session.RolePlayer)
+	guest = h.add(2, 1, proto.RolePlayer)
 	seat = func() {
-		host.events <- session.MemberKeyed{ID: guest.self, Role: session.RolePlayer}
+		host.events <- session.MemberKeyed{ID: guest.self, Role: proto.RolePlayer}
 	}
 	return host, guest, seat
 }
@@ -92,12 +93,12 @@ func NewParty(guests int) (host *Endpoint, gs []*Endpoint, seat func()) {
 	h := newHub()
 	host = h.add(1, 1, session.RoleHost)
 	for i := 0; i < guests; i++ {
-		gs = append(gs, h.add(wire.ParticipantID(2+i), 1, session.RolePlayer))
+		gs = append(gs, h.add(wire.ParticipantID(2+i), 1, proto.RolePlayer))
 	}
 	captured := gs
 	seat = func() {
 		for _, g := range captured {
-			host.events <- session.MemberKeyed{ID: g.self, Role: session.RolePlayer}
+			host.events <- session.MemberKeyed{ID: g.self, Role: proto.RolePlayer}
 		}
 	}
 	return host, gs, seat

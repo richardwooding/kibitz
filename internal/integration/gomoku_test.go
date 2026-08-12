@@ -18,7 +18,7 @@ type gmTable struct {
 
 func hostGM(t *testing.T, url string) (*gmTable, string) {
 	t.Helper()
-	c, phrase, err := session.Host(testCtx(t), url, session.WithProtocol(proto.Label))
+	c, phrase, err := session.Host(testCtx(t), url, proto.Options()...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +34,7 @@ func hostGM(t *testing.T, url string) (*gmTable, string) {
 
 func joinGM(t *testing.T, url, phrase string) *gmTable {
 	t.Helper()
-	c, err := session.Join(testCtx(t), url, phrase, false, session.WithProtocol(proto.Label))
+	c, err := session.Join(testCtx(t), url, phrase, proto.Options()...)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -20,7 +20,7 @@ type table struct {
 
 func hostTable(t *testing.T, url string) (*table, string) {
 	t.Helper()
-	c, phrase, err := session.Host(testCtx(t), url, session.WithProtocol(proto.Label))
+	c, phrase, err := session.Host(testCtx(t), url, proto.Options()...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,7 +31,7 @@ func hostTable(t *testing.T, url string) (*table, string) {
 
 func joinTable(t *testing.T, url, phrase string) *table {
 	t.Helper()
-	c, err := session.Join(testCtx(t), url, phrase, false, session.WithProtocol(proto.Label))
+	c, err := session.Join(testCtx(t), url, phrase, proto.Options()...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,10 +74,10 @@ func TestThreeWayChat(t *testing.T) {
 		if roster.Members[host.client.Self()] != session.RoleHost {
 			t.Fatalf("host role in roster: %v", roster.Members)
 		}
-		if roster.Members[player.client.Self()] != session.RolePlayer {
+		if roster.Members[player.client.Self()] != proto.RolePlayer {
 			t.Fatalf("player role in roster: %v", roster.Members)
 		}
-		if roster.Members[spectator.client.Self()] != session.RoleSpectator {
+		if roster.Members[spectator.client.Self()] != proto.RoleSpectator {
 			t.Fatalf("spectator role in roster: %v", roster.Members)
 		}
 	}

@@ -75,14 +75,14 @@ func rowsPlacement() [100]uint8 {
 // snipes all 17 ship cells; the player answers into water.
 func TestBattleshipFullGameOverRelay(t *testing.T) {
 	url := startRelay(t)
-	hc, phrase, err := session.Host(testCtx(t), url, session.WithProtocol(proto.Label))
+	hc, phrase, err := session.Host(testCtx(t), url, proto.Options()...)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = hc.Close() })
 	host := newBSTable(t, hc)
 
-	jc, err := session.Join(testCtx(t), url, phrase, false, session.WithProtocol(proto.Label))
+	jc, err := session.Join(testCtx(t), url, phrase, proto.Options()...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func TestBattleshipFullGameOverRelay(t *testing.T) {
 
 	// A spectator joins mid-game and must pick up both commit vectors via
 	// snapshot to verify reveals it never saw the start of.
-	sc, err := session.Join(testCtx(t), url, phrase, false, session.WithProtocol(proto.Label))
+	sc, err := session.Join(testCtx(t), url, phrase, proto.Options()...)
 	if err != nil {
 		t.Fatal(err)
 	}

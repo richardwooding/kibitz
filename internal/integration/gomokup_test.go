@@ -19,7 +19,7 @@ type gpTable struct {
 
 func hostGP(t *testing.T, url string) (*gpTable, string) {
 	t.Helper()
-	c, phrase, err := session.Host(testCtx(t), url, session.WithProtocol(proto.Label))
+	c, phrase, err := session.Host(testCtx(t), url, proto.Options()...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +30,7 @@ func hostGP(t *testing.T, url string) (*gpTable, string) {
 
 func joinGP(t *testing.T, url, phrase string) *gpTable {
 	t.Helper()
-	c, err := session.Join(testCtx(t), url, phrase, false, session.WithProtocol(proto.Label))
+	c, err := session.Join(testCtx(t), url, phrase, proto.Options()...)
 	if err != nil {
 		t.Fatal(err)
 	}

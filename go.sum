@@ -20,6 +20,8 @@ github.com/richardwooding/mentalpoker v0.1.0 h1:AkOz8UfL88fsilMJCHep/6kK5jKMmXGc
 github.com/richardwooding/mentalpoker v0.1.0/go.mod h1:BidIGhLo39uGB6++2jnIs8cVsQiomKkaN2uwjq11Jc8=
 github.com/richardwooding/parley v0.1.0 h1:oGPSn/4Mzn0h+hg4f7rvPHM/QiaFFjFWk5cG1jtVnPU=
 github.com/richardwooding/parley v0.1.0/go.mod h1:g2jk0VmqWc7IhVKVLDCUPjo9t3c3ClSu1pPER+UksKI=
+github.com/richardwooding/parley v0.2.0 h1:HQJ3kCt6EdF38+UprI4mOMwbiyR2hcdEaB6W0lnVxeI=
+github.com/richardwooding/parley v0.2.0/go.mod h1:g2jk0VmqWc7IhVKVLDCUPjo9t3c3ClSu1pPER+UksKI=
 github.com/richardwooding/reversi v0.1.0 h1:DkjlCMNo98Jd98Eytn3wPex0aF+3ns3P8wiY7zag1Oo=
 github.com/richardwooding/reversi v0.1.0/go.mod h1:QneiokZxcVUlcsGsrkEubKhHSZMuI8fLbyK3mLzwVPY=
 github.com/richardwooding/shipcommit v0.1.0 h1:z/QLiFOfGznAEdtyz8Y65daPZP8o/ZZzfkNJFm9thko=

@@ -18,7 +18,7 @@ type c4Table struct {
 
 func hostC4(t *testing.T, url string) (*c4Table, string) {
 	t.Helper()
-	c, phrase, err := session.Host(testCtx(t), url, session.WithProtocol(proto.Label))
+	c, phrase, err := session.Host(testCtx(t), url, proto.Options()...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +34,7 @@ func hostC4(t *testing.T, url string) (*c4Table, string) {
 
 func joinC4(t *testing.T, url, phrase string) *c4Table {
 	t.Helper()
-	c, err := session.Join(testCtx(t), url, phrase, false, session.WithProtocol(proto.Label))
+	c, err := session.Join(testCtx(t), url, phrase, proto.Options()...)
 	if err != nil {
 		t.Fatal(err)
 	}

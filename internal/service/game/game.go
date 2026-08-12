@@ -9,6 +9,7 @@ package game
 import (
 	"errors"
 
+	"github.com/richardwooding/kibitz/internal/proto"
 	"github.com/richardwooding/parley/session"
 	"github.com/richardwooding/parley/wire"
 )
@@ -87,7 +88,7 @@ type Table struct {
 // NoteKeyed records the first player to complete the handshake (host side).
 // It no longer starts anything — games launch on demand via Start().
 func (t *Table) NoteKeyed(id wire.ParticipantID, role session.Role) {
-	if role == session.RolePlayer && t.Opponent == 0 {
+	if role == proto.RolePlayer && t.Opponent == 0 {
 		t.Opponent = id
 	}
 }

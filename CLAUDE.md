@@ -26,8 +26,8 @@ There's also an opt-in GitHub-OAuth admin dashboard (internal/dashboard, at
 
 **The E2EE session core and the game rules engines/protocol primitives are
 extracted into standalone modules** — richardwooding/parley (wire, crypto,
-session, relay, phrase; kibitz passes the "kibitz/v1" label from
-`internal/proto` everywhere) and richardwooding/{backgammon,checkers,reversi,
+session, relay, phrase; kibitz passes `proto.Options()` — its "kibitz/v1"
+label + role policy — everywhere) and richardwooding/{backgammon,checkers,reversi,
 weiqi,xiangqi,fairdice,mentalpoker,ginrummy,shipcommit}; the kibitz service packages
 consume them — the game engines via type/const/var aliases so
 `internal/service/<game>/service.go`, the WASM bridge, and the integration
@@ -67,12 +67,15 @@ true while this invariant holds.
 
 - **The session core lives in richardwooding/parley** (packages wire/
   crypto/session/relay/phrase — see below); kibitz consumes it directly.
-  parley parameterizes the application domain label: kibitz passes
-  `proto.Label` = "kibitz/v1" (`internal/proto`) to `session.WithProtocol`
-  and `phrase.SessionID` at EVERY call site — a missed label silently forks
-  the protocol (self-consistent tests still pass), so `internal/proto`'s
-  golden test pins the deployed derivation and new call sites must follow
-  the pattern.
+  parley parameterizes the application domain label AND the role policy:
+  every `session.Host`/`session.Join` call passes `proto.Options()...`
+  (= WithProtocol("kibitz/v1") + WithRolePolicy — `internal/proto`; append
+  `session.WithObserver()` for a spectator join), and `phrase.SessionID`
+  takes `proto.Label`. A missed bundle silently forks the protocol or the
+  seat assignment (self-consistent tests still pass), so `internal/proto`'s
+  golden tests pin the deployed session-ID derivation, the role bytes
+  (player=2/spectator=3 — announced as raw uint8s on the ctl roster), and
+  the legacy seat policy; new call sites must follow the pattern.
 - **Wire protocol** (`parley/wire`): every WS binary message is
   `[version 0x01][MsgType][CBOR body]`. The relay understands only the
   MsgType layer (create/join/direct/broadcast/membership/ping/error).

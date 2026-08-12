@@ -5,6 +5,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/richardwooding/kibitz/internal/proto"
 	"github.com/richardwooding/parley/session"
 	"github.com/richardwooding/parley/wire"
 )
@@ -312,7 +313,7 @@ func (c *ctlService) electSuccessor(leaver wire.ParticipantID) wire.ParticipantI
 		if any == 0 || id < any {
 			any = id
 		}
-		if (r == session.RoleHost || r == session.RolePlayer) && (player == 0 || id < player) {
+		if (r == session.RoleHost || r == proto.RolePlayer) && (player == 0 || id < player) {
 			player = id
 		}
 	}
