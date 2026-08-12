@@ -14,8 +14,14 @@ github.com/richardwooding/checkers v0.1.0 h1:w14zy6jTzPn5/kXetcMt2tqTzIiQhHLBQWF
 github.com/richardwooding/checkers v0.1.0/go.mod h1:8wzEVRBEk95E3fLZxkGTQBv+vYHE9/V6aHcYU0aywY4=
 github.com/richardwooding/fairdice v0.1.0 h1:kADyyN2WH7kTCo54xp2l9Mu3tiC66qYH+HwZrs4A1uU=
 github.com/richardwooding/fairdice v0.1.0/go.mod h1:GFDoQS8/90n2BZVoJ6UnJG/D2V3ScCrHLCU2BmZUkm0=
+github.com/richardwooding/ginrummy v0.1.0 h1:kMvckioAATKeajco5wYyGsG30KYmVk1avCoVSYhWFgA=
+github.com/richardwooding/ginrummy v0.1.0/go.mod h1:uctrwhN1AtYkHaxHD364RBUaGA5kw09JvXi2J2M/njs=
+github.com/richardwooding/mentalpoker v0.1.0 h1:AkOz8UfL88fsilMJCHep/6kK5jKMmXGcPGT0wl4QDgQ=
+github.com/richardwooding/mentalpoker v0.1.0/go.mod h1:BidIGhLo39uGB6++2jnIs8cVsQiomKkaN2uwjq11Jc8=
 github.com/richardwooding/reversi v0.1.0 h1:DkjlCMNo98Jd98Eytn3wPex0aF+3ns3P8wiY7zag1Oo=
 github.com/richardwooding/reversi v0.1.0/go.mod h1:QneiokZxcVUlcsGsrkEubKhHSZMuI8fLbyK3mLzwVPY=
+github.com/richardwooding/shipcommit v0.1.0 h1:z/QLiFOfGznAEdtyz8Y65daPZP8o/ZZzfkNJFm9thko=
+github.com/richardwooding/shipcommit v0.1.0/go.mod h1:fQVC1B/EwAvPawL8vjGn3CV2gdeVrP10t0RdCy1nlng=
 github.com/schollz/pake/v3 v3.1.1 h1:lyoU5uNQ3thfjEzrahgxWWBm6+pbI1F2KAZ3gs6LIV8=
 github.com/schollz/pake/v3 v3.1.1/go.mod h1:420+m3AakXcS0n7Uwc7eRs2CosQ2YfE/vKcIkilvqZc=
 github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e h1:MRM5ITcdelLK2j1vwZ3Je0FKVCfqOLp5zO6trqMLYs0=

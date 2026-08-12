@@ -4,10 +4,10 @@ import (
 	"errors"
 	"math/big"
 
-	"github.com/richardwooding/kibitz/internal/ginrummy"
-	"github.com/richardwooding/kibitz/internal/mentalpoker"
+	"github.com/richardwooding/ginrummy"
 	"github.com/richardwooding/kibitz/internal/service/game"
 	"github.com/richardwooding/kibitz/internal/wire"
+	"github.com/richardwooding/mentalpoker"
 )
 
 func bigFromBytes(b []byte) *big.Int { return new(big.Int).SetBytes(b) }

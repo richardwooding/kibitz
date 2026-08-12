@@ -12,7 +12,7 @@ service traffic is encrypted client-side. Layered services run over one
 session: chat plus thirteen games — chess (corentings/chess), backgammon,
 connect4, checkers, reversi, gomoku, hex, dots & boxes, go/weiqi, xiangqi,
 battleship (shipcommit per-cell commitments), gin rummy (internal/gin +
-internal/mentalpoker — a dealerless "mental poker" shuffle), and gomoku party
+mentalpoker — a dealerless "mental poker" shuffle), and gomoku party
 (internal/service/gomokup — the first >2-player game, 2–4 seats). Most games are
 both-sides-validate perfect-information; battleship and gin are interactive
 commit-reveal / mental-poker protocols instead. Eleven of the twelve two-player
@@ -24,13 +24,14 @@ swaps/rotates seats.
 There's also an opt-in GitHub-OAuth admin dashboard (internal/dashboard, at
 /dashboard) that stays dormant unless the DASHBOARD_* env vars are set.
 
-**Game rules engines and fair dice are extracted into standalone modules**
-(richardwooding/{backgammon,checkers,reversi,fairdice}); the kibitz service
-packages consume them and re-export the engine API via type/const/var
-aliases so `internal/service/<game>/service.go`, the WASM bridge, and the
-integration tests reference the local package name. Engine changes happen
-upstream in those repos, not here. connect4's engine stays in-tree (too
-small to extract); chess uses the external corentings/chess/v2. A kibitzer is someone who watches a chess game and chats over
+**Game rules engines and protocol primitives are extracted into standalone
+modules** (richardwooding/{backgammon,checkers,reversi,fairdice,mentalpoker,
+ginrummy,shipcommit}); the kibitz service packages consume them — the game
+engines via type/const/var aliases so `internal/service/<game>/service.go`,
+the WASM bridge, and the integration tests reference the local package name;
+mentalpoker/ginrummy/shipcommit as plain imports. Changes to any of them
+happen upstream in those repos, not here. connect4's engine stays in-tree
+(too small to extract); chess uses the external corentings/chess/v2. A kibitzer is someone who watches a chess game and chats over
 it — hence the name.
 
 ## Commands

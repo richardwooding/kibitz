@@ -10,7 +10,10 @@ require (
 	github.com/richardwooding/backgammon v0.1.0
 	github.com/richardwooding/checkers v0.1.0
 	github.com/richardwooding/fairdice v0.1.0
+	github.com/richardwooding/ginrummy v0.1.0
+	github.com/richardwooding/mentalpoker v0.1.0
 	github.com/richardwooding/reversi v0.1.0
+	github.com/richardwooding/shipcommit v0.1.0
 	github.com/schollz/pake/v3 v3.1.1
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	golang.org/x/crypto v0.54.0

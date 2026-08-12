@@ -6,8 +6,8 @@ import (
 
 	"github.com/richardwooding/kibitz/internal/service"
 	"github.com/richardwooding/kibitz/internal/session"
-	"github.com/richardwooding/kibitz/internal/shipcommit"
 	"github.com/richardwooding/kibitz/internal/wire"
+	"github.com/richardwooding/shipcommit"
 )
 
 type fakeSender struct{ sent [][]byte }

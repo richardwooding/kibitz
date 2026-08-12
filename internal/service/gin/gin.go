@@ -17,11 +17,11 @@ import (
 	"math/big"
 	"sync"
 
-	"github.com/richardwooding/kibitz/internal/mentalpoker"
 	"github.com/richardwooding/kibitz/internal/service"
 	"github.com/richardwooding/kibitz/internal/service/game"
 	"github.com/richardwooding/kibitz/internal/session"
 	"github.com/richardwooding/kibitz/internal/wire"
+	"github.com/richardwooding/mentalpoker"
 )
 
 const ID = "gin"

@@ -25,8 +25,8 @@ import (
 	"github.com/richardwooding/kibitz/internal/service/reversi"
 	"github.com/richardwooding/kibitz/internal/service/weiqi"
 	"github.com/richardwooding/kibitz/internal/service/xiangqi"
-	"github.com/richardwooding/kibitz/internal/shipcommit"
 	"github.com/richardwooding/kibitz/internal/wire"
+	"github.com/richardwooding/shipcommit"
 )
 
 // Level is the bot's difficulty.

@@ -7,7 +7,7 @@ import (
 	"github.com/richardwooding/kibitz/internal/service"
 	"github.com/richardwooding/kibitz/internal/service/battleship"
 	"github.com/richardwooding/kibitz/internal/session"
-	"github.com/richardwooding/kibitz/internal/shipcommit"
+	"github.com/richardwooding/shipcommit"
 )
 
 type bsTable struct {

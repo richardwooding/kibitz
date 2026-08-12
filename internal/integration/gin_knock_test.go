@@ -3,7 +3,7 @@ package integration
 import (
 	"testing"
 
-	"github.com/richardwooding/kibitz/internal/ginrummy"
+	"github.com/richardwooding/ginrummy"
 	"github.com/richardwooding/kibitz/internal/service/gin"
 )
 
