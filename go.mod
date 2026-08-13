@@ -11,7 +11,7 @@ require (
 	github.com/richardwooding/fairdice v0.1.0
 	github.com/richardwooding/ginrummy v0.1.0
 	github.com/richardwooding/mentalpoker v0.1.0
-	github.com/richardwooding/parley v0.4.0
+	github.com/richardwooding/parley v0.5.0
 	github.com/richardwooding/reversi v0.1.0
 	github.com/richardwooding/shipcommit v0.1.0
 	github.com/richardwooding/weiqi v0.1.0

@@ -5,6 +5,8 @@
 package main
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
 	"flag"
 	"fmt"
 	"io/fs"
@@ -16,10 +18,20 @@ import (
 	"time"
 
 	"github.com/richardwooding/kibitz/internal/dashboard"
+	"github.com/richardwooding/kibitz/internal/flyaffinity"
 	"github.com/richardwooding/kibitz/internal/pushfwd"
 	"github.com/richardwooding/kibitz/web"
 	"github.com/richardwooding/parley/relay"
+	"github.com/richardwooding/parley/wire"
 )
+
+// clusterToken derives the internal peer-stats auth token from the dashboard
+// cookie key, so every machine computes the same value without a new secret.
+func clusterToken(cookieKey []byte) []byte {
+	m := hmac.New(sha256.New, cookieKey)
+	_, _ = m.Write([]byte("parley-cluster-stats"))
+	return m.Sum(nil)
+}
 
 // dashboardConfigFromEnv reads the admin dashboard's config from environment
 // (Fly secrets). It returns ok=false when any required value is missing, so the
@@ -147,9 +159,24 @@ func main() {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = fmt.Fprint(w, displayVersion())
 	})
-	relaySrv := relay.New(relay.Options{MaxSessions: *maxSessions})
+	// Session-affinity routing: when running on Fly with >1 machine, pin every
+	// connection for a session to one machine (its in-memory relay is
+	// authoritative for that shard). Off Fly / single machine → serve-here,
+	// identical to today.
+	var aff *flyaffinity.Resolver
+	var router func(wire.SessionID, *http.Request) relay.RouteResult
+	if mid := os.Getenv("FLY_MACHINE_ID"); mid != "" {
+		aff = flyaffinity.New(os.Getenv("FLY_APP_NAME"), mid, 7*time.Second)
+		router = aff.Route
+		log.Printf("fly affinity routing enabled (machine %s, app %s)", mid, os.Getenv("FLY_APP_NAME"))
+	}
+	relaySrv := relay.New(relay.Options{MaxSessions: *maxSessions, Router: router})
 	defer relaySrv.Close()
 	mux.Handle("/ws", relaySrv)
+	mux.HandleFunc("/whoami", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = fmt.Fprintf(w, "%s %s\n", os.Getenv("FLY_MACHINE_ID"), os.Getenv("FLY_REGION"))
+	})
 	// Keyless Web Push forwarder: clients sign an empty VAPID push in-browser
 	// (CORS forbids posting to push services directly) and this forwards it. It
 	// holds no keys and sees no game content — see internal/pushfwd.
@@ -158,7 +185,13 @@ func main() {
 	// Admin dashboard (GitHub-OAuth-gated) — only wired up when its Fly secrets
 	// are present, so it's dormant locally and in the public build.
 	if cfg, ok := dashboardConfigFromEnv(); ok {
-		dashboard.New(cfg, relaySrv).Register(mux)
+		src := dashboard.StatsSource(relaySrv)
+		if aff != nil {
+			token := clusterToken(cfg.CookieKey)
+			mux.Handle(dashboard.InternalStatsPath(), dashboard.InternalStatsHandler(relaySrv, token))
+			src = dashboard.NewAggregator(relaySrv, aff.Peers, token)
+		}
+		dashboard.New(cfg, src).Register(mux)
 		log.Printf("admin dashboard enabled at /dashboard (%d allowed user(s))", len(cfg.Allow))
 	} else {
 		log.Print("admin dashboard disabled (set DASHBOARD_* env vars to enable)")
