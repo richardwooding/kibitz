@@ -17,8 +17,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/richardwooding/flyaffinity"
 	"github.com/richardwooding/kibitz/internal/dashboard"
-	"github.com/richardwooding/kibitz/internal/flyaffinity"
 	"github.com/richardwooding/kibitz/internal/pushfwd"
 	"github.com/richardwooding/kibitz/web"
 	"github.com/richardwooding/parley/relay"

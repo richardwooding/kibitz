@@ -14,6 +14,8 @@ github.com/richardwooding/checkers v0.1.0 h1:w14zy6jTzPn5/kXetcMt2tqTzIiQhHLBQWF
 github.com/richardwooding/checkers v0.1.0/go.mod h1:8wzEVRBEk95E3fLZxkGTQBv+vYHE9/V6aHcYU0aywY4=
 github.com/richardwooding/fairdice v0.1.0 h1:kADyyN2WH7kTCo54xp2l9Mu3tiC66qYH+HwZrs4A1uU=
 github.com/richardwooding/fairdice v0.1.0/go.mod h1:GFDoQS8/90n2BZVoJ6UnJG/D2V3ScCrHLCU2BmZUkm0=
+github.com/richardwooding/flyaffinity v0.1.0 h1:xAzcPJGf0twRdR9rBYu92Jo0DGDe8VXVaYNKm3SfEnE=
+github.com/richardwooding/flyaffinity v0.1.0/go.mod h1:zJnzNZ0CptHO2tnFe2zBoKQCg4ORVcvzboBenpqGBAM=
 github.com/richardwooding/ginrummy v0.1.0 h1:kMvckioAATKeajco5wYyGsG30KYmVk1avCoVSYhWFgA=
 github.com/richardwooding/ginrummy v0.1.0/go.mod h1:uctrwhN1AtYkHaxHD364RBUaGA5kw09JvXi2J2M/njs=
 github.com/richardwooding/mentalpoker v0.1.0 h1:AkOz8UfL88fsilMJCHep/6kK5jKMmXGcPGT0wl4QDgQ=

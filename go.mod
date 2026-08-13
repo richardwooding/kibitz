@@ -9,6 +9,7 @@ require (
 	github.com/richardwooding/backgammon v0.1.0
 	github.com/richardwooding/checkers v0.1.0
 	github.com/richardwooding/fairdice v0.1.0
+	github.com/richardwooding/flyaffinity v0.1.0
 	github.com/richardwooding/ginrummy v0.1.0
 	github.com/richardwooding/mentalpoker v0.1.0
 	github.com/richardwooding/parley v0.5.0
