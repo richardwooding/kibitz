@@ -1,14 +1,15 @@
 // kibitz service worker — makes the app installable and fast, without ever
-// serving a stale core. Strategy:
-//   • navigations + the WASM core: network-first (fresh when online, so a deploy
-//     is never served stale; the cached shell is only an offline fallback).
-//   • other same-origin assets (JS/CSS/icons): stale-while-revalidate.
+// serving a stale shell. Strategy:
+//   • the whole app shell (navigations, the WASM core, JS/CSS/icons) is served
+//     NETWORK-FIRST: fresh when online, so a deploy is never served stale and a
+//     user can't run a fresh index.html against an old cached app.js. The cache
+//     is only an offline fallback.
 //   • /ws (the relay WebSocket) is never touched — it isn't a fetch anyway.
 // The relay stays a blind static server; this file adds no network behaviour of
 // its own, only caching of what the page already requests.
 //
 // Bump CACHE when the shell asset set changes to evict old caches on activate.
-const CACHE = "kibitz-shell-v10";
+const CACHE = "kibitz-shell-v11";
 
 // The small shell precached on install so an installed app opens offline. The
 // ~9MB WASM core is intentionally NOT precached — it caches on first fetch.
@@ -63,13 +64,7 @@ self.addEventListener("fetch", (e) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return; // let cross-origin pass through
   if (url.pathname === "/ws") return; // never intercept the relay socket
-
-  const isCore = url.pathname === "/kibitz.wasm";
-  if (req.mode === "navigate" || isCore) {
-    e.respondWith(networkFirst(req));
-  } else {
-    e.respondWith(staleWhileRevalidate(req));
-  }
+  e.respondWith(networkFirst(req)); // whole shell is network-first
 });
 
 // networkFirst: fresh when online (a deploy is picked up immediately), cache as
@@ -85,19 +80,6 @@ async function networkFirst(req) {
     if (hit) return hit;
     throw err;
   }
-}
-
-// staleWhileRevalidate: serve cache instantly, refresh in the background.
-async function staleWhileRevalidate(req) {
-  const cache = await caches.open(CACHE);
-  const hit = await cache.match(req);
-  const fetching = fetch(req)
-    .then((res) => {
-      if (res && res.ok) cache.put(req, res.clone());
-      return res;
-    })
-    .catch(() => null);
-  return hit || (await fetching) || fetch(req);
 }
 
 // ---- turn notifications ----------------------------------------------------
