@@ -20,8 +20,8 @@ github.com/richardwooding/ginrummy v0.1.0 h1:kMvckioAATKeajco5wYyGsG30KYmVk1avCo
 github.com/richardwooding/ginrummy v0.1.0/go.mod h1:uctrwhN1AtYkHaxHD364RBUaGA5kw09JvXi2J2M/njs=
 github.com/richardwooding/mentalpoker v0.1.0 h1:AkOz8UfL88fsilMJCHep/6kK5jKMmXGcPGT0wl4QDgQ=
 github.com/richardwooding/mentalpoker v0.1.0/go.mod h1:BidIGhLo39uGB6++2jnIs8cVsQiomKkaN2uwjq11Jc8=
-github.com/richardwooding/parley v0.5.0 h1:2LKUhZTri+rNFF5urMfYwQ7sSEkxtUSbRvq+Z1+ykQE=
-github.com/richardwooding/parley v0.5.0/go.mod h1:g2jk0VmqWc7IhVKVLDCUPjo9t3c3ClSu1pPER+UksKI=
+github.com/richardwooding/parley v0.6.1 h1:r5iPs7fr35XEAEy8Lc+Dc19ktO2cTd9SK4pOv1iHZqU=
+github.com/richardwooding/parley v0.6.1/go.mod h1:g2jk0VmqWc7IhVKVLDCUPjo9t3c3ClSu1pPER+UksKI=
 github.com/richardwooding/reversi v0.1.0 h1:DkjlCMNo98Jd98Eytn3wPex0aF+3ns3P8wiY7zag1Oo=
 github.com/richardwooding/reversi v0.1.0/go.mod h1:QneiokZxcVUlcsGsrkEubKhHSZMuI8fLbyK3mLzwVPY=
 github.com/richardwooding/shipcommit v0.1.0 h1:z/QLiFOfGznAEdtyz8Y65daPZP8o/ZZzfkNJFm9thko=
