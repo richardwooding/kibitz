@@ -217,7 +217,7 @@ func (s *Service) noteLocked(path []int8) {
 		if i > 0 {
 			str.WriteString("-")
 		}
-		str.WriteString(fmt.Sprintf("%d", int(sq)+1))
+		fmt.Fprintf(&str, "%d", int(sq)+1)
 	}
 	s.history = append(s.history, str.String())
 }
