@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"slices"
 	"testing"
 	"time"
 
@@ -80,12 +81,7 @@ func gpWait(t *testing.T, tb *gpTable, match func(gomokup.State) bool) gomokup.S
 }
 
 func seatsHave(st gomokup.State, id wire.ParticipantID) bool {
-	for _, s := range st.Seats {
-		if s == id {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(st.Seats, id)
 }
 
 // openAndSeat opens the lobby (host), has each joiner take a seat, and waits for

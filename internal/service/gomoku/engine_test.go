@@ -35,7 +35,7 @@ func TestVerticalWin(t *testing.T) {
 
 func TestDiagonalWins(t *testing.T) {
 	var b Board
-	for i := int8(0); i < 5; i++ { // ↘ diagonal
+	for i := range int8(5) { // ↘ diagonal
 		place(t, &b, 1+i, 1+i, 1)
 	}
 	if w, _ := b.Winner(); w != 1 {
@@ -43,7 +43,7 @@ func TestDiagonalWins(t *testing.T) {
 	}
 
 	var c Board
-	for i := int8(0); i < 5; i++ { // ↗ diagonal
+	for i := range int8(5) { // ↗ diagonal
 		place(t, &c, 10-i, 2+i, 2)
 	}
 	if w, _ := c.Winner(); w != 2 {
@@ -53,7 +53,7 @@ func TestDiagonalWins(t *testing.T) {
 
 func TestFiveOrMoreWins(t *testing.T) {
 	var b Board
-	for col := int8(0); col < 6; col++ { // six in a row still wins
+	for col := range int8(6) { // six in a row still wins
 		place(t, &b, 0, col, 1)
 	}
 	if w, cells := b.Winner(); w != 1 || len(cells) != 5 {

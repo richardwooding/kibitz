@@ -251,7 +251,7 @@ func bsShoot(s Services, e battleship.State, mySide int, level Level, pause func
 
 func c4Legal(b connect4.Board) []int8 {
 	var out []int8
-	for c := 0; c < connect4.Cols; c++ {
+	for c := range connect4.Cols {
 		if b[c*connect4.Rows+(connect4.Rows-1)] == 0 {
 			out = append(out, int8(c))
 		}
@@ -322,8 +322,8 @@ var c4ColWeight = [connect4.Cols]int{1, 2, 3, 4, 3, 2, 1}
 // c4Eval is a cheap leaf heuristic: centre-weighted disc control for toMove.
 func c4Eval(b *connect4.Board, toMove int8) int {
 	score := 0
-	for c := 0; c < connect4.Cols; c++ {
-		for r := 0; r < connect4.Rows; r++ {
+	for c := range connect4.Cols {
+		for r := range connect4.Rows {
 			v := b[c*connect4.Rows+r]
 			if v == toMove {
 				score += c4ColWeight[c]
@@ -369,7 +369,7 @@ func gmPick(level Level, b gomoku.Board, side int8) (int8, int8, bool) {
 
 func gmRandom(b gomoku.Board) (int8, int8, bool) {
 	var empty []int
-	for i := 0; i < len(b); i++ {
+	for i := range len(b) {
 		if b[i] == 0 {
 			empty = append(empty, i)
 		}
@@ -406,7 +406,7 @@ func gmHard(b gomoku.Board, side int8) (int8, int8, bool) {
 func gmCandidates(b gomoku.Board) []int {
 	var out []int
 	any := false
-	for i := 0; i < len(b); i++ {
+	for i := range len(b) {
 		if b[i] != 0 {
 			any = true
 			continue
@@ -560,7 +560,7 @@ func gpPick(level Level, b gomokup.Board, color int8, nSeats int) (int8, int8, b
 
 func gpRandom(b gomokup.Board) (int8, int8, bool) {
 	var empty []int
-	for i := 0; i < len(b); i++ {
+	for i := range len(b) {
 		if b[i] == 0 {
 			empty = append(empty, i)
 		}
@@ -600,7 +600,7 @@ func gpHard(b gomokup.Board, color int8, nSeats int) (int8, int8, bool) {
 func gpCandidates(b gomokup.Board) []int {
 	var out []int
 	any := false
-	for i := 0; i < len(b); i++ {
+	for i := range len(b) {
 		if b[i] != 0 {
 			any = true
 			continue
@@ -910,7 +910,7 @@ func bsHuntTargets(shots [100]int8, sunk []uint8) []int {
 		return false
 	}
 	var targets []int
-	for c := 0; c < 100; c++ {
+	for c := range 100 {
 		if shots[c] < 1 || isSunk(shots[c]) {
 			continue // not a live (unsunk) hit
 		}
@@ -945,7 +945,7 @@ func neighbours(x, y int) []int {
 // bsRandom returns a random un-shot cell satisfying pred, or false if none.
 func bsRandom(shots [100]int8, pred func(int) bool) (uint8, bool) {
 	var cs []int
-	for c := 0; c < 100; c++ {
+	for c := range 100 {
 		if shots[c] == -1 && pred(c) {
 			cs = append(cs, c)
 		}

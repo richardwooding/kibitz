@@ -81,7 +81,7 @@ func (b *Board) connected(side int8) []int16 {
 // (row 0 for red, col 0 for blue).
 func (b *Board) seedEdge(side int8, visited []bool) []int {
 	var queue []int
-	for i := 0; i < N; i++ {
+	for i := range N {
 		idx := i // red: row 0, col i
 		if side == 2 {
 			idx = i * N // blue: row i, col 0

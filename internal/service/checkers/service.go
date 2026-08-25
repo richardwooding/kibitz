@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 
 	ckengine "github.com/richardwooding/checkers"
@@ -211,14 +212,14 @@ func (s *Service) applyDepartedLocked() {
 // noteLocked appends a move's path as 1-based squares joined by "-"
 // ("11-15", "18-25-11"). Called on both mover and receiver paths.
 func (s *Service) noteLocked(path []int8) {
-	str := ""
+	var str strings.Builder
 	for i, sq := range path {
 		if i > 0 {
-			str += "-"
+			str.WriteString("-")
 		}
-		str += fmt.Sprintf("%d", int(sq)+1)
+		str.WriteString(fmt.Sprintf("%d", int(sq)+1))
 	}
-	s.history = append(s.history, str)
+	s.history = append(s.history, str.String())
 }
 
 // TryMove plays the local player's move (a full path).

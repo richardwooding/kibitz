@@ -36,7 +36,7 @@ func TestPartyBroadcastAndRouting(t *testing.T) {
 	}
 
 	seat()
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		if _, ok := (<-host.Events()).(session.MemberKeyed); !ok {
 			t.Fatal("seat() should emit a MemberKeyed per guest")
 		}

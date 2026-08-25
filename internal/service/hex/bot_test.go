@@ -7,7 +7,7 @@ import "testing"
 func TestBestMovePlaysWinningConnection(t *testing.T) {
 	var b Board
 	const col = 2
-	for row := int8(0); row < N; row++ {
+	for row := range int8(N) {
 		if row == 5 {
 			continue // the gap
 		}

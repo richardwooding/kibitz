@@ -112,8 +112,8 @@ func New() *Service {
 }
 
 func (s *Service) clearReveals() {
-	for side := 0; side < 2; side++ {
-		for i := 0; i < 100; i++ {
+	for side := range 2 {
+		for i := range 100 {
 			s.reveals[side][i] = -1
 		}
 	}
@@ -639,7 +639,7 @@ func (s *Service) Snapshot() ([]byte, error) {
 		Committed: s.committed, Validated: s.validated,
 		Pending: s.pending, Winner: s.winner, History: s.history,
 	}
-	for side := 0; side < 2; side++ {
+	for side := range 2 {
 		if s.committed[side] {
 			flat := make([]byte, 0, 3200)
 			for _, c := range s.commits[side] {
@@ -671,9 +671,9 @@ func (s *Service) Restore(blob []byte) error {
 	s.pending = snap.Pending
 	s.winner = snap.Winner
 	s.history = snap.History
-	for side := 0; side < 2; side++ {
+	for side := range 2 {
 		if len(snap.Commits[side]) == 3200 {
-			for i := 0; i < 100; i++ {
+			for i := range 100 {
 				copy(s.commits[side][i][:], snap.Commits[side][i*32:(i+1)*32])
 			}
 		}
@@ -733,7 +733,7 @@ func (s *Service) stateLocked() State {
 		CheatBy:   s.cheatBy,
 		History:   append([]string(nil), s.history...),
 	}
-	for side := 0; side < 2; side++ {
+	for side := range 2 {
 		st.Sunk[side] = s.sunkLocked(game.Side(side))
 	}
 	if s.ph == phaseShooting && s.pending == -1 {

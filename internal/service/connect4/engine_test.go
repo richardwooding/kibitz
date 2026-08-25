@@ -14,7 +14,7 @@ func drop(t *testing.T, b *Board, col, side int8) {
 
 func TestVerticalWin(t *testing.T) {
 	var b Board
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		drop(t, &b, 0, 1)
 		drop(t, &b, 1, 2)
 	}
@@ -27,7 +27,7 @@ func TestVerticalWin(t *testing.T) {
 
 func TestHorizontalWin(t *testing.T) {
 	var b Board
-	for col := int8(0); col < 3; col++ {
+	for col := range int8(3) {
 		drop(t, &b, col, 2)
 		drop(t, &b, col, 1)
 	}
@@ -45,7 +45,7 @@ func TestDiagonalWins(t *testing.T) {
 	for _, f := range fills {
 		drop(t, &b, f[0], f[1])
 	}
-	for col := int8(0); col < 4; col++ {
+	for col := range int8(4) {
 		drop(t, &b, col, 1)
 	}
 	w, _ := b.Winner()
@@ -59,7 +59,7 @@ func TestDiagonalWins(t *testing.T) {
 	for _, f := range fills2 {
 		drop(t, &c, f[0], f[1])
 	}
-	for col := int8(0); col < 4; col++ {
+	for col := range int8(4) {
 		drop(t, &c, col, 1)
 	}
 	w2, _ := c.Winner()
@@ -70,7 +70,7 @@ func TestDiagonalWins(t *testing.T) {
 
 func TestColumnFullAndBadColumn(t *testing.T) {
 	var b Board
-	for i := 0; i < Rows; i++ {
+	for range Rows {
 		drop(t, &b, 3, 1)
 	}
 	if _, err := b.Drop(3, 2); !errors.Is(err, ErrColumnFull) {
@@ -86,8 +86,8 @@ func TestDrawDetection(t *testing.T) {
 	// per column pairs avoid 4-in-a-row: use pattern by column groups.
 	var b Board
 	pattern := [Cols]int8{1, 2, 1, 2, 1, 2, 1}
-	for col := int8(0); col < Cols; col++ {
-		for row := 0; row < Rows; row++ {
+	for col := range int8(Cols) {
+		for row := range Rows {
 			side := pattern[col]
 			if (row/2)%2 == 1 {
 				side = 3 - side

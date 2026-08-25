@@ -96,7 +96,7 @@ func captureGain(b Board, m [2]int8) int {
 // pieces subtract (material plus a light positional term).
 func evaluate(b Board, side int8) int {
 	score := 0
-	for i := int8(0); i < 90; i++ {
+	for i := range int8(90) {
 		p := b[i]
 		if p == 0 {
 			continue

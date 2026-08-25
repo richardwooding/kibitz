@@ -121,10 +121,7 @@ func isSinglePointEye(b *Board, side int8, idx int) bool {
 func centerBonus(idx int) int {
 	dr := abs(idx/N - N/2)
 	dc := abs(idx%N - N/2)
-	d := dr
-	if dc > d {
-		d = dc
-	}
+	d := max(dc, dr)
 	return N/2 - d
 }
 

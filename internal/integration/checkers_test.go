@@ -66,7 +66,7 @@ func TestCheckersOverRelay(t *testing.T) {
 
 	// Play four alternating quiet moves via the legal set.
 	tables := []*ckTable{host, player}
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		tb := tables[i%2]
 		self := tb.client.Self()
 		st := ckWait(t, tb, func(s checkers.State) bool {

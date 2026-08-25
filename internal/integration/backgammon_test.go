@@ -66,7 +66,7 @@ func bgWait(t *testing.T, tb *bgTable, match func(backgammon.State) bool) backga
 // and plays the first legal turn. Dances are auto-passed by the service.
 func playTurns(t *testing.T, players []*bgTable, n int) {
 	t.Helper()
-	for i := 0; i < n; i++ {
+	for i := range n {
 		// Find the actor: the player whose own state says it must act.
 		var acting *bgTable
 		var st backgammon.State

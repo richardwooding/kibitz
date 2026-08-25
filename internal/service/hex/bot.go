@@ -109,7 +109,7 @@ func connectDistance(b *Board, side int8) int {
 // seedStart primes the BFS from every non-blocked cell on side's start edge
 // (row 0 for red, col 0 for blue).
 func seedStart(b *Board, side int8, dist []int, dq *deque) {
-	for i := 0; i < N; i++ {
+	for i := range N {
 		idx := i
 		if side == 2 {
 			idx = i * N
@@ -192,7 +192,7 @@ func nearStone(b *Board, idx int) bool {
 }
 
 func boardEmpty(b *Board) bool {
-	for i := 0; i < N*N; i++ {
+	for i := range N * N {
 		if b[i] != 0 {
 			return false
 		}
@@ -202,7 +202,7 @@ func boardEmpty(b *Board) bool {
 
 func emptyCells(b *Board) []int {
 	out := make([]int, 0, N*N)
-	for i := 0; i < N*N; i++ {
+	for i := range N * N {
 		if b[i] == 0 {
 			out = append(out, i)
 		}

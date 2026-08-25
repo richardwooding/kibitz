@@ -52,19 +52,19 @@ func bsWait(t *testing.T, tb *bsTable, match func(battleship.State) bool) battle
 
 func rowsPlacement() [100]uint8 {
 	var p [100]uint8
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		p[i] = 1
 	}
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		p[10+i] = 2
 	}
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		p[20+i] = 3
 	}
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		p[30+i] = 4
 	}
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		p[40+i] = 5
 	}
 	return p

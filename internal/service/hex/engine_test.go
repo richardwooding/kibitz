@@ -15,7 +15,7 @@ func place(t *testing.T, b *Board, row, col, side int8) {
 // A red vertical line down a single column joins row 0 to row N-1, so red wins.
 func TestRedVerticalConnection(t *testing.T) {
 	var b Board
-	for row := int8(0); row < N; row++ {
+	for row := range int8(N) {
 		place(t, &b, row, 5, 1)
 	}
 	w, cells := b.Winner()
@@ -30,7 +30,7 @@ func TestRedVerticalConnection(t *testing.T) {
 // A blue horizontal line across a single row joins col 0 to col N-1, so blue wins.
 func TestBlueHorizontalConnection(t *testing.T) {
 	var b Board
-	for col := int8(0); col < N; col++ {
+	for col := range int8(N) {
 		place(t, &b, 4, col, 2)
 	}
 	w, cells := b.Winner()
@@ -47,7 +47,7 @@ func TestBlueHorizontalConnection(t *testing.T) {
 func TestRedStaircaseConnection(t *testing.T) {
 	var b Board
 	// Start at (0,10); each down-left step (+1 row, -1 col) is a neighbour.
-	for i := int8(0); i < N; i++ {
+	for i := range int8(N) {
 		place(t, &b, i, N-1-i, 1)
 	}
 	if w, _ := b.Winner(); w != 1 {
@@ -59,7 +59,7 @@ func TestRedStaircaseConnection(t *testing.T) {
 // diagonal does not connect, so it must not win.
 func TestNonConnectingDiagonal(t *testing.T) {
 	var b Board
-	for i := int8(0); i < N; i++ {
+	for i := range int8(N) {
 		place(t, &b, i, i, 1) // main diagonal (row+col increasing together)
 	}
 	if w, _ := b.Winner(); w != 0 {
@@ -82,7 +82,7 @@ func TestNoWinScattered(t *testing.T) {
 // A red column missing its last row touches the top but not the bottom edge.
 func TestRedAlmostConnection(t *testing.T) {
 	var b Board
-	for row := int8(0); row < N-1; row++ { // rows 0..N-2, missing the bottom
+	for row := range int8(N - 1) { // rows 0..N-2, missing the bottom
 		place(t, &b, row, 6, 1)
 	}
 	if w, _ := b.Winner(); w != 0 {
@@ -115,11 +115,11 @@ func TestOffBoardAndOccupied(t *testing.T) {
 // The mover's own line wins even when the opponent has many stones elsewhere.
 func TestWinAmongOpponentStones(t *testing.T) {
 	var b Board
-	for row := int8(0); row < N; row++ {
+	for row := range int8(N) {
 		place(t, &b, row, 0, 1) // red down the left column → top-to-bottom
 	}
 	// Blue clutters the right side but never connects col 0 to col N-1.
-	for row := int8(0); row < N; row++ {
+	for row := range int8(N) {
 		place(t, &b, row, N-1, 2)
 	}
 	if w, _ := b.Winner(); w != 1 {

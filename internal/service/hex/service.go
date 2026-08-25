@@ -549,7 +549,7 @@ func (s *Service) stateLocked() State {
 // legalLocked lists the indices of every empty cell (a legal placement).
 func (s *Service) legalLocked() []int8 {
 	legal := make([]int8, 0, N*N)
-	for i := 0; i < N*N; i++ {
+	for i := range N * N {
 		if s.board[i] == 0 {
 			legal = append(legal, int8(i))
 		}

@@ -47,7 +47,7 @@ func (b *Board) Full() bool {
 func (b *Board) run(row, col, drow, dcol int, side int8) []int16 {
 	cells := []int16{int16(row*Size + col)}
 	r, c := row, col
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		r += drow
 		c += dcol
 		if !inBounds(r, c) || b[r*Size+c] != side {
@@ -62,8 +62,8 @@ func (b *Board) run(row, col, drow, dcol int, side int8) []int16 {
 // Five *or more* in a row wins; the first five of the line are returned.
 func (b *Board) Winner() (int8, []int16) {
 	dirs := [4][2]int{{1, 0}, {0, 1}, {1, 1}, {1, -1}} // (drow, dcol)
-	for row := 0; row < Size; row++ {
-		for col := 0; col < Size; col++ {
+	for row := range Size {
+		for col := range Size {
 			side := b[row*Size+col]
 			if side == 0 {
 				continue

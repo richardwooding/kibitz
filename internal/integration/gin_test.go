@@ -69,7 +69,7 @@ func ginPassOpening(t *testing.T, host, player *ginTable) {
 		uint32(host.client.Self()):   host,
 		uint32(player.client.Self()): player,
 	}
-	for pass := 0; pass < 2; pass++ {
+	for range 2 {
 		st := ginWait(t, host, func(s gin.State) bool { return s.Phase == "upcard-offer" || s.Phase == "draw" })
 		if st.Phase == "draw" {
 			return

@@ -25,7 +25,7 @@ func TestBestMoveTakesFreeBox(t *testing.T) {
 	// box 0 has three sides drawn (top 0, bottom 5, left 30); the completing
 	// edge is its right edge, 31.
 	b := drawn(0, 5, 30)
-	for pick := 0; pick < 5; pick++ {
+	for pick := range 5 {
 		got, ok := BestMove(b, pick)
 		if !ok {
 			t.Fatalf("pick=%d: ok=false, want a free-box move", pick)
@@ -40,7 +40,7 @@ func TestBestMoveNeverGiftsWhenSafeExists(t *testing.T) {
 	// box 0 has two sides (top 0, left 30). Drawing its bottom (5) or right (31)
 	// would make a third side; plenty of other edges are safe.
 	b := drawn(0, 30)
-	for pick := 0; pick < 60; pick++ {
+	for pick := range 60 {
 		got, ok := BestMove(b, pick)
 		if !ok {
 			t.Fatalf("pick=%d: ok=false on an open board", pick)
@@ -64,7 +64,7 @@ func TestBestMovePicksSmallerChainWhenForced(t *testing.T) {
 
 	small := map[int8]bool{25: true, 54: true}
 	sawSmall := false
-	for pick := 0; pick < 24; pick++ {
+	for pick := range 24 {
 		got, ok := BestMove(b, pick)
 		if !ok {
 			t.Fatalf("pick=%d: ok=false, want a forced move", pick)

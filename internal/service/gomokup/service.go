@@ -17,6 +17,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 
 	"github.com/richardwooding/kibitz/internal/service"
@@ -653,12 +654,7 @@ func u32ToIDs(us []uint32) []wire.ParticipantID {
 }
 
 func containsID(ids []wire.ParticipantID, id wire.ParticipantID) bool {
-	for _, x := range ids {
-		if x == id {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(ids, id)
 }
 
 func removeID(ids []wire.ParticipantID, id wire.ParticipantID) []wire.ParticipantID {

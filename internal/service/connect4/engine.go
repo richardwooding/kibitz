@@ -22,7 +22,7 @@ func (b *Board) Drop(col int8, side int8) (int8, error) {
 	if col < 0 || col >= Cols {
 		return 0, ErrBadColumn
 	}
-	for row := int8(0); row < Rows; row++ {
+	for row := range int8(Rows) {
 		if b[col*Rows+row] == 0 {
 			b[col*Rows+row] = side
 			return row, nil
@@ -33,7 +33,7 @@ func (b *Board) Drop(col int8, side int8) (int8, error) {
 
 // Full reports a drawn (completely filled) board.
 func (b *Board) Full() bool {
-	for col := int8(0); col < Cols; col++ {
+	for col := range int8(Cols) {
 		if b[col*Rows+Rows-1] == 0 {
 			return false
 		}
@@ -46,7 +46,7 @@ func (b *Board) Full() bool {
 func (b *Board) run(col, row, dcol, drow, side int8) []int8 {
 	cells := []int8{col*Rows + row}
 	c, r := col, row
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		c += dcol
 		r += drow
 		if c < 0 || c >= Cols || r < 0 || r >= Rows || b[c*Rows+r] != side {
@@ -60,8 +60,8 @@ func (b *Board) run(col, row, dcol, drow, side int8) []int8 {
 // Winner returns the winning side (1/2) and its four cell indices, or 0.
 func (b *Board) Winner() (int8, []int8) {
 	dirs := [4][2]int8{{1, 0}, {0, 1}, {1, 1}, {1, -1}} // (dcol, drow)
-	for col := int8(0); col < Cols; col++ {
-		for row := int8(0); row < Rows; row++ {
+	for col := range int8(Cols) {
+		for row := range int8(Rows) {
 			side := b[col*Rows+row]
 			if side == 0 {
 				continue

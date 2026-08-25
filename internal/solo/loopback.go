@@ -92,7 +92,7 @@ func New() (host, guest *Endpoint, seat func()) {
 func NewParty(guests int) (host *Endpoint, gs []*Endpoint, seat func()) {
 	h := newHub()
 	host = h.add(1, 1, session.RoleHost)
-	for i := 0; i < guests; i++ {
+	for i := range guests {
 		gs = append(gs, h.add(wire.ParticipantID(2+i), 1, proto.RolePlayer))
 	}
 	captured := gs

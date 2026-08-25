@@ -241,7 +241,7 @@ func TestDrawEdgeRejectsAlreadyDrawn(t *testing.T) {
 
 func TestFinishWinnerAndDrawByBoxCount(t *testing.T) {
 	red := New()
-	for i := 0; i < 13; i++ {
+	for i := range 13 {
 		red.board.Owner[i] = 1
 	}
 	for i := 13; i < NumBoxes; i++ {
@@ -253,7 +253,7 @@ func TestFinishWinnerAndDrawByBoxCount(t *testing.T) {
 	}
 	// Equal box counts → draw (winner code 3), exercising the tie branch.
 	tie := New()
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		tie.board.Owner[i] = 1
 	}
 	for i := 10; i < 20; i++ {

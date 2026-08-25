@@ -48,7 +48,7 @@ func TestWinnerDetectsAnyColor(t *testing.T) {
 
 func TestWinnerDiagonal(t *testing.T) {
 	var b Board
-	for i := int8(0); i < 5; i++ {
+	for i := range int8(5) {
 		if _, err := b.Place(3+i, 3+i, 2); err != nil { // color 2 down-right diagonal
 			t.Fatal(err)
 		}

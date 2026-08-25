@@ -3,6 +3,7 @@ package gin
 import (
 	"errors"
 	"math/big"
+	"slices"
 
 	"github.com/richardwooding/ginrummy"
 	"github.com/richardwooding/kibitz/internal/service/game"
@@ -55,7 +56,7 @@ func (s *Service) handleShuffle1(from wire.ParticipantID, m msg) error {
 	}
 	s.deck2 = deck2
 	partials := make([][]byte, 0, handSize) // host(P1) hand, stripped of my key
-	for j := p1Lo; j < p1Hi; j++ {
+	for j := range p1Hi {
 		partials = append(partials, key.Decrypt(deck2[j]).Bytes())
 	}
 	up := key.Decrypt(deck2[upcardPos]).Bytes()
@@ -518,12 +519,7 @@ func (s *Service) handleResign(from wire.ParticipantID) error {
 }
 
 func contains(h []int8, c int8) bool {
-	for _, x := range h {
-		if x == c {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(h, c)
 }
 
 func removeCard(h []int8, c int8) []int8 {

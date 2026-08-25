@@ -44,7 +44,7 @@ func TestGinKnockAndVerify(t *testing.T) {
 		uint32(player.client.Self()): player,
 	}
 	knocked := false
-	for turn := 0; turn < 80; turn++ {
+	for range 80 {
 		st := host.g.State()
 		if st.Phase != "draw" {
 			break
