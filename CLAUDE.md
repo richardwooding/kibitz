@@ -122,9 +122,11 @@ Tag push (`vX.Y.Z`) triggers goreleaser: linux/darwin/windows binaries
 (ko, chainguard-static base), all with the web client embedded. CI-only
 dependency bumps don't warrant a release; real dependency changes do.
 
-The hosted instance is a Fly.io app (`kibitz`, region jnb) defined by
+The hosted instance is a Fly.io app (`kibitz-play`, region jnb) defined by
 fly.toml, running the `:latest` ghcr image. Roll it after a release with
-`fly deploy` from the repo root. The relay is stateful in-memory: it must
-stay exactly ONE always-on machine — never enable auto-stop or scale count
-past 1 (both kill/split live sessions). Deploys drop in-flight sessions;
-that's by design (reconnect = rejoin).
+`fly deploy` from the repo root (no `--ha=false`) — the rolling strategy
+replaces one machine at a time. The relay is stateful in-memory, so auto-stop
+must stay off (a stopped machine kills its sessions), but it scales out
+safely: flyaffinity pins each session to one machine, so `fly scale count N`
+just needs `min_machines_running` raised to match. Deploys drop in-flight
+sessions; that's by design (reconnect = rejoin).

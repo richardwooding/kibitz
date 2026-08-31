@@ -1,8 +1,10 @@
 # Fly.io config for the hosted kibitz relay.
 #
-# The relay is stateful (in-memory session registry) — it must run as exactly
-# ONE always-on machine. Never enable auto-stop or scale past count 1;
-# both would kill or split live sessions.
+# The relay keeps its session registry in memory, so a machine that stops takes
+# its live sessions with it — auto_stop_machines must stay off. Scaling out is
+# safe: flyaffinity pins every connection for a session to one machine (see
+# relay.Options.Router in cmd/kibitz), so each session has one authoritative
+# relay. Keep min_machines_running equal to the machine count.
 
 app = "kibitz-play" # "kibitz" was taken on Fly
 primary_region = "jnb"
