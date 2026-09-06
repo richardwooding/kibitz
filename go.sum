@@ -1,11 +1,11 @@
 filippo.io/edwards25519 v1.2.0 h1:crnVqOiS4jqYleHd9vaKZ+HKtHfllngJIiOpNpoJsjo=
 filippo.io/edwards25519 v1.2.0/go.mod h1:xzAOLCNug/yB62zG1bQ8uziwrIqIuxhctzJT18Q77mc=
-github.com/andybalholm/brotli v1.2.2 h1:HzTuoo2ErYQqf5qvcJInB8uvqSVxRttzkFexPWtnceM=
-github.com/andybalholm/brotli v1.2.2/go.mod h1:rzTDkvFWvIrjDXZHkuS16NPggd91W3kUSvPlQ1pLaKY=
+github.com/andybalholm/brotli v1.2.3 h1:8H1qwOkl2LPfjf3YezB90JnCliZb6SInJ/OJkEbA5NQ=
+github.com/andybalholm/brotli v1.2.3/go.mod h1:rzTDkvFWvIrjDXZHkuS16NPggd91W3kUSvPlQ1pLaKY=
 github.com/coder/websocket v1.8.15 h1:6B2JPeOGlpff2Uz6vOEH1Vzpi0iUz20A+lPVhPHtNUA=
 github.com/coder/websocket v1.8.15/go.mod h1:NX3SzP+inril6yawo5CQXx8+fk145lPDC6pumgx0mVg=
-github.com/corentings/chess/v2 v2.5.1 h1:Ps7jIixhfJrhlQnRX5+qjnY/bKxZZjR7DXxiXfd8Uh0=
-github.com/corentings/chess/v2 v2.5.1/go.mod h1:UPFmUPTLiJN9qOux6aNt+NwEPuyId0+REsKMmmtYXpU=
+github.com/corentings/chess/v2 v2.6.0 h1:xFYsVplyA3EGy9XXPJx9pNzNuftFqKvw2fBnJF9apOI=
+github.com/corentings/chess/v2 v2.6.0/go.mod h1:UPFmUPTLiJN9qOux6aNt+NwEPuyId0+REsKMmmtYXpU=
 github.com/fxamacker/cbor/v2 v2.9.3 h1:oQBnFATpNdY8gJHTndDDv5Xl4QqNaz51G5LLEPhng3Q=
 github.com/fxamacker/cbor/v2 v2.9.3/go.mod h1:vM4b+DJCtHn+zz7h3FFp/hDAI9WNWCsZj23V5ytsSxQ=
 github.com/richardwooding/backgammon v0.1.1 h1:f9CrClYMGNuFvSXmYSNx7dW8SVi/HEoUFOYyzErHxDc=
