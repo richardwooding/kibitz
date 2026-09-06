@@ -3,9 +3,9 @@ module github.com/richardwooding/kibitz
 go 1.27.0
 
 require (
-	github.com/andybalholm/brotli v1.2.2
+	github.com/andybalholm/brotli v1.2.3
 	github.com/coder/websocket v1.8.15
-	github.com/corentings/chess/v2 v2.5.1
+	github.com/corentings/chess/v2 v2.6.0
 	github.com/richardwooding/backgammon v0.1.1
 	github.com/richardwooding/checkers v0.1.0
 	github.com/richardwooding/fairdice v0.1.2
