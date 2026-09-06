@@ -115,6 +115,39 @@ true while this invariant holds.
   (UI→core) and `kibitzOnEvent(json)` (core→UI). JSON at the bridge only;
   CBOR on the wire. The JS layer renders — it never implements protocol.
 
+## Tests
+
+Almost everything here is asynchronous — three ends over a loopback, bots on
+their own goroutines, a mux that re-Attaches services underneath them — so most
+tests are "do something, then wait for the ends to agree". How that wait is
+written is what decides whether the suite is trustworthy on CI.
+
+**Wait on progress, not on a stopwatch, whenever the work is unbounded.**
+`internal/bot/bot_test.go` has both helpers and they are not interchangeable:
+
+- `waitUntil(t, d, what, pred)` — for a **bounded** settle. One event has
+  happened and a fixed number of messages have to land: three seats filled,
+  the ends converged on one board. The work does not grow, so a fixed budget
+  is a real bound and 3s is enormous.
+- `waitWhileProgressing(t, idle, what, measure, done)` — for **unbounded** work,
+  where the amount to do is itself variable. A whole self-play game is every
+  bot move, each with three goroutines, a heuristic search and message passing.
+  It fails only once `measure` has stood still for `idle`, so every step resets
+  the clock.
+
+The distinction is not stylistic. `TestGomokupBotSelfPlay` had a 25s ceiling
+against a game that finishes in 1.7s locally under `-race` — fifteen times
+headroom — and CI still failed it, on a PR that had changed nothing but a
+workflow file. A ceiling on a whole game has to cover both the move count and
+however slow a loaded shared runner is that minute; those multiply, and no
+value is both generous enough to stop flaking and tight enough to catch a real
+stall. Per-step progress does not multiply, and it catches a genuine stall in
+`idle` rather than in the whole budget — sooner than the ceiling would have.
+
+If you add a wait, pick by asking whether the thing being waited for does a
+fixed amount of work. If it does not, measure something that only ever moves
+forward (a move count, a sequence number) and let the game bound itself.
+
 ## Releasing and deploy
 
 Tag push (`vX.Y.Z`) triggers goreleaser: linux/darwin/windows binaries
