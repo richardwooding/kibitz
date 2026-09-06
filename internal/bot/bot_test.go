@@ -29,6 +29,32 @@ func waitUntil(t *testing.T, d time.Duration, what string, pred func() bool) {
 	t.Fatalf("condition %q not met within %s", what, d)
 }
 
+// waitWhileProgressing waits for done, failing only once measure has stood
+// still for idle. It is for conditions that take an UNBOUNDED amount of work —
+// a whole game of bot moves — where a single deadline is really a bet on how
+// fast the machine is.
+//
+// A self-play game that finishes in 1.7s here took over 25s on a loaded CI
+// runner and failed a PR that had touched nothing but a workflow file. Raising
+// the ceiling only moves the bet: the budget has to cover the whole game, so it
+// grows with both the move count and the machine's slowness. Per-move progress
+// does not — every move resets the clock, so an arbitrarily slow runner still
+// passes while a genuine stall is caught in idle rather than in the whole
+// budget, and caught sooner than the old ceiling would have.
+func waitWhileProgressing(t *testing.T, idle time.Duration, what string, measure func() int, done func() bool) {
+	t.Helper()
+	last, lastChange := measure(), time.Now()
+	for !done() {
+		if n := measure(); n != last {
+			last, lastChange = n, time.Now()
+		}
+		if since := time.Since(lastChange); since > idle {
+			t.Fatalf("condition %q stalled: no progress for %s (stuck at %d)", what, since.Round(time.Millisecond), last)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func gpStones(b gomokup.Board) int {
 	n := 0
 	for _, v := range b {
@@ -85,7 +111,12 @@ func TestGomokupBotSelfPlay(t *testing.T) {
 	if err := hostGP.Begin(); err != nil {
 		t.Fatalf("begin: %v", err)
 	}
-	waitUntil(t, 25*time.Second, "game over", func() bool { return hostGP.State().Outcome != "" })
+	// Stones only ever accumulate and the board is finite, so "a stone was
+	// placed recently" is the progress this game makes; the game itself is what
+	// bounds the total, not a stopwatch.
+	waitWhileProgressing(t, 10*time.Second, "game over",
+		func() int { return gpStones(hostGP.State().Board) },
+		func() bool { return hostGP.State().Outcome != "" })
 	waitUntil(t, 3*time.Second, "ends converge", func() bool {
 		a := hostGP.State()
 		for _, gp := range gps[1:] {
